@@ -1,0 +1,14969 @@
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import {
+  ShieldCheck,
+  LayoutDashboard,
+  FileText,
+  Users,
+  Box,
+  Search,
+  Bell,
+  Plus,
+  Filter,
+  Download,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  Share2,
+  Lock,
+  FileSignature,
+  X,
+  ChevronRight,
+  Activity,
+  Sun,
+  Moon,
+  Calendar,
+  MapPin,
+  Building2,
+  Tag,
+  Info,
+  ChevronDown,
+  Loader2,
+  History,
+  Settings,
+  Command,
+  Sparkles,
+  UploadCloud,
+  BarChart3,
+  ClipboardList,
+  Map as MapIcon,
+  LocateFixed,
+  Zap,
+  ArrowUpRight,
+  QrCode,
+  ScanLine,
+  Printer,
+  Copy,
+  Wifi,
+  WifiOff,
+  Camera,
+  CameraOff,
+  LogOut,
+} from 'lucide-react';
+import QRCode from 'qrcode';
+import { jsPDF } from 'jspdf';
+import {
+  aooTemplateCatalog,
+  defaultInspectionTemplates,
+  defaultTemplateBlueprints,
+  defaultTemplateListings,
+  templateCategoryOptions,
+  templateRegimeOptions,
+} from './aooTemplates';
+
+const AUDIT_EXECUTION_MODES = {
+  CERTEX_TEMPLATE: 'certex_template',
+  AUDITOR_SOFTWARE: 'auditor_software',
+};
+
+const EXTERNAL_AUDIT_REVIEW_STATUSES = {
+  NOT_REQUIRED: 'not_required',
+  PENDING_EVIDENCE: 'pending_evidence',
+  PENDING_REVIEW: 'pending_review',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+};
+
+const USER_ROLE_OPTIONS = [
+  { id: 'company', label: 'Company' },
+  { id: 'auditor', label: 'Auditor' },
+  { id: 'insurer', label: 'Insurer' },
+  { id: 'certex', label: 'Certex' },
+];
+
+const USER_ROLE_TAB_ACCESS = {
+  company: ['dashboard', 'landing', 'onboarding', 'assets', 'vault', 'marketplace', 'help'],
+  auditor: ['marketplace', 'help'],
+  insurer: ['marketplace', 'help'],
+  certex: ['dashboard', 'landing', 'onboarding', 'assets', 'vault', 'providers', 'marketplace', 'help'],
+};
+
+// --- INITIAL MOCK DATA ---
+const initialAssets = [
+  {
+    id: 'AST-001',
+    name: 'Passenger Lift A',
+    site: 'London HQ',
+    class: 'Lift',
+    regime: 'LOLER',
+    nextDue: '2026-03-15',
+  },
+  {
+    id: 'AST-002',
+    name: 'Goods Lift B',
+    site: 'Manchester Depot',
+    class: 'Lift',
+    regime: 'LOLER',
+    nextDue: '2026-02-10',
+  },
+  {
+    id: 'AST-003',
+    name: 'Forklift FL-01',
+    site: 'Birmingham Whse',
+    class: 'Lifting Eq.',
+    regime: 'LOLER',
+    nextDue: '2026-04-22',
+  },
+  {
+    id: 'AST-004',
+    name: 'Air Compressor',
+    site: 'London HQ',
+    class: 'Pressure Vessel',
+    regime: 'PSSR',
+    nextDue: '2026-05-10',
+  },
+  {
+    id: 'AST-005',
+    name: 'Pallet Stacker',
+    site: 'Manchester Depot',
+    class: 'Work Eq.',
+    regime: 'PUWER',
+    nextDue: '2026-02-28',
+  },
+];
+
+const initialCertificates = [
+  {
+    id: 'CERT-2025-8831',
+    assetId: 'AST-001',
+    assetName: 'Passenger Lift A',
+    regime: 'LOLER',
+    provider: 'Bureau Veritas UK',
+    issueDate: '2025-09-15',
+    expiryDate: '2026-03-15',
+    hash: 'e3b0...2b855',
+  },
+  {
+    id: 'CERT-2025-7210',
+    assetId: 'AST-003',
+    assetName: 'Forklift FL-01',
+    regime: 'LOLER',
+    provider: 'Allianz Eng',
+    issueDate: '2025-10-22',
+    expiryDate: '2026-04-22',
+    hash: '8d96...6c92',
+  },
+  {
+    id: 'CERT-2024-1102',
+    assetId: 'AST-002',
+    assetName: 'Goods Lift B',
+    regime: 'LOLER',
+    provider: 'Bureau Veritas UK',
+    issueDate: '2024-08-10',
+    expiryDate: '2025-08-10',
+    hash: 'f2ca...6fd2',
+  },
+  {
+    id: 'CERT-2025-9921',
+    assetId: 'AST-004',
+    assetName: 'Air Compressor',
+    regime: 'PSSR',
+    provider: 'Zurich Resilience',
+    issueDate: '2025-05-10',
+    expiryDate: '2026-05-10',
+    hash: 'b94d...de9',
+  },
+];
+
+const mockProviders = [
+  {
+    id: 'PRV-1',
+    name: 'Bureau Veritas UK',
+    tier: 'UKAS Accredited',
+    regimes: ['LOLER', 'PUWER', 'PSSR'],
+    activeJobs: 12,
+    maxConcurrentJobs: 16,
+    rating: 4.9,
+    avgResponseMins: 42,
+    completedAudits: 1480,
+    completionRate: 98,
+    baseLocation: 'London',
+    availability: {
+      weekdays: [1, 2, 3, 4, 5],
+      weekend: true,
+    },
+    rateCards: {
+      LOLER: { hourlyRate: 94, minimumCallout: 220, travelPerKm: 1.45, platformFeePct: 0.45 },
+      PUWER: { hourlyRate: 88, minimumCallout: 190, travelPerKm: 1.35, platformFeePct: 0.45 },
+      PSSR: { hourlyRate: 112, minimumCallout: 260, travelPerKm: 1.55, platformFeePct: 0.45 },
+    },
+  },
+  {
+    id: 'PRV-2',
+    name: 'Allianz Engineering',
+    tier: 'Insurer Network',
+    regimes: ['LOLER', 'PSSR'],
+    activeJobs: 5,
+    maxConcurrentJobs: 10,
+    rating: 4.7,
+    avgResponseMins: 58,
+    completedAudits: 1025,
+    completionRate: 96,
+    baseLocation: 'Manchester',
+    availability: {
+      weekdays: [1, 2, 3, 4, 5],
+      weekend: false,
+    },
+    rateCards: {
+      LOLER: { hourlyRate: 89, minimumCallout: 200, travelPerKm: 1.2, platformFeePct: 0.45 },
+      PSSR: { hourlyRate: 104, minimumCallout: 240, travelPerKm: 1.35, platformFeePct: 0.45 },
+    },
+  },
+  {
+    id: 'PRV-3',
+    name: 'Zurich Resilience',
+    tier: 'Insurer Network',
+    regimes: ['PSSR'],
+    activeJobs: 2,
+    maxConcurrentJobs: 8,
+    rating: 4.6,
+    avgResponseMins: 73,
+    completedAudits: 610,
+    completionRate: 95,
+    baseLocation: 'Birmingham',
+    availability: {
+      weekdays: [1, 2, 3, 4, 5, 6],
+      weekend: true,
+    },
+    rateCards: {
+      PSSR: { hourlyRate: 108, minimumCallout: 250, travelPerKm: 1.4, platformFeePct: 0.45 },
+    },
+  },
+];
+
+const mockTemplatePreviewAssetRefs = [
+  { assetId: 'AST-001', assetName: 'Passenger Lift A', site: 'London HQ' },
+  { assetId: 'AST-002', assetName: 'Goods Lift B', site: 'Manchester Depot' },
+  { assetId: 'AST-003', assetName: 'Forklift FL-01', site: 'Birmingham Whse' },
+  { assetId: 'AST-004', assetName: 'Air Compressor', site: 'London HQ' },
+  { assetId: 'AST-005', assetName: 'Pallet Stacker', site: 'Manchester Depot' },
+];
+
+function buildAooTemplatePreviewJobs() {
+  const baseCreatedAt = new Date('2026-02-22T09:00:00Z');
+
+  return aooTemplateCatalog.map((template, index) => {
+    const assetRef = mockTemplatePreviewAssetRefs[index % mockTemplatePreviewAssetRefs.length];
+    const controlCount = Array.isArray(template?.questions)
+      ? template.questions.filter((question) => String(question?.type || '').toLowerCase() === 'boolean').length
+      : 4;
+    const createdAt = new Date(baseCreatedAt.getTime() - index * 24 * 60 * 60 * 1000);
+    const dueDate = new Date(baseCreatedAt.getTime() + (7 + index) * 24 * 60 * 60 * 1000);
+    const dispatchedAt = new Date(createdAt.getTime() + 20 * 60 * 1000);
+    const offerExpiresAt = new Date(createdAt.getTime() + 95 * 60 * 1000);
+    const acceptedAt = new Date(createdAt.getTime() + 50 * 60 * 1000);
+
+    return {
+      id: `JOB-${String(2001 + index).padStart(4, '0')}`,
+      companyName: 'Acme Logistics',
+      companyId: 'acme-logistics',
+      assetId: assetRef.assetId,
+      assetName: `${assetRef.assetName} (${template.name})`,
+      site: assetRef.site,
+      regime: String(template?.regime || 'LOLER').toUpperCase(),
+      inspectionTemplateId: `TPL-AOO-${String(index + 1).padStart(2, '0')}`,
+      inspectionTemplateName: template.name,
+      status: 'in_progress',
+      dueDate: dueDate.toISOString().slice(0, 10),
+      budget: 240 + controlCount * 18,
+      createdAt: createdAt.toISOString().slice(0, 10),
+      matchedAuditorId: 'PRV-1',
+      notes: `Template preview job for ${template.name}. Open Template in Auditor Portal to review ${controlCount} checklist controls.`,
+      scope: {
+        template: 'aoo_template_preview',
+        assetCount: 1,
+        estimatedHours: Number((Math.max(1.5, controlCount * 0.35)).toFixed(1)),
+        complexity: index % 4 === 0 ? 'restricted' : 'standard',
+        equipment: index % 3 === 0 ? 'specialist_instruments' : 'none',
+        travelKm: 8 + (index % 5) * 3,
+        weekendAccess: index % 6 === 0,
+        expedite: index % 7 === 0,
+      },
+      dispatch: {
+        slaMinutes: 360,
+        dispatchDeadlineAt: new Date(createdAt.getTime() + 360 * 60 * 1000).toISOString(),
+        dispatchedAt: dispatchedAt.toISOString(),
+        offerExpiresAt: offerExpiresAt.toISOString(),
+        acceptedAt: acceptedAt.toISOString(),
+        attempts: 1,
+      },
+      documents: [],
+      timeline: [
+        { label: 'Template preview job created', at: createdAt.toISOString().slice(0, 10), actor: 'Certex Seed Data' },
+        { label: 'Offer accepted', at: acceptedAt.toISOString().slice(0, 16).replace('T', ' '), actor: 'Bureau Veritas UK' },
+        {
+          label: `Audit started (${template.templateId})`,
+          at: new Date(acceptedAt.getTime() + 30 * 60 * 1000).toISOString().slice(0, 16).replace('T', ' '),
+          actor: 'Bureau Veritas UK',
+        },
+      ],
+    };
+  });
+}
+
+const initialMarketplaceJobs = [
+  {
+    id: 'JOB-1001',
+    companyName: 'Acme Logistics',
+    assetId: 'AST-002',
+    assetName: 'Goods Lift B',
+    site: 'Manchester Depot',
+    regime: 'LOLER',
+    status: 'open',
+    dueDate: '2026-03-01',
+    budget: 420,
+    createdAt: '2026-02-20',
+    matchedAuditorId: null,
+    notes: 'Critical lift in dispatch zone. Evening access preferred.',
+    scope: {
+      template: 'urgent_defect_followup',
+      assetCount: 1,
+      estimatedHours: 2.5,
+      complexity: 'out_of_hours',
+      equipment: 'none',
+      travelKm: 14,
+      weekendAccess: false,
+      expedite: true,
+    },
+    pricing: {
+      labour: 276,
+      travel: 20,
+      equipment: 0,
+      expedite: 53,
+      platformFee: 38,
+      total: 387,
+    },
+    dispatch: {
+      slaMinutes: 120,
+      dispatchDeadlineAt: '2026-02-20T12:00:00Z',
+      dispatchedAt: null,
+      offerExpiresAt: null,
+      acceptedAt: null,
+      attempts: 0,
+    },
+    documents: [],
+    timeline: [
+      { label: 'Job advertised', at: '2026-02-20', actor: 'Acme Logistics' },
+      { label: 'Instant quote generated (£387)', at: '2026-02-20', actor: 'Certex Pricing Engine' },
+    ],
+  },
+  {
+    id: 'JOB-1002',
+    companyName: 'Acme Logistics',
+    assetId: 'AST-004',
+    assetName: 'Air Compressor',
+    site: 'London HQ',
+    regime: 'PSSR',
+    status: 'assigned',
+    dueDate: '2026-03-10',
+    budget: 360,
+    createdAt: '2026-02-18',
+    matchedAuditorId: 'PRV-1',
+    notes: 'Written Scheme check and pressure relief validation.',
+    scope: {
+      template: 'written_scheme_review',
+      assetCount: 1,
+      estimatedHours: 3.5,
+      complexity: 'standard',
+      equipment: 'specialist_instruments',
+      travelKm: 9,
+      weekendAccess: false,
+      expedite: false,
+    },
+    pricing: {
+      labour: 351,
+      travel: 13,
+      equipment: 120,
+      expedite: 0,
+      platformFee: 48,
+      total: 532,
+    },
+    dispatch: {
+      slaMinutes: 360,
+      dispatchDeadlineAt: '2026-02-18T15:00:00Z',
+      dispatchedAt: '2026-02-18T10:05:00Z',
+      offerExpiresAt: '2026-02-18T11:35:00Z',
+      acceptedAt: '2026-02-18T10:38:00Z',
+      attempts: 1,
+    },
+    documents: [],
+    timeline: [
+      { label: 'Job advertised', at: '2026-02-18', actor: 'Acme Logistics' },
+      { label: 'Offer sent to Bureau Veritas UK', at: '2026-02-18 10:05', actor: 'Certex Match Engine' },
+      { label: 'Auditor accepted offer', at: '2026-02-18 10:38', actor: 'Bureau Veritas UK' },
+    ],
+  },
+  {
+    id: 'JOB-1003',
+    companyName: 'Acme Logistics',
+    assetId: 'AST-003',
+    assetName: 'Forklift FL-01',
+    site: 'Birmingham Whse',
+    regime: 'LOLER',
+    status: 'in_progress',
+    dueDate: '2026-02-26',
+    budget: 290,
+    createdAt: '2026-02-15',
+    matchedAuditorId: 'PRV-2',
+    notes: 'Audit in loading bay, supervisor escort required.',
+    scope: {
+      template: 'portfolio_sweep',
+      assetCount: 2,
+      estimatedHours: 3.1,
+      complexity: 'restricted',
+      equipment: 'none',
+      travelKm: 22,
+      weekendAccess: false,
+      expedite: false,
+    },
+    pricing: {
+      labour: 301,
+      travel: 30,
+      equipment: 0,
+      expedite: 0,
+      platformFee: 33,
+      total: 364,
+    },
+    dispatch: {
+      slaMinutes: 360,
+      dispatchDeadlineAt: '2026-02-15T15:00:00Z',
+      dispatchedAt: '2026-02-15T08:44:00Z',
+      offerExpiresAt: '2026-02-15T10:14:00Z',
+      acceptedAt: '2026-02-15T09:02:00Z',
+      attempts: 1,
+    },
+    documents: ['pre-checklist.pdf'],
+    timeline: [
+      { label: 'Job advertised', at: '2026-02-15', actor: 'Acme Logistics' },
+      { label: 'Auditor accepted job', at: '2026-02-16', actor: 'Allianz Engineering' },
+      { label: 'Audit started', at: '2026-02-21', actor: 'Allianz Engineering' },
+    ],
+  },
+  {
+    id: 'JOB-1004',
+    companyName: 'Acme Logistics',
+    assetId: 'AST-005',
+    assetName: 'Pallet Stacker',
+    site: 'Manchester Depot',
+    regime: 'PUWER',
+    status: 'offered',
+    dueDate: '2026-03-05',
+    budget: 276,
+    createdAt: '2026-02-21',
+    matchedAuditorId: 'PRV-1',
+    notes: 'Quarterly PUWER program with supervisor sign-off required.',
+    scope: {
+      template: 'portfolio_sweep',
+      assetCount: 1,
+      estimatedHours: 2,
+      complexity: 'standard',
+      equipment: 'none',
+      travelKm: 18,
+      weekendAccess: false,
+      expedite: false,
+    },
+    pricing: {
+      labour: 188,
+      travel: 25,
+      equipment: 0,
+      expedite: 0,
+      platformFee: 21,
+      total: 234,
+    },
+    dispatch: {
+      slaMinutes: 360,
+      dispatchDeadlineAt: '2026-02-21T15:00:00Z',
+      dispatchedAt: '2026-02-21T10:10:00Z',
+      offerExpiresAt: '2026-02-21T11:40:00Z',
+      acceptedAt: null,
+      attempts: 1,
+    },
+    documents: [],
+    timeline: [
+      { label: 'Job advertised', at: '2026-02-21', actor: 'Acme Logistics' },
+      { label: 'Offer sent to Bureau Veritas UK', at: '2026-02-21 10:10', actor: 'Certex Match Engine' },
+    ],
+  },
+  ...buildAooTemplatePreviewJobs(),
+];
+
+const ASSET_STORAGE_KEY = 'certex.assets.v1';
+const MARKETPLACE_JOBS_STORAGE_KEY = 'certex.marketplaceJobs.v2';
+const THEME_STORAGE_KEY = 'certex.theme.v1';
+const INSPECTION_LOG_STORAGE_KEY = 'certex.inspectionLogs.v1';
+const RECURRING_PROGRAMMES_STORAGE_KEY = 'certex.recurringProgrammes.v1';
+const PUBLIC_SITE_CONFIG_STORAGE_KEY = 'certex.publicSiteConfig.v1';
+const ONBOARDING_TASKS_STORAGE_KEY = 'certex.onboardingTasks.v1';
+const FINANCE_INVOICES_STORAGE_KEY = 'certex.financeInvoices.v1';
+const PAYOUT_RUNS_STORAGE_KEY = 'certex.payoutRuns.v1';
+const INSPECTION_TEMPLATES_STORAGE_KEY = 'certex.inspectionTemplates.v2';
+const INTEGRATION_CONNECTIONS_STORAGE_KEY = 'certex.integrationConnections.v1';
+const TEMPLATE_BLUEPRINTS_STORAGE_KEY = 'certex.templateBlueprints.v2';
+const TEMPLATE_LISTINGS_STORAGE_KEY = 'certex.templateListings.v2';
+const LICENCE_GRANTS_STORAGE_KEY = 'certex.licenceGrants.v1';
+const AUDIT_RUNS_STORAGE_KEY = 'certex.auditRuns.v1';
+const AUDIT_FINDINGS_STORAGE_KEY = 'certex.auditFindings.v1';
+const AUDIT_ACTIONS_STORAGE_KEY = 'certex.auditActions.v1';
+const REPORT_ARTIFACTS_STORAGE_KEY = 'certex.reportArtifacts.v1';
+const SHARE_LINKS_STORAGE_KEY = 'certex.shareLinks.v1';
+const AUTH_SESSION_STORAGE_KEY = 'certex.authSession.v1';
+const DEBUG_ROLE_STORAGE_KEY = 'certex.debugRole.v1';
+
+const defaultPublicSiteConfig = {
+  siteTitle: 'Acme Logistics Compliance Portal',
+  siteSlug: 'acme-logistics',
+  supportEmail: 'compliance@acme-logistics.example',
+  verificationPath: '/verify',
+  launchStatus: 'draft',
+  launchDate: '',
+  updatedAt: '',
+};
+
+const defaultOnboardingTasks = [
+  { id: 'org-profile', label: 'Configure organisation profile and branding', completed: false },
+  { id: 'role-invites', label: 'Invite dutyholder, site manager, and finance users', completed: false },
+  { id: 'asset-import', label: 'Import initial sites and statutory assets', completed: false },
+  { id: 'first-booking', label: 'Create first inspection/audit booking', completed: false },
+  { id: 'vault-verification', label: 'Verify first certificate in Evidence Vault', completed: false },
+];
+
+const defaultAuthSession = {
+  isAuthenticated: false,
+  email: '',
+  fullName: '',
+  accountType: 'company',
+  signedInAt: '',
+};
+
+const PUBLIC_SITE_PAGE_BLUEPRINTS = [
+  {
+    id: 'home',
+    label: 'Home',
+    purpose: 'Explain why CertEx and convert operators/auditors quickly.',
+    headline: 'Book statutory audits and inspections across your estate in minutes.',
+    primaryCta: 'Request a pilot',
+    secondaryCta: 'Join as an auditor',
+    trustCues: ['Digitally signed certificates', 'Audit-ready evidence packs', 'Verified auditors/providers'],
+  },
+  {
+    id: 'how-it-works',
+    label: 'How it works',
+    purpose: 'Teach request -> dispatch -> completion -> verifiable evidence workflow.',
+    headline: 'From request to verifiable evidence - end to end.',
+    primaryCta: 'See a sample audit pack',
+    secondaryCta: 'Talk to sales',
+    trustCues: ['Flow diagram', 'Secure storage', 'Access logs'],
+  },
+  {
+    id: 'portals',
+    label: 'Portals',
+    purpose: 'Show company, auditor, admin, and insurer portals.',
+    headline: 'Portals included.',
+    primaryCta: 'Create account',
+    secondaryCta: 'See how it works',
+    trustCues: ['Company', 'Auditor', 'Admin', 'Insurer'],
+  },
+  {
+    id: 'facilities',
+    label: 'For Facilities',
+    purpose: 'Sell compliance operations outcomes to operator admins.',
+    headline: 'Stop chasing PDFs. Start running compliance.',
+    primaryCta: 'Upload your asset register',
+    secondaryCta: 'Download procurement pack',
+    trustCues: ['PO & VAT invoicing', 'Multi-site controls', 'Retention rules'],
+  },
+  {
+    id: 'auditors',
+    label: 'For Auditors',
+    purpose: 'Recruit and activate high-quality auditor capacity.',
+    headline: 'Find work that fits your coverage, availability, and rates.',
+    primaryCta: 'Create auditor profile',
+    secondaryCta: 'See example job',
+    trustCues: ['Credential passport', 'Fast payout', 'Client evidence access'],
+  },
+  {
+    id: 'pricing',
+    label: 'Pricing',
+    purpose: 'Clarify pricing model and remove buyer friction.',
+    headline: 'Transparent pricing for estates and audit firms.',
+    primaryCta: 'Start pilot pricing',
+    secondaryCta: 'Enterprise consultation',
+    trustCues: ['No lock-in', 'Pay per booking or subscription', 'Clear VAT-ready invoices'],
+  },
+  {
+    id: 'trust',
+    label: 'Trust & Compliance',
+    purpose: 'Answer security, legal, and evidence integrity objections.',
+    headline: 'Evidence integrity and access controls by design.',
+    primaryCta: 'View security overview',
+    secondaryCta: 'Ask compliance questions',
+    trustCues: ['Signing + verification', 'RBAC + MFA', 'Audit logs'],
+  },
+  {
+    id: 'resources',
+    label: 'Resources',
+    purpose: 'Capture demand via templates, guides, and compliance checklists.',
+    headline: 'Templates, guides, and checklists.',
+    primaryCta: 'Get the audit scope template',
+    secondaryCta: 'Subscribe to updates',
+    trustCues: ['HSE citation references', 'Regime playbooks', 'Procurement packs'],
+  },
+];
+
+const PUBLIC_TRUST_MODULES = [
+  {
+    id: 'evidence-integrity',
+    title: 'Evidence integrity',
+    description: 'Every certificate has a verification page and immutable version history.',
+  },
+  {
+    id: 'secure-records',
+    title: 'Secure electronic records',
+    description: 'Records are securely stored with access trails and exportable audit packs.',
+  },
+  {
+    id: 'credentialled-network',
+    title: 'Credentialled network',
+    description: 'Providers and auditors are vetted, credentialed, and expiry-tracked.',
+  },
+  {
+    id: 'payments-safety',
+    title: 'Payments safety',
+    description: 'SCA-ready payment and payout controls align with regulated partner workflows.',
+  },
+];
+
+const PUBLIC_FOOTER_LINKS = ['Security', 'Legal', 'Privacy', 'Status', 'Contact', 'Careers'];
+
+const ONBOARDING_PERSONA_FLOWS = [
+  {
+    id: 'operator-admin',
+    label: 'Operator Admin',
+    goal: 'Onboard organisation, import estate data, set controls, and launch bookings.',
+    steps: [
+      {
+        title: 'Set up your organisation',
+        microcopy: 'Start with the basics. You can add sites, roles, and procurement rules next.',
+        details: ['Organisation identity + VAT status', 'Registered address + primary contact'],
+        cta: 'Continue',
+      },
+      {
+        title: 'Invite your facilities team',
+        microcopy: 'Assign roles to control booking, evidence, and payment approvals.',
+        details: ['Roles: admin, site manager, compliance viewer, finance', 'Send role-based invites'],
+        cta: 'Send invites',
+      },
+      {
+        title: 'Add your sites',
+        microcopy: 'Multi-site teams can upload addresses and access constraints in one pass.',
+        details: ['Upload CSV or add manually', 'Capture working hours, site contact, and access notes'],
+        cta: 'Save sites',
+      },
+      {
+        title: 'Import your asset register',
+        microcopy: 'Map columns, detect duplicates, and generate due-date calendars.',
+        details: ['CSV/XLSX import', 'Map regime tags and inspection dates'],
+        cta: 'Import and validate',
+      },
+      {
+        title: 'Set compliance policies',
+        microcopy: 'Define lead times, evidence requirements, and retention profile defaults.',
+        details: ['Default booking lead times', 'Evidence attachment requirements'],
+        cta: 'Save policies',
+      },
+      {
+        title: 'Request audit or inspection',
+        microcopy: 'Define scope once, then use instant pricing and dispatch.',
+        details: ['Scope builder -> pricing -> scheduling -> PO/payment', 'Confirm request and dispatch'],
+        cta: 'Get instant price',
+      },
+      {
+        title: 'Use Evidence Vault',
+        microcopy: 'Share time-limited evidence links and generate audit packs by regime/site.',
+        details: ['Filter by site/regime/status', 'Generate packs + secure share links'],
+        cta: 'Create share link',
+      },
+      {
+        title: 'Pay and reconcile',
+        microcopy: 'Match POs, download VAT invoices, and track payout status.',
+        details: ['Approval queue for invoices', 'Reconciliation exports'],
+        cta: 'Approve payment',
+      },
+    ],
+  },
+  {
+    id: 'site-manager',
+    label: 'Site Manager',
+    goal: 'Run local visit coordination, access readiness, and completion confirmations.',
+    steps: [
+      {
+        title: 'My site dashboard',
+        microcopy: "See today's visits, overdue assets, and site-specific priorities.",
+        details: ['Visit timeline', 'Overdue and due-soon asset list'],
+        cta: 'Confirm access details',
+      },
+      {
+        title: 'Upcoming visit details',
+        microcopy: 'Share induction, keys, permits, and escort instructions with the assigned auditor.',
+        details: ['Upload site pack', 'Set contact and handover notes'],
+        cta: 'Send site pack',
+      },
+      {
+        title: 'On-site completion',
+        microcopy: 'Mark completion and upload any local evidence requested during the visit.',
+        details: ['Completion confirmation', 'Add local photos/notes'],
+        cta: 'Confirm completion',
+      },
+    ],
+  },
+  {
+    id: 'auditor',
+    label: 'Auditor',
+    goal: 'Create profile, pass vetting, accept jobs, deliver findings, and receive payout.',
+    steps: [
+      {
+        title: 'Create auditor profile',
+        microcopy: 'Set coverage, regimes, sectors, travel policy, and pricing.',
+        details: ['Coverage regions + travel radius', 'Rates, minimums, and expense rules'],
+        cta: 'Save and continue',
+      },
+      {
+        title: 'Upload credentials',
+        microcopy: 'Provide competence and independence evidence required for assignment.',
+        details: ['CV, certifications, insurance, references', 'Conflicts and independence declaration'],
+        cta: 'Submit for review',
+      },
+      {
+        title: 'Set availability',
+        microcopy: 'Enable on-demand requests and set your acceptance policy.',
+        details: ['Calendar sync and blackout dates', 'Auto-accept thresholds'],
+        cta: 'Enable availability',
+      },
+      {
+        title: 'Use job offer inbox',
+        microcopy: 'Accept in-window offers before automatic re-offer.',
+        details: ['Offer scope, payout, and travel estimate', 'Accept or decline with reason'],
+        cta: 'Accept offer',
+      },
+      {
+        title: 'Access client evidence',
+        microcopy: 'Download time-limited evidence packs with full access logging.',
+        details: ['Pack download', 'Request additional evidence'],
+        cta: 'Download pack',
+      },
+      {
+        title: 'Submit findings',
+        microcopy: 'Attach findings to assets/certificates for traceability.',
+        details: ['Structured findings + report upload', 'Signed submission'],
+        cta: 'Submit and sign',
+      },
+      {
+        title: 'Review payout',
+        microcopy: 'Track completion-based payout and remittance details.',
+        details: ['Payout status', 'Remittance advice'],
+        cta: 'View remittance advice',
+      },
+    ],
+  },
+  {
+    id: 'auditor-admin',
+    label: 'Auditor Admin',
+    goal: 'Manage team operations, quality, pricing policies, and utilisation.',
+    steps: [
+      {
+        title: 'Firm profile',
+        microcopy: 'Set legal details, service lines, and organisation defaults.',
+        details: ['Firm identity profile', 'Core compliance settings'],
+        cta: 'Save profile',
+      },
+      {
+        title: 'Team management',
+        microcopy: 'Invite auditors and assign operational permissions.',
+        details: ['Roster controls', 'Role-based access'],
+        cta: 'Manage team',
+      },
+      {
+        title: 'Rate cards and SLAs',
+        microcopy: 'Publish rates, acceptance windows, and cancellation policy.',
+        details: ['Rate card library', 'Acceptance/response thresholds'],
+        cta: 'Update rates',
+      },
+      {
+        title: 'QA sampling',
+        microcopy: 'Random sampling protects audit integrity and operator trust.',
+        details: ['Sampling policy', 'Outcome scoring'],
+        cta: 'Run QA sample',
+      },
+      {
+        title: 'Consolidated invoicing',
+        microcopy: 'Review billing batches and payout summaries.',
+        details: ['Invoice grouping', 'Payout mapping'],
+        cta: 'Review billing',
+      },
+      {
+        title: 'Utilisation analytics',
+        microcopy: 'Track workload, acceptance, and completion performance.',
+        details: ['Utilisation trends', 'Conversion and SLA metrics'],
+        cta: 'View analytics',
+      },
+    ],
+  },
+  {
+    id: 'provider-admin',
+    label: 'Provider Admin',
+    goal: 'Set coverage, credentials, inspector roster, and billing/payout controls.',
+    steps: [
+      {
+        title: 'Provider profile',
+        microcopy: 'Configure service coverage by asset class and regime.',
+        details: ['Coverage regions', 'Asset-class capabilities'],
+        cta: 'Save provider profile',
+      },
+      {
+        title: 'Credentials and accreditation',
+        microcopy: 'Upload competence records, insurance, and accreditation evidence.',
+        details: ['UKAS/accreditation records', 'Insurance documentation'],
+        cta: 'Submit credentials',
+      },
+      {
+        title: 'Inspector roster',
+        microcopy: 'Manage named inspectors and availability windows.',
+        details: ['Inspector assignment rules', 'Availability and leave data'],
+        cta: 'Update roster',
+      },
+      {
+        title: 'Rate cards + minimums',
+        microcopy: 'Configure pricing by regime, location, and urgency.',
+        details: ['Regional cards', 'Minimum callout and travel rules'],
+        cta: 'Publish rates',
+      },
+      {
+        title: 'Mobile capture and templates',
+        microcopy: 'Map report templates and evidence schema to delivery standards.',
+        details: ['Template mapping', 'Mandatory evidence blocks'],
+        cta: 'Enable templates',
+      },
+      {
+        title: 'Billing and payout settings',
+        microcopy: 'Set invoicing and remittance preferences.',
+        details: ['Invoice contacts', 'Bank and payout settings'],
+        cta: 'Save billing settings',
+      },
+    ],
+  },
+  {
+    id: 'finance-purchasing',
+    label: 'Finance & Purchasing',
+    goal: 'Control PO workflows, approvals, VAT invoices, and cost allocation.',
+    steps: [
+      {
+        title: 'Procurement rules',
+        microcopy: 'Define PO requirements and approval thresholds.',
+        details: ['PO mandatory/optional', 'Approver chain thresholds'],
+        cta: 'Save rules',
+      },
+      {
+        title: 'Supplier/payee setup',
+        microcopy: 'Map suppliers, payees, and cost centre defaults.',
+        details: ['Supplier profiles', 'Payee and ledger mapping'],
+        cta: 'Configure suppliers',
+      },
+      {
+        title: 'Invoice approval queue',
+        microcopy: 'Approve or hold invoices with policy checks and context.',
+        details: ['Policy exceptions', 'Approval history'],
+        cta: 'Review invoices',
+      },
+      {
+        title: 'VAT invoice downloads',
+        microcopy: 'Download VAT-ready invoices with complete reference fields.',
+        details: ['VAT fields and PO references', 'Download archive'],
+        cta: 'Download VAT invoices',
+      },
+      {
+        title: 'Exports and ERP sync',
+        microcopy: 'Push reconciled billing data to finance systems.',
+        details: ['CSV export', 'ERP sync handoff'],
+        cta: 'Export data',
+      },
+    ],
+  },
+];
+
+const ONBOARDING_TRACKS = [
+  {
+    id: 'company',
+    title: 'Company onboarding baseline',
+    summary: 'Minimum data capture for operator launch.',
+    checks: [
+      'Organisation identity, VAT status, invoice email, procurement rules',
+      'Sites with access constraints and operating windows',
+      'Asset register ingest and role assignment',
+      'Default SLAs plus evidence preferences',
+    ],
+  },
+  {
+    id: 'auditor',
+    title: 'Auditor vetting baseline',
+    summary: 'KYC, credentials, and manual quality workflow.',
+    checks: [
+      'Identity + legal business details',
+      'Credentials and sample audit output',
+      'Coverage and travel profile',
+      'Automated document presence/expiry checks',
+      'Manual review interview and reference verification',
+    ],
+  },
+  {
+    id: 'provider',
+    title: 'Provider competence baseline',
+    summary: 'Provider onboarding plus inspector/coverage controls.',
+    checks: [
+      'Inspector roster with named competence',
+      'Regime + asset class mapping',
+      'Template-field mapping (including LOLER/PSSR required fields)',
+      'Accreditation and insurance validation',
+    ],
+  },
+];
+
+const defaultIntegrationConnections = [
+  { id: 'INT-ERP-SAP', name: 'SAP S/4HANA', category: 'ERP', status: 'not_connected', endpoint: '', lastSyncAt: '' },
+  { id: 'INT-CMMS-MAXIMO', name: 'IBM Maximo', category: 'CMMS', status: 'not_connected', endpoint: '', lastSyncAt: '' },
+  { id: 'INT-EAM-MAINTAINX', name: 'MaintainX', category: 'EAM', status: 'not_connected', endpoint: '', lastSyncAt: '' },
+];
+
+const defaultLicenceGrants = [
+  {
+    id: 'LIC-0001',
+    listingId: 'LST-0001',
+    buyerOrgId: 'acme-logistics',
+    licenceType: 'multi_use',
+    seats: 25,
+    usesRemaining: null,
+    allowedExports: ['pdf', 'json', 'csv'],
+    watermarkRules: 'none',
+    canFork: false,
+    startAt: '2026-02-15T00:00:00Z',
+    endAt: '2027-02-15T00:00:00Z',
+  },
+];
+
+const defaultAuditRuns = [
+  {
+    id: 'RUN-0001',
+    auditJobId: 'JOB-1003',
+    templateId: 'TPLX-0001',
+    templateVersion: '1.1',
+    startedAt: '2026-02-16T08:30:00Z',
+    completedAt: '2026-02-16T10:40:00Z',
+    status: 'completed',
+    offlineSyncState: 'synced',
+    gpsPolicy: 'optional',
+    requiredEvidenceRemaining: 0,
+    requiredSignaturesRemaining: 0,
+  },
+];
+
+const defaultAuditFindings = [
+  {
+    id: 'FND-0001',
+    auditRunId: 'RUN-0001',
+    severity: 'high',
+    taxonomyCode: 'HS-EGRESS',
+    description: 'Emergency egress route partially obstructed near loading bay.',
+    linkedBlockId: 'blk_egress_01',
+    photos: 2,
+    riskScore: 16,
+    status: 'open',
+  },
+];
+
+const defaultAuditActions = [
+  {
+    id: 'ACT-0001',
+    findingId: 'FND-0001',
+    assignee: 'Site Manager',
+    dueDate: '2026-03-01',
+    status: 'open',
+    evidenceRequired: true,
+    closureSignoff: 'auditor',
+    closureEvidenceCount: 0,
+  },
+];
+
+const defaultReportArtifacts = [
+  {
+    id: 'RPT-0001',
+    auditRunId: 'RUN-0001',
+    version: 1,
+    pdfUri: 'storage://certex-reports/RUN-0001/v1/report.pdf',
+    htmlUri: 'storage://certex-reports/RUN-0001/v1/report.html',
+    hash: 'sha256:run0001v1',
+    signature: 'sig:certex:run0001:v1',
+    status: 'valid',
+    signedPdfUrl: 'https://signed.certex.example/reports/RUN-0001/v1.pdf',
+    signedHtmlUrl: 'https://signed.certex.example/reports/RUN-0001/v1.html',
+    createdAt: '2026-02-16T10:45:00Z',
+  },
+];
+
+const defaultShareLinks = [
+  {
+    id: 'SHR-0001',
+    reportArtifactId: 'RPT-0001',
+    scopeJson: '{"site":"Birmingham Whse","regime":"LOLER"}',
+    expiresAt: '2026-03-16T10:45:00Z',
+    accessPolicy: 'read_only',
+    auditLogEnabled: true,
+    url: 'https://portal.certex.example/share/SHR-0001',
+  },
+];
+
+function parseISODate(value) {
+  if (!value || typeof value !== 'string') {
+    return null;
+  }
+
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  const parsed = new Date(year, month - 1, day);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function daysUntil(dateString) {
+  const dueDate = parseISODate(dateString);
+  if (!dueDate) {
+    return null;
+  }
+
+  const today = startOfToday();
+  const msInDay = 1000 * 60 * 60 * 24;
+  return Math.ceil((dueDate.getTime() - today.getTime()) / msInDay);
+}
+
+function deriveAssetStatus(nextDue) {
+  const delta = daysUntil(nextDue);
+
+  if (delta === null) {
+    return 'warning';
+  }
+
+  if (delta < 0) {
+    return 'overdue';
+  }
+
+  if (delta <= 30) {
+    return 'warning';
+  }
+
+  return 'compliant';
+}
+
+function deriveCertificateStatus(expiryDate) {
+  const delta = daysUntil(expiryDate);
+  if (delta === null) {
+    return 'expired';
+  }
+  return delta < 0 ? 'expired' : 'valid';
+}
+
+function formatDateLabel(dateString) {
+  const date = parseISODate(dateString);
+  if (!date) {
+    return 'Invalid date';
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+function formatRelativeDueLabel(dateString) {
+  const delta = daysUntil(dateString);
+  if (delta === null) {
+    return 'Date unknown';
+  }
+  if (delta < 0) {
+    const absolute = Math.abs(delta);
+    return absolute === 1 ? '1 day overdue' : `${absolute} days overdue`;
+  }
+  if (delta === 0) {
+    return 'Due today';
+  }
+  if (delta === 1) {
+    return 'Due tomorrow';
+  }
+  return `${delta} days remaining`;
+}
+
+function getAppBaseUrl() {
+  if (typeof window === 'undefined') {
+    return 'https://app.certex.local';
+  }
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+function buildAssetDeepLink(assetId) {
+  return `${getAppBaseUrl()}#asset=${encodeURIComponent(String(assetId || '').trim())}`;
+}
+
+function buildCertificateDeepLink(certificateId) {
+  return `${getAppBaseUrl()}#certificate=${encodeURIComponent(String(certificateId || '').trim())}`;
+}
+
+function parseCertexScanValue(rawValue) {
+  const value = String(rawValue || '').trim();
+  if (!value) {
+    return null;
+  }
+
+  const parseCandidate = (candidate) => {
+    const normalized = String(candidate || '').trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const assetMatch = normalized.match(/AST-\d{3,}/i);
+    if (assetMatch) {
+      return { type: 'asset', id: assetMatch[0].toUpperCase() };
+    }
+
+    const certificateMatch = normalized.match(/CERT-\d{4}-\d{3,}/i);
+    if (certificateMatch) {
+      return { type: 'certificate', id: certificateMatch[0].toUpperCase() };
+    }
+
+    return null;
+  };
+
+  const directMatch = parseCandidate(value);
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const hashValue = value.replace(/^#/, '');
+  if (hashValue) {
+    const hashParams = new URLSearchParams(hashValue);
+    const hashAsset = hashParams.get('asset') || hashParams.get('assetId');
+    if (hashAsset) {
+      const parsedAsset = parseCandidate(hashAsset);
+      if (parsedAsset) {
+        return parsedAsset;
+      }
+    }
+    const hashCertificate = hashParams.get('certificate') || hashParams.get('certificateId') || hashParams.get('cert');
+    if (hashCertificate) {
+      const parsedCertificate = parseCandidate(hashCertificate);
+      if (parsedCertificate) {
+        return parsedCertificate;
+      }
+    }
+  }
+
+  try {
+    const parsedUrl = new URL(value);
+    const searchAsset = parsedUrl.searchParams.get('asset') || parsedUrl.searchParams.get('assetId');
+    if (searchAsset) {
+      const parsedAsset = parseCandidate(searchAsset);
+      if (parsedAsset) {
+        return parsedAsset;
+      }
+    }
+
+    const searchCertificate =
+      parsedUrl.searchParams.get('certificate') ||
+      parsedUrl.searchParams.get('certificateId') ||
+      parsedUrl.searchParams.get('cert');
+    if (searchCertificate) {
+      const parsedCertificate = parseCandidate(searchCertificate);
+      if (parsedCertificate) {
+        return parsedCertificate;
+      }
+    }
+
+    const urlHash = parsedUrl.hash.replace(/^#/, '');
+    if (urlHash) {
+      const parsedHash = parseCertexScanValue(urlHash);
+      if (parsedHash) {
+        return parsedHash;
+      }
+    }
+  } catch {
+    // Value is not a URL.
+  }
+
+  return null;
+}
+
+function extractBarcodeRawValue(detection) {
+  if (!detection || typeof detection !== 'object') {
+    return '';
+  }
+
+  const candidates = [
+    detection.rawValue,
+    detection.displayValue,
+    detection.value,
+    detection.rawData,
+  ];
+
+  const firstReadable = candidates.find(
+    (candidate) => typeof candidate === 'string' && candidate.trim().length > 0
+  );
+
+  return firstReadable ? firstReadable.trim() : '';
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function createPseudoHash(input) {
+  const source = String(input || '');
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash << 5) - hash + source.charCodeAt(index);
+    hash |= 0;
+  }
+  const first = Math.abs(hash).toString(16).padStart(8, '0');
+  const second = Math.abs(hash * 2654435761).toString(16).padStart(8, '0');
+  return `${first.slice(0, 4)}...${second.slice(-4)}`;
+}
+
+function downloadAuditPackPdf({ assets, certificates }) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 44;
+  let y = margin + 18;
+
+  const pushRow = (text, spacing = 18, options = {}) => {
+    if (y + spacing > pageHeight - margin) {
+      doc.addPage();
+      y = margin + 8;
+    }
+    doc.text(text, margin, y, options);
+    y += spacing;
+  };
+
+  const compliantCount = assets.filter((asset) => asset.status === 'compliant').length;
+  const warningCount = assets.filter((asset) => asset.status === 'warning').length;
+  const overdueCount = assets.filter((asset) => asset.status === 'overdue').length;
+  const validCertificates = certificates.filter((certificate) => certificate.status === 'valid').length;
+  const expiredCertificates = certificates.filter((certificate) => certificate.status !== 'valid').length;
+
+  doc.setFillColor(236, 254, 255);
+  doc.rect(0, 0, pageWidth, 110, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(22);
+  doc.setTextColor(15, 23, 42);
+  doc.text('CertEx Audit Pack', margin, 56);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Generated ${new Date().toLocaleString('en-GB')}`, margin, 76);
+  doc.text('Organisation: Acme Logistics', margin, 92);
+
+  y = 145;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(15, 23, 42);
+  pushRow('Estate Summary', 20);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  pushRow(`Assets total: ${assets.length}`);
+  pushRow(`Compliant: ${compliantCount} | Warning: ${warningCount} | Overdue: ${overdueCount}`);
+  pushRow(`Certificates valid: ${validCertificates} | Expired: ${expiredCertificates}`);
+
+  y += 8;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  pushRow('Asset Status Detail', 20);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10.5);
+  assets.forEach((asset) => {
+    pushRow(
+      `${asset.id} | ${asset.name} | ${asset.site} | ${asset.regime} | Due ${asset.nextDue} | ${asset.status.toUpperCase()}`,
+      16
+    );
+  });
+
+  doc.addPage();
+  y = margin + 18;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  pushRow('Certificate Register', 20);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10.5);
+  certificates.forEach((certificate) => {
+    pushRow(
+      `${certificate.id} | ${certificate.assetId} | ${certificate.provider} | Issue ${certificate.issueDate} | Expiry ${certificate.expiryDate} | ${certificate.status.toUpperCase()}`,
+      16
+    );
+    pushRow(`  Hash ${certificate.hash}`, 15);
+  });
+
+  doc.save(`CertEx-Audit-Pack-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+function downloadCertificatePdf(certificate) {
+  if (!certificate) {
+    return;
+  }
+
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const width = doc.internal.pageSize.getWidth();
+  const margin = 46;
+  const bodyWidth = width - margin * 2;
+  const statusLabel = certificate.status === 'valid' ? 'Valid' : 'Expired';
+
+  doc.setFillColor(239, 246, 255);
+  doc.rect(0, 0, width, 124, 'F');
+  doc.setDrawColor(6, 182, 212);
+  doc.setLineWidth(1.6);
+  doc.roundedRect(margin, margin, bodyWidth, 500, 14, 14, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(25);
+  doc.setTextColor(15, 23, 42);
+  doc.text('CertEx Certificate', margin + 18, 82);
+  doc.setFontSize(10.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Platform-issued compliance evidence', margin + 18, 102);
+  doc.text(`Certificate ID: ${certificate.id}`, width - margin - 195, 82);
+  doc.text(`Status: ${statusLabel}`, width - margin - 195, 100);
+
+  let y = 158;
+  const row = (label, value) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text(label, margin + 18, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(value || '-'), margin + 150, y);
+    y += 28;
+  };
+
+  row('Asset ID', certificate.assetId);
+  row('Asset Name', certificate.assetName);
+  row('Regime', certificate.regime);
+  row('Issued By', certificate.provider);
+  row('Issue Date', formatDateLabel(certificate.issueDate));
+  row('Expiry Date', formatDateLabel(certificate.expiryDate));
+  row('SHA-256 Fingerprint', certificate.hash);
+  row('Verification URL', buildCertificateDeepLink(certificate.id));
+
+  y += 24;
+  doc.setDrawColor(148, 163, 184);
+  doc.setLineWidth(1);
+  doc.line(margin + 18, y, margin + 210, y);
+  doc.line(width - margin - 210, y, width - margin - 18, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text('Provider signature', margin + 18, y + 14);
+  doc.text('CertEx verification stamp', width - margin - 210, y + 14);
+
+  doc.setFontSize(9);
+  doc.text(
+    `Generated ${new Date().toLocaleString('en-GB')} by CertEx`,
+    margin + 18,
+    565
+  );
+
+  doc.save(`${certificate.id}.pdf`);
+}
+
+function buildTrendPoints(baseValue, count = 12) {
+  return Array.from({ length: count }).map((_, index) => {
+    const oscillation = Math.sin((index + 1) * 0.8) * 6;
+    const lift = (index / count) * 3;
+    return Math.max(52, Math.min(100, Math.round(baseValue - 5 + oscillation + lift)));
+  });
+}
+
+const MARKETPLACE_SCOPE_TEMPLATES = [
+  {
+    id: 'portfolio_sweep',
+    label: 'Portfolio Sweep',
+    description: 'Standard recurring compliance checks across known assets.',
+    baseHours: 1.8,
+    perAssetHours: 0.7,
+  },
+  {
+    id: 'urgent_defect_followup',
+    label: 'Urgent Defect Follow-up',
+    description: 'Fast verification after a high-severity defect finding.',
+    baseHours: 2.2,
+    perAssetHours: 0.9,
+  },
+  {
+    id: 'insurer_verification',
+    label: 'Insurer Verification',
+    description: 'Evidence-heavy validation for insurer/auditor requests.',
+    baseHours: 2.6,
+    perAssetHours: 1.1,
+  },
+  {
+    id: 'written_scheme_review',
+    label: 'Written Scheme Review',
+    description: 'PSSR focused scope including WSE checks and signatures.',
+    baseHours: 3.1,
+    perAssetHours: 1.2,
+  },
+];
+
+const ACCESS_COMPLEXITY_MULTIPLIERS = {
+  standard: 1,
+  restricted: 1.22,
+  out_of_hours: 1,
+};
+
+const EQUIPMENT_SURCHARGES = {
+  none: 0,
+  specialist_instruments: 120,
+  rope_access: 160,
+  confined_space: 210,
+};
+
+const REGIME_MULTIPLIERS = {
+  LOLER: 1,
+  PUWER: 0.94,
+  PSSR: 1.16,
+};
+
+const REGION_HOURLY_RATE = {
+  london: 96,
+  manchester: 86,
+  birmingham: 84,
+  other: 82,
+};
+
+const DEFAULT_RATE_CARD = {
+  hourlyRate: 88,
+  minimumCallout: 200,
+  travelPerKm: 1.25,
+  platformFeePct: 0.45,
+};
+
+const DEFAULT_PRICING_MODEL_VERSION = 'pricing-model-2026-02-22-v6';
+const DEFAULT_VAT_RATE = 0.2;
+const PRICING_ENGINE_CONFIG = {
+  travelTimeMultiplier: 0.6,
+  customerMileageRatePerMile: 1.45,
+  auditorMileageRatePerMile: 0.95,
+  minAuditorHourlyRate: 25,
+  maxAuditorHourlyRate: 50,
+  defaultAuditorPerformanceIndex: 0.56,
+  minAuditorBillableHours: 2,
+  auditorEquipmentPayoutRatio: 0.4,
+  baseTakeRate: 0.46,
+  urgencyTakeRateDelta: 0.05,
+  sweepTakeRateUpliftPerExtraAsset: 0.01,
+  sweepTakeRateUpliftCap: 0.05,
+  portfolioSweepAssetMultiplierPerExtraAsset: 0.1,
+  portfolioSweepAssetMultiplierCap: 0.5,
+  takeRateFloor: 0.3,
+  premiumTakeRateFloor: 0.4,
+  takeRateCeiling: 0.85,
+  marketHourlyRateByRegime: {
+    LOLER: 128,
+    PUWER: 118,
+    PSSR: 148,
+  },
+  marketOpsPremiumPct: 0.08,
+  marketOpsPremiumPctPremium: 0.12,
+  urgencyLabourMultiplier: 1.25,
+  outOfHoursLabourMultiplier: 1.5,
+  holdbackPct: 0.05,
+  disputeReservePct: 0.015,
+  externalSoftwareWithholdPct: 0.03,
+};
+
+function roundMoney(value) {
+  return Math.round(Number(value || 0));
+}
+
+function clampNumber(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function formatCurrencyGBP(value) {
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
+}
+
+function formatPercentage(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
+function normalizeUserRole(value, fallback = 'company') {
+  const role = String(value || '').toLowerCase();
+  return USER_ROLE_OPTIONS.some((option) => option.id === role) ? role : fallback;
+}
+
+function normalizeAuditExecutionMode(value) {
+  return String(value || '').toLowerCase() === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+    ? AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+    : AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE;
+}
+
+function resolveExternalAuditReviewStatus(job, executionMode = normalizeAuditExecutionMode(job?.auditExecutionMode)) {
+  if (executionMode !== AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE) {
+    return EXTERNAL_AUDIT_REVIEW_STATUSES.NOT_REQUIRED;
+  }
+
+  const requestedStatus = String(job?.externalAuditReviewStatus || '').toLowerCase();
+  if (Object.values(EXTERNAL_AUDIT_REVIEW_STATUSES).includes(requestedStatus)) {
+    return requestedStatus;
+  }
+
+  if (job?.status === 'completed') {
+    return EXTERNAL_AUDIT_REVIEW_STATUSES.APPROVED;
+  }
+  if (job?.status === 'awaiting_review') {
+    return EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_REVIEW;
+  }
+  if (Array.isArray(job?.documents) && job.documents.length > 0) {
+    return EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_REVIEW;
+  }
+
+  return EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_EVIDENCE;
+}
+
+function getExternalAuditReviewStatusLabel(value) {
+  const status = String(value || '').toLowerCase();
+  const labels = {
+    [EXTERNAL_AUDIT_REVIEW_STATUSES.NOT_REQUIRED]: 'Not required',
+    [EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_EVIDENCE]: 'Awaiting evidence',
+    [EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_REVIEW]: 'Pending Certex review',
+    [EXTERNAL_AUDIT_REVIEW_STATUSES.APPROVED]: 'Approved',
+    [EXTERNAL_AUDIT_REVIEW_STATUSES.REJECTED]: 'Changes required',
+  };
+  return labels[status] || 'Pending review';
+}
+
+function getAuditExecutionModeLabel(value) {
+  return normalizeAuditExecutionMode(value) === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+    ? 'Auditor software'
+    : 'Certex template';
+}
+
+function formatDateTimeLabel(value) {
+  if (!value) {
+    return 'n/a';
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return 'n/a';
+  }
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
+}
+
+function minutesUntil(value, nowTimestamp = Date.now()) {
+  if (!value) {
+    return null;
+  }
+  const target = new Date(value).getTime();
+  if (Number.isNaN(target)) {
+    return null;
+  }
+  return Math.floor((target - nowTimestamp) / 60000);
+}
+
+function getScopeTemplate(scopeTemplateId) {
+  return (
+    MARKETPLACE_SCOPE_TEMPLATES.find((template) => template.id === scopeTemplateId) ||
+    MARKETPLACE_SCOPE_TEMPLATES[0]
+  );
+}
+
+function getScopeTemplateLabel(scopeTemplateId) {
+  return getScopeTemplate(scopeTemplateId)?.label || 'Audit scope';
+}
+
+function estimateScopeHours(scopeTemplateId, assetCount, weekendAccess) {
+  const template = getScopeTemplate(scopeTemplateId);
+  const safeAssetCount = Math.max(1, Number(assetCount || 1));
+  const base = template.baseHours + (safeAssetCount - 1) * template.perAssetHours;
+  const weekendAdjustment = weekendAccess ? 0.35 : 0;
+  return Math.max(1.5, Math.round((base + weekendAdjustment) * 10) / 10);
+}
+
+function buildMarketplaceQuoteId(jobId, version) {
+  const safeJobId = String(jobId || 'TMP').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  return `QTE-${safeJobId}-V${String(Math.max(1, Number(version || 1))).padStart(2, '0')}`;
+}
+
+function buildMarketplaceRateCardVersionId(regime, site) {
+  const region = getSiteRegion(site);
+  return `rc-${region}-${String(regime || 'LOLER').toLowerCase()}-v1`;
+}
+
+function getNextWeeklyPayoutDate(fromDate = new Date()) {
+  const target = new Date(fromDate);
+  target.setHours(0, 0, 0, 0);
+  const day = target.getDay();
+  let delta = (5 - day + 7) % 7;
+  if (delta === 0) {
+    delta = 7;
+  }
+  target.setDate(target.getDate() + delta);
+  return target.toISOString().slice(0, 10);
+}
+
+function addDays(dateString, days) {
+  const parsed = parseISODate(dateString);
+  if (!parsed) {
+    return dateString;
+  }
+  parsed.setDate(parsed.getDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function buildMarketplacePricingLock({ jobId, quote, lockedAt, lockedBy }) {
+  if (!quote) {
+    return null;
+  }
+
+  const lockTimestamp = lockedAt || new Date().toISOString();
+  return {
+    pricingLockId: `LOCK-${jobId}-${quote.quoteVersion}`,
+    bookingId: `BOOK-${jobId}`,
+    quoteId: quote.quoteId,
+    lockedAt: lockTimestamp,
+    lockedBy: lockedBy || 'Certex Dispatch Engine',
+  };
+}
+
+function resolveExternalSoftwareWithholdPct(job, fallback = PRICING_ENGINE_CONFIG.externalSoftwareWithholdPct) {
+  if (normalizeAuditExecutionMode(job?.auditExecutionMode) !== AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE) {
+    return 0;
+  }
+  const configuredValue = Number(job?.externalSoftwareWithholdPct);
+  const resolved = Number.isFinite(configuredValue) ? configuredValue : Number(fallback || 0);
+  return clampNumber(resolved, 0, 0.25);
+}
+
+function getAuditorPayoutOptions(pricing, externalSoftwareWithholdPct = PRICING_ENGINE_CONFIG.externalSoftwareWithholdPct) {
+  const certexTemplateExVat = roundMoney(pricing?.providerPayoutExVat || 0);
+  const ownSoftwareExVat = roundMoney(certexTemplateExVat * (1 - clampNumber(externalSoftwareWithholdPct, 0, 0.25)));
+  return {
+    certexTemplateExVat,
+    ownSoftwareExVat,
+    minExVat: Math.min(certexTemplateExVat, ownSoftwareExVat),
+    maxExVat: Math.max(certexTemplateExVat, ownSoftwareExVat),
+  };
+}
+
+function buildMarketplaceSettlement(pricing, options = {}) {
+  if (!pricing) {
+    return null;
+  }
+
+  const completedAt = options.completedAt ? new Date(options.completedAt) : new Date();
+  const scheduledPayoutDate = getNextWeeklyPayoutDate(completedAt);
+  const holdbackReleaseDate = addDays(scheduledPayoutDate, 10);
+  const externalSoftwareWithholdPct = clampNumber(Number(options.externalSoftwareWithholdPct || 0), 0, 0.25);
+  const holdbackAmount = roundMoney(pricing.providerPayoutExVat * PRICING_ENGINE_CONFIG.holdbackPct);
+  const disputeReserveAmount = roundMoney(pricing.providerPayoutExVat * PRICING_ENGINE_CONFIG.disputeReservePct);
+  const externalSoftwareWithholdAmount = roundMoney(pricing.providerPayoutExVat * externalSoftwareWithholdPct);
+  const grossProviderAmount = pricing.providerPayoutExVat + pricing.providerVatAmount;
+
+  return {
+    payoutEvent: 'EVIDENCE_ISSUED',
+    payoutStatus: options.payoutStatus || 'pending_completion',
+    holdbackPct: PRICING_ENGINE_CONFIG.holdbackPct,
+    disputeReservePct: PRICING_ENGINE_CONFIG.disputeReservePct,
+    externalSoftwareWithholdPct,
+    holdbackAmount,
+    disputeReserveAmount,
+    externalSoftwareWithholdAmount,
+    providerAmountExVat: pricing.providerPayoutExVat,
+    providerVatAmount: pricing.providerVatAmount,
+    platformFeeExVat: pricing.platformFeeExVat,
+    platformVatAmount: pricing.platformVatAmount,
+    netProviderScheduled: roundMoney(
+      Math.max(0, grossProviderAmount - holdbackAmount - disputeReserveAmount - externalSoftwareWithholdAmount)
+    ),
+    scheduledPayoutDate: options.scheduledPayoutDate || scheduledPayoutDate,
+    holdbackReleaseDate: options.holdbackReleaseDate || holdbackReleaseDate,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function buildDefaultMarketplaceScope() {
+  return {
+    template: 'portfolio_sweep',
+    assetCount: 1,
+    estimatedHours: 2,
+    complexity: 'standard',
+    equipment: 'none',
+    travelKm: 12,
+    weekendAccess: false,
+    expedite: false,
+  };
+}
+
+function normalizeMarketplaceScope(scope) {
+  const fallback = buildDefaultMarketplaceScope();
+  const nextScope = scope && typeof scope === 'object' ? scope : fallback;
+  return {
+    template: nextScope.template || fallback.template,
+    assetCount: Math.max(1, Number(nextScope.assetCount || fallback.assetCount)),
+    estimatedHours: Math.max(1, Number(nextScope.estimatedHours || fallback.estimatedHours)),
+    complexity: nextScope.complexity || fallback.complexity,
+    equipment: nextScope.equipment || fallback.equipment,
+    travelKm: Math.max(0, Number(nextScope.travelKm || fallback.travelKm)),
+    weekendAccess: Boolean(nextScope.weekendAccess),
+    expedite: Boolean(nextScope.expedite),
+  };
+}
+
+function resolveMinimumTakeRate(scope) {
+  if (!scope || typeof scope !== 'object') {
+    return PRICING_ENGINE_CONFIG.takeRateFloor;
+  }
+
+  if (
+    scope.expedite ||
+    scope.weekendAccess ||
+    scope.complexity === 'restricted' ||
+    scope.complexity === 'out_of_hours'
+  ) {
+    return PRICING_ENGINE_CONFIG.premiumTakeRateFloor;
+  }
+
+  return PRICING_ENGINE_CONFIG.takeRateFloor;
+}
+
+function computeAuditorPerformanceIndex(auditor) {
+  if (!auditor || typeof auditor !== 'object') {
+    return PRICING_ENGINE_CONFIG.defaultAuditorPerformanceIndex;
+  }
+
+  const ratingScore = clampNumber((Number(auditor.rating || 4.2) - 3.5) / 1.5, 0, 1);
+  const completionScore = clampNumber((Number(auditor.completionRate || 94) - 85) / 15, 0, 1);
+  const responseScore = clampNumber((120 - Number(auditor.avgResponseMins || 80)) / 90, 0, 1);
+  const maxConcurrentJobs = Math.max(1, Number(auditor.maxConcurrentJobs || 8));
+  const loadScore = clampNumber(1 - Number(auditor.activeJobs || 0) / maxConcurrentJobs, 0, 1);
+
+  return Number((ratingScore * 0.4 + completionScore * 0.3 + responseScore * 0.2 + loadScore * 0.1).toFixed(3));
+}
+
+function resolveAuditorHourlyRate({ auditor, travelMiles, isOutOfHours, isExpedite, siteRegion }) {
+  const performanceIndex = computeAuditorPerformanceIndex(auditor);
+  const distanceScore = clampNumber(Number(travelMiles || 0) / 45, 0, 1);
+  const regionalAcceptanceScore = auditor
+    ? getSiteRegion(auditor.baseLocation) === siteRegion
+      ? 0.04
+      : 0.1
+    : 0.06;
+  const urgencyScore = isExpedite ? 0.08 : 0;
+  const outOfHoursScore = isOutOfHours ? 0.07 : 0;
+  const blendedIndex = clampNumber(
+    performanceIndex * 0.65 + distanceScore * 0.2 + regionalAcceptanceScore + urgencyScore + outOfHoursScore,
+    0,
+    1
+  );
+  const hourlyRate = clampNumber(
+    PRICING_ENGINE_CONFIG.minAuditorHourlyRate +
+      (PRICING_ENGINE_CONFIG.maxAuditorHourlyRate - PRICING_ENGINE_CONFIG.minAuditorHourlyRate) * blendedIndex,
+    PRICING_ENGINE_CONFIG.minAuditorHourlyRate,
+    PRICING_ENGINE_CONFIG.maxAuditorHourlyRate
+  );
+
+  return {
+    auditorHourlyRate: Number(hourlyRate.toFixed(2)),
+    auditorPerformanceIndex: performanceIndex,
+    hourlyBandIndex: Number(blendedIndex.toFixed(3)),
+  };
+}
+
+function calculateMarketplaceQuote({ scope, regime, site, auditor = null }) {
+  const normalizedScope = normalizeMarketplaceScope(scope);
+  const complexityMultiplier =
+    ACCESS_COMPLEXITY_MULTIPLIERS[normalizedScope.complexity] || ACCESS_COMPLEXITY_MULTIPLIERS.standard;
+  const equipmentSurcharge = EQUIPMENT_SURCHARGES[normalizedScope.equipment] || 0;
+  const regimeMultiplier = REGIME_MULTIPLIERS[regime] || 1;
+  const siteRegion = getSiteRegion(site);
+  const isOutOfHours = normalizedScope.complexity === 'out_of_hours' || normalizedScope.weekendAccess;
+  const isPortfolioSweep = normalizedScope.template === 'portfolio_sweep';
+  const extraAssetCount = Math.max(0, normalizedScope.assetCount - 1);
+  const portfolioSweepMultiplier = isPortfolioSweep
+    ? 1 +
+      Math.min(
+        PRICING_ENGINE_CONFIG.portfolioSweepAssetMultiplierCap,
+        extraAssetCount * PRICING_ENGINE_CONFIG.portfolioSweepAssetMultiplierPerExtraAsset
+      )
+    : 1;
+  const urgencyMultiplier = normalizedScope.expedite ? PRICING_ENGINE_CONFIG.urgencyLabourMultiplier : 1;
+  const outOfHoursMultiplier = isOutOfHours ? PRICING_ENGINE_CONFIG.outOfHoursLabourMultiplier : 1;
+  const regimeHoursMultiplier =
+    regime === 'PSSR'
+      ? 1.18
+      : regime === 'PUWER'
+        ? 0.96
+        : 1;
+
+  const travelMiles = normalizedScope.travelKm * 0.621371;
+  const travelHours = travelMiles / 28;
+  const chargeableTravelHours = travelHours * PRICING_ENGINE_CONFIG.travelTimeMultiplier;
+  const onSiteHours = normalizedScope.estimatedHours;
+  const chargeableHours = onSiteHours + chargeableTravelHours;
+  const billableHours = Math.max(
+    PRICING_ENGINE_CONFIG.minAuditorBillableHours,
+    chargeableHours * complexityMultiplier * regimeHoursMultiplier * portfolioSweepMultiplier
+  );
+  const { auditorHourlyRate, auditorPerformanceIndex, hourlyBandIndex } = resolveAuditorHourlyRate({
+    auditor,
+    travelMiles,
+    isOutOfHours,
+    isExpedite: normalizedScope.expedite,
+    siteRegion,
+  });
+  const auditorBaseLabourPayout = roundMoney(billableHours * auditorHourlyRate);
+  const urgencySurcharge = roundMoney(auditorBaseLabourPayout * (urgencyMultiplier - 1));
+  const outOfHoursSurcharge = roundMoney((auditorBaseLabourPayout + urgencySurcharge) * (outOfHoursMultiplier - 1));
+  const auditorLabourPayout = auditorBaseLabourPayout + urgencySurcharge + outOfHoursSurcharge;
+  const customerTravel = roundMoney(travelMiles * PRICING_ENGINE_CONFIG.customerMileageRatePerMile);
+  const auditorTravelPayout = roundMoney(travelMiles * PRICING_ENGINE_CONFIG.auditorMileageRatePerMile);
+  const customerEquipmentCharge = roundMoney(equipmentSurcharge * portfolioSweepMultiplier);
+  const auditorEquipmentPayout = roundMoney(customerEquipmentCharge * PRICING_ENGINE_CONFIG.auditorEquipmentPayoutRatio);
+  const providerCompCore = auditorLabourPayout + auditorEquipmentPayout;
+  const providerComp = providerCompCore + auditorTravelPayout;
+
+  const minimumTakeRate = resolveMinimumTakeRate(normalizedScope);
+  const baseTakeRate = clampNumber(
+    PRICING_ENGINE_CONFIG.baseTakeRate + (normalizedScope.expedite ? PRICING_ENGINE_CONFIG.urgencyTakeRateDelta : 0),
+    minimumTakeRate,
+    PRICING_ENGINE_CONFIG.takeRateCeiling
+  );
+  const sweepTakeRateUplift = isPortfolioSweep
+    ? Math.min(
+        PRICING_ENGINE_CONFIG.sweepTakeRateUpliftCap,
+        extraAssetCount * PRICING_ENGINE_CONFIG.sweepTakeRateUpliftPerExtraAsset
+      )
+    : 0;
+  const effectiveTargetTakeRate = clampNumber(
+    baseTakeRate + sweepTakeRateUplift,
+    minimumTakeRate,
+    PRICING_ENGINE_CONFIG.takeRateCeiling
+  );
+
+  const platformFeeCoreNoSweepRaw = providerCompCore / (1 - baseTakeRate) - providerCompCore;
+  const platformFeeCoreNoSweep = roundMoney(Math.max(0, platformFeeCoreNoSweepRaw));
+  const platformFeeCoreTargetRaw = providerCompCore / (1 - effectiveTargetTakeRate) - providerCompCore;
+  const platformFeeCoreTarget = roundMoney(Math.max(0, platformFeeCoreTargetRaw));
+  const travelMargin = Math.max(0, customerTravel - auditorTravelPayout);
+  const platformFeeNoSweep = roundMoney(platformFeeCoreNoSweep + travelMargin);
+  const platformFeeTarget = roundMoney(platformFeeCoreTarget + travelMargin);
+  const sweepUpsell = Math.max(0, platformFeeTarget - platformFeeNoSweep);
+
+  const marketHourlyRate = PRICING_ENGINE_CONFIG.marketHourlyRateByRegime[regime] || PRICING_ENGINE_CONFIG.marketHourlyRateByRegime.LOLER;
+  const marketLabourCharge = roundMoney(Math.max(220, billableHours * marketHourlyRate));
+  const marketOpsPremiumPct =
+    minimumTakeRate >= PRICING_ENGINE_CONFIG.premiumTakeRateFloor
+      ? PRICING_ENGINE_CONFIG.marketOpsPremiumPctPremium
+      : PRICING_ENGINE_CONFIG.marketOpsPremiumPct;
+  const marketOpsPremium = roundMoney((marketLabourCharge + customerTravel + customerEquipmentCharge) * marketOpsPremiumPct);
+  const marketSubtotalBenchmark = marketLabourCharge + customerTravel + customerEquipmentCharge + marketOpsPremium;
+  const minimumTakeSubtotal = roundMoney(providerComp / (1 - minimumTakeRate));
+  const subtotalBenchmarkFloor = Math.max(marketSubtotalBenchmark, minimumTakeSubtotal);
+  const targetSubtotalExVat = providerComp + platformFeeTarget;
+  const goingRateAlignment = Math.max(0, subtotalBenchmarkFloor - targetSubtotalExVat);
+
+  const platformFee = roundMoney(platformFeeTarget + goingRateAlignment);
+  const subtotalExVat = providerComp + platformFee;
+  const providerVatAmount = roundMoney(providerComp * DEFAULT_VAT_RATE);
+  const platformVatAmount = roundMoney(platformFee * DEFAULT_VAT_RATE);
+  const vatAmount = providerVatAmount + platformVatAmount;
+  const total = subtotalExVat + vatAmount;
+
+  const lineItems = [
+    { code: 'AUDITOR_LABOUR', label: 'Auditor labour payout', amountExVat: auditorBaseLabourPayout },
+    ...(urgencySurcharge > 0 ? [{ code: 'URGENCY', label: 'Urgency surcharge', amountExVat: urgencySurcharge }] : []),
+    ...(outOfHoursSurcharge > 0
+      ? [{ code: 'OUT_OF_HOURS', label: 'Out-of-hours surcharge', amountExVat: outOfHoursSurcharge }]
+      : []),
+    {
+      code: 'TRAVEL_MILEAGE',
+      label: `Travel mileage (customer @ £${PRICING_ENGINE_CONFIG.customerMileageRatePerMile.toFixed(2)}/mile)`,
+      amountExVat: customerTravel,
+    },
+    ...(customerEquipmentCharge > 0
+      ? [{ code: 'EQUIPMENT', label: 'Equipment surcharge', amountExVat: customerEquipmentCharge }]
+      : []),
+    {
+      code: 'SYSTEM_CHARGE',
+      label: 'Platform/documentation operations fee',
+      amountExVat: platformFeeNoSweep,
+    },
+    ...(sweepUpsell > 0 ? [{ code: 'SWEEP_UPSELL', label: 'Portfolio sweep upsell', amountExVat: sweepUpsell }] : []),
+    ...(goingRateAlignment > 0
+      ? [{ code: 'GOING_RATE_ALIGNMENT', label: 'Going-rate alignment', amountExVat: goingRateAlignment }]
+      : []),
+  ];
+
+  return {
+    labour: auditorBaseLabourPayout,
+    travel: customerTravel,
+    equipment: customerEquipmentCharge,
+    expedite: urgencySurcharge + outOfHoursSurcharge,
+    platformFee,
+    platformFeeExVat: platformFee,
+    providerPayoutExVat: providerComp,
+    auditorTravelPayoutExVat: auditorTravelPayout,
+    auditorEquipmentPayoutExVat: auditorEquipmentPayout,
+    auditorHourlyRate,
+    auditorBillableHours: Number(billableHours.toFixed(2)),
+    auditorPerformanceIndex,
+    hourlyBandIndex,
+    providerVatAmount,
+    platformVatAmount,
+    subtotalExVat,
+    vatRate: DEFAULT_VAT_RATE,
+    vatAmount,
+    total,
+    quoteVersion: 1,
+    quoteId: buildMarketplaceQuoteId('TMP', 1),
+    pricingModelVersion: DEFAULT_PRICING_MODEL_VERSION,
+    rateCardVersionId: buildMarketplaceRateCardVersionId(regime, site),
+    mappingEstimateTimestamp: new Date().toISOString(),
+    validUntil: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    routeEstimate: {
+      miles: roundMoney(travelMiles),
+      travelHours: Number(travelHours.toFixed(2)),
+      chargeableTravelHours: Number(chargeableTravelHours.toFixed(2)),
+      onSiteHours: Number(onSiteHours.toFixed(2)),
+      chargeableHours: Number(chargeableHours.toFixed(2)),
+    },
+    effectiveTakeRate: Number((platformFee / Math.max(1, subtotalExVat)).toFixed(4)),
+    assumptions: [
+      `${normalizedScope.assetCount} asset(s)`,
+      `${normalizedScope.expedite ? 'ASAP' : 'Scheduled'} dispatch`,
+      `${isOutOfHours ? 'Out-of-hours capable' : 'Weekday access'}`,
+      `Auditor payout band £${PRICING_ENGINE_CONFIG.minAuditorHourlyRate}-£${PRICING_ENGINE_CONFIG.maxAuditorHourlyRate}/hour`,
+      `Resolved payout rate £${auditorHourlyRate.toFixed(2)}/hour over ${Number(billableHours.toFixed(2))}h`,
+      `Mileage charge £${PRICING_ENGINE_CONFIG.customerMileageRatePerMile.toFixed(2)}/mile, payout £${PRICING_ENGINE_CONFIG.auditorMileageRatePerMile.toFixed(2)}/mile`,
+      `Minimum platform take ${formatPercentage(minimumTakeRate)}`,
+      isPortfolioSweep
+        ? `Portfolio sweep multiplier x${portfolioSweepMultiplier.toFixed(2)} (${extraAssetCount} extra asset(s))`
+        : 'Single-asset pricing profile',
+      `Market benchmark labour £${marketHourlyRate}/hour with ${Math.round(marketOpsPremiumPct * 100)}% ops premium`,
+      ...(goingRateAlignment > 0 ? [`Going-rate alignment ${formatCurrencyGBP(goingRateAlignment)} ex VAT`] : []),
+      `Mileage margin contribution ${formatCurrencyGBP(travelMargin)} ex VAT`,
+      `Travel ${roundMoney(travelMiles)} miles (chargeable ${Number(chargeableTravelHours.toFixed(2))}h)`,
+    ],
+    lineItems,
+  };
+}
+
+function normalizeMarketplacePricing(pricing, context) {
+  const baseQuote = calculateMarketplaceQuote({
+    scope: context.scope,
+    regime: context.regime,
+    site: context.site,
+  });
+
+  const fromInput = pricing && typeof pricing === 'object' ? pricing : {};
+  const isStructuredQuote =
+    fromInput &&
+    typeof fromInput.quoteId === 'string' &&
+    typeof fromInput.subtotalExVat === 'number' &&
+    typeof fromInput.vatAmount === 'number';
+  const isCurrentModelQuote = fromInput.pricingModelVersion === DEFAULT_PRICING_MODEL_VERSION;
+  const useLegacyValues = isStructuredQuote && isCurrentModelQuote;
+  const jobId = context.jobId || 'TMP';
+  const quoteVersion = Math.max(1, Number((useLegacyValues ? fromInput.quoteVersion : fromInput.quoteVersion || 1) || 1));
+
+  if (!useLegacyValues) {
+    return {
+      ...baseQuote,
+      quoteVersion,
+      quoteId: buildMarketplaceQuoteId(jobId, quoteVersion),
+      pricingModelVersion: DEFAULT_PRICING_MODEL_VERSION,
+      rateCardVersionId: fromInput.rateCardVersionId || baseQuote.rateCardVersionId,
+      mappingEstimateTimestamp: fromInput.mappingEstimateTimestamp || baseQuote.mappingEstimateTimestamp || new Date().toISOString(),
+      assumptions: Array.isArray(fromInput.assumptions) ? fromInput.assumptions : baseQuote.assumptions,
+      lineItems: Array.isArray(fromInput.lineItems) ? fromInput.lineItems : baseQuote.lineItems,
+      validUntil: fromInput.validUntil || baseQuote.validUntil,
+    };
+  }
+
+  const fromLegacy = fromInput;
+
+  const legacyLabour = roundMoney(fromLegacy.labour ?? baseQuote.labour);
+  const legacyTravel = roundMoney(fromLegacy.travel ?? baseQuote.travel);
+  const legacyEquipment = roundMoney(fromLegacy.equipment ?? baseQuote.equipment);
+  const legacyExpedite = roundMoney(fromLegacy.expedite ?? baseQuote.expedite);
+  const legacyPlatformFee = roundMoney(fromLegacy.platformFee ?? baseQuote.platformFee);
+  const legacySubtotal =
+    roundMoney(
+      fromLegacy.subtotalExVat ??
+        (fromLegacy.total && !isStructuredQuote
+          ? fromLegacy.total
+          : legacyLabour + legacyTravel + legacyEquipment + legacyExpedite + legacyPlatformFee)
+    );
+  const legacyVat = roundMoney(fromLegacy.vatAmount ?? legacySubtotal * DEFAULT_VAT_RATE);
+  const legacyTotal = roundMoney(
+    isStructuredQuote
+      ? fromLegacy.total ?? legacySubtotal + legacyVat
+      : fromLegacy.totalIncVat ?? legacySubtotal + legacyVat
+  );
+  return {
+    ...baseQuote,
+    ...fromLegacy,
+    quoteVersion,
+    quoteId: fromLegacy.quoteId || buildMarketplaceQuoteId(jobId, quoteVersion),
+    pricingModelVersion: DEFAULT_PRICING_MODEL_VERSION,
+    rateCardVersionId: fromLegacy.rateCardVersionId || buildMarketplaceRateCardVersionId(context.regime, context.site),
+    mappingEstimateTimestamp: fromLegacy.mappingEstimateTimestamp || new Date().toISOString(),
+    labour: legacyLabour,
+    travel: legacyTravel,
+    equipment: legacyEquipment,
+    expedite: legacyExpedite,
+    platformFee: legacyPlatformFee,
+    platformFeeExVat: roundMoney(fromLegacy.platformFeeExVat ?? legacyPlatformFee),
+    subtotalExVat: legacySubtotal,
+    vatRate: Number(fromLegacy.vatRate ?? DEFAULT_VAT_RATE),
+    vatAmount: legacyVat,
+    total: legacyTotal,
+    providerPayoutExVat: roundMoney(
+      fromLegacy.providerPayoutExVat ??
+        Math.max(0, legacySubtotal - roundMoney(fromLegacy.platformFeeExVat ?? legacyPlatformFee))
+    ),
+    providerVatAmount: roundMoney(fromLegacy.providerVatAmount ?? legacyVat - roundMoney(fromLegacy.platformVatAmount ?? 0)),
+    platformVatAmount: roundMoney(fromLegacy.platformVatAmount ?? roundMoney(legacyPlatformFee * DEFAULT_VAT_RATE)),
+    effectiveTakeRate: Number(
+      (
+        roundMoney(fromLegacy.platformFeeExVat ?? legacyPlatformFee) /
+        Math.max(1, legacySubtotal)
+      ).toFixed(4)
+    ),
+    assumptions: Array.isArray(fromLegacy.assumptions) ? fromLegacy.assumptions : baseQuote.assumptions,
+    lineItems: Array.isArray(fromLegacy.lineItems) ? fromLegacy.lineItems : baseQuote.lineItems,
+    validUntil: fromLegacy.validUntil || baseQuote.validUntil,
+  };
+}
+
+function buildAdjustedMarketplaceQuote({ previousQuote, jobId, adjustmentType, amountExVatDelta, reasonCode, evidenceRef }) {
+  const quoteVersion = Math.max(1, Number(previousQuote?.quoteVersion || 1)) + 1;
+  const nextSubtotalExVat = roundMoney(Math.max(0, Number(previousQuote?.subtotalExVat || 0) + Number(amountExVatDelta || 0)));
+  const carryForwardTakeRate = clampNumber(
+    Number(previousQuote?.effectiveTakeRate || PRICING_ENGINE_CONFIG.baseTakeRate),
+    PRICING_ENGINE_CONFIG.takeRateFloor,
+    PRICING_ENGINE_CONFIG.takeRateCeiling
+  );
+  const nextPlatformFeeFloor = roundMoney(nextSubtotalExVat * PRICING_ENGINE_CONFIG.takeRateFloor);
+  const nextPlatformFeeCeiling = roundMoney(nextSubtotalExVat * PRICING_ENGINE_CONFIG.takeRateCeiling);
+  const nextPlatformFee = roundMoney(
+    clampNumber(
+      nextSubtotalExVat * carryForwardTakeRate,
+      nextPlatformFeeFloor,
+      nextPlatformFeeCeiling
+    )
+  );
+  const nextProviderPayout = Math.max(0, nextSubtotalExVat - nextPlatformFee);
+  const nextProviderVat = roundMoney(nextProviderPayout * DEFAULT_VAT_RATE);
+  const nextPlatformVat = roundMoney(nextPlatformFee * DEFAULT_VAT_RATE);
+  const nextVatAmount = nextProviderVat + nextPlatformVat;
+  const nextTotal = nextSubtotalExVat + nextVatAmount;
+
+  const adjustmentItem = {
+    code: `ADJUSTMENT_${String(adjustmentType || 'manual').toUpperCase()}`,
+    label: `Adjustment (${String(reasonCode || adjustmentType || 'manual').replace(/_/g, ' ')})`,
+    amountExVat: roundMoney(amountExVatDelta),
+    metadata: {
+      evidenceRef: evidenceRef || '',
+      appliedAt: new Date().toISOString(),
+    },
+  };
+
+  return {
+    ...previousQuote,
+    quoteVersion,
+    quoteId: buildMarketplaceQuoteId(jobId, quoteVersion),
+    subtotalExVat: nextSubtotalExVat,
+    platformFee: nextPlatformFee,
+    platformFeeExVat: nextPlatformFee,
+    providerPayoutExVat: nextProviderPayout,
+    providerVatAmount: nextProviderVat,
+    platformVatAmount: nextPlatformVat,
+    vatAmount: nextVatAmount,
+    total: nextTotal,
+    effectiveTakeRate: Number((nextPlatformFee / Math.max(1, nextSubtotalExVat)).toFixed(4)),
+    mappingEstimateTimestamp: new Date().toISOString(),
+    assumptions: [
+      ...(Array.isArray(previousQuote?.assumptions) ? previousQuote.assumptions : []),
+      `Adjustment ${String(adjustmentType || 'manual').replace(/_/g, ' ')} ${amountExVatDelta >= 0 ? '+' : ''}${formatCurrencyGBP(amountExVatDelta)} ex VAT`,
+    ].slice(-6),
+    lineItems: [...(Array.isArray(previousQuote?.lineItems) ? previousQuote.lineItems : []), adjustmentItem],
+  };
+}
+
+function getMarketplaceJobScope(job) {
+  if (job?.scope) {
+    return normalizeMarketplaceScope(job.scope);
+  }
+
+  return normalizeMarketplaceScope({
+    template: 'portfolio_sweep',
+    assetCount: 1,
+    estimatedHours: 2.2,
+    complexity: 'standard',
+    equipment: 'none',
+    travelKm: 12,
+    weekendAccess: false,
+    expedite: false,
+  });
+}
+
+function getMarketplaceJobPricing(job) {
+  const scope = getMarketplaceJobScope(job);
+  const pricingSource =
+    job?.pricing && typeof job.pricing === 'object'
+      ? job.pricing
+      : job?.budget
+        ? { total: roundMoney(job.budget) }
+        : null;
+  return normalizeMarketplacePricing(pricingSource, {
+    scope,
+    regime: job?.regime,
+    site: job?.site,
+    jobId: job?.id,
+  });
+}
+
+function getMarketplaceJobPricingHistory(job, currentPricing) {
+  const pricingSnapshot = currentPricing || getMarketplaceJobPricing(job);
+  if (!Array.isArray(job?.pricingHistory) || job.pricingHistory.length === 0) {
+    return [pricingSnapshot];
+  }
+
+  return job.pricingHistory.map((quoteEntry, index) =>
+    normalizeMarketplacePricing(quoteEntry, {
+      scope: getMarketplaceJobScope(job),
+      regime: job?.regime,
+      site: job?.site,
+      jobId: job?.id,
+      quoteVersion: index + 1,
+    })
+  );
+}
+
+function getMarketplaceJobPricingAdjustments(job) {
+  if (!Array.isArray(job?.pricingAdjustments)) {
+    return [];
+  }
+
+  return job.pricingAdjustments
+    .filter((item) => item && typeof item === 'object')
+    .map((item, index) => ({
+      adjustmentId: item.adjustmentId || `ADJ-${job?.id || 'JOB'}-${index + 1}`,
+      type: item.type || 'manual',
+      reasonCode: item.reasonCode || 'manual_adjustment',
+      amountExVatDelta: roundMoney(item.amountExVatDelta),
+      evidenceRef: item.evidenceRef || '',
+      approvedByUserId: item.approvedByUserId || 'ops_user',
+      quoteIdFrom: item.quoteIdFrom || '',
+      quoteIdTo: item.quoteIdTo || '',
+      createdAt: item.createdAt || new Date().toISOString(),
+    }));
+}
+
+function getMarketplaceJobPricingLock(job, currentPricing) {
+  const pricingSnapshot = currentPricing || getMarketplaceJobPricing(job);
+  if (job?.pricingLock && typeof job.pricingLock === 'object') {
+    return {
+      pricingLockId: job.pricingLock.pricingLockId || `LOCK-${job?.id || 'JOB'}-${pricingSnapshot.quoteVersion}`,
+      bookingId: job.pricingLock.bookingId || `BOOK-${job?.id || 'JOB'}`,
+      quoteId: job.pricingLock.quoteId || pricingSnapshot.quoteId,
+      lockedAt: job.pricingLock.lockedAt || new Date().toISOString(),
+      lockedBy: job.pricingLock.lockedBy || 'Certex Dispatch Engine',
+    };
+  }
+
+  const dispatch = getMarketplaceJobDispatch(job);
+  if (!dispatch.acceptedAt) {
+    return null;
+  }
+
+  return buildMarketplacePricingLock({
+    jobId: job?.id || 'JOB',
+    quote: pricingSnapshot,
+    lockedAt: dispatch.acceptedAt,
+    lockedBy: 'Dispatch acceptance',
+  });
+}
+
+function getMarketplaceJobSettlement(job, currentPricing) {
+  const pricingSnapshot = currentPricing || getMarketplaceJobPricing(job);
+  const externalSoftwareWithholdPct = resolveExternalSoftwareWithholdPct(job);
+  if (job?.settlement && typeof job.settlement === 'object') {
+    const persistedExternalPct = clampNumber(
+      Number(job.settlement.externalSoftwareWithholdPct ?? externalSoftwareWithholdPct),
+      0,
+      0.25
+    );
+    const holdbackAmount = roundMoney(
+      job.settlement.holdbackAmount ??
+        pricingSnapshot.providerPayoutExVat * PRICING_ENGINE_CONFIG.holdbackPct
+    );
+    const disputeReserveAmount = roundMoney(
+      job.settlement.disputeReserveAmount ??
+        pricingSnapshot.providerPayoutExVat * PRICING_ENGINE_CONFIG.disputeReservePct
+    );
+    const persistedExternalAmount = roundMoney(
+      job.settlement.externalSoftwareWithholdAmount ??
+        pricingSnapshot.providerPayoutExVat * persistedExternalPct
+    );
+    return {
+      ...buildMarketplaceSettlement(pricingSnapshot, { externalSoftwareWithholdPct }),
+      ...job.settlement,
+      providerAmountExVat: roundMoney(job.settlement.providerAmountExVat ?? pricingSnapshot.providerPayoutExVat),
+      providerVatAmount: roundMoney(job.settlement.providerVatAmount ?? pricingSnapshot.providerVatAmount),
+      platformFeeExVat: roundMoney(job.settlement.platformFeeExVat ?? pricingSnapshot.platformFeeExVat),
+      platformVatAmount: roundMoney(job.settlement.platformVatAmount ?? pricingSnapshot.platformVatAmount),
+      externalSoftwareWithholdPct: persistedExternalPct,
+      externalSoftwareWithholdAmount: persistedExternalAmount,
+      holdbackAmount,
+      disputeReserveAmount,
+      netProviderScheduled: roundMoney(
+        job.settlement.netProviderScheduled ??
+          (pricingSnapshot.providerPayoutExVat +
+            pricingSnapshot.providerVatAmount -
+            holdbackAmount -
+            disputeReserveAmount -
+            persistedExternalAmount)
+      ),
+    };
+  }
+
+  const dispatch = getMarketplaceJobDispatch(job);
+  if (job?.status === 'completed') {
+    return buildMarketplaceSettlement(pricingSnapshot, {
+      payoutStatus: 'scheduled',
+      completedAt: dispatch.acceptedAt || new Date().toISOString(),
+      externalSoftwareWithholdPct,
+    });
+  }
+
+  if (job?.status === 'awaiting_review') {
+    return buildMarketplaceSettlement(pricingSnapshot, {
+      payoutStatus: 'pending_review',
+      completedAt: dispatch.acceptedAt || new Date().toISOString(),
+      externalSoftwareWithholdPct,
+    });
+  }
+
+  if (dispatch.acceptedAt) {
+    return buildMarketplaceSettlement(pricingSnapshot, {
+      payoutStatus: 'pending_completion',
+      completedAt: dispatch.acceptedAt,
+      externalSoftwareWithholdPct,
+    });
+  }
+
+  return null;
+}
+
+function resolveDispatchSlaMinutes(scope) {
+  if (scope.expedite) {
+    return 120;
+  }
+  if (scope.weekendAccess) {
+    return 240;
+  }
+  return 360;
+}
+
+function resolveOfferTtlMinutes(scope) {
+  return scope.expedite ? 45 : 90;
+}
+
+function getMarketplaceJobDispatch(job) {
+  const scope = getMarketplaceJobScope(job);
+  const dispatch = job?.dispatch && typeof job.dispatch === 'object' ? job.dispatch : {};
+  const createdAtDate = parseISODate(job?.createdAt || '');
+  const baseDate = createdAtDate || new Date();
+  const slaMinutes = Math.max(30, Number(dispatch.slaMinutes || resolveDispatchSlaMinutes(scope)));
+  const defaultDeadlineAt = new Date(baseDate.getTime() + slaMinutes * 60000).toISOString();
+
+  return {
+    slaMinutes,
+    dispatchDeadlineAt: dispatch.dispatchDeadlineAt || defaultDeadlineAt,
+    dispatchedAt: dispatch.dispatchedAt || null,
+    offerExpiresAt: dispatch.offerExpiresAt || null,
+    acceptedAt: dispatch.acceptedAt || null,
+    attempts: Math.max(0, Number(dispatch.attempts || 0)),
+  };
+}
+
+function isOfferExpired(job, nowTimestamp = Date.now()) {
+  if (job?.status !== 'offered') {
+    return false;
+  }
+  const dispatch = getMarketplaceJobDispatch(job);
+  if (!dispatch.offerExpiresAt) {
+    return false;
+  }
+  const offerExpiry = new Date(dispatch.offerExpiresAt).getTime();
+  if (Number.isNaN(offerExpiry)) {
+    return false;
+  }
+  return offerExpiry <= nowTimestamp;
+}
+
+function getTimelineStamp(date = new Date()) {
+  return new Intl.DateTimeFormat('en-GB', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+    .format(date)
+    .replace(',', '');
+}
+
+function extractStructuredNoteValue(notes, label) {
+  const noteText = String(notes || '');
+  if (!noteText) {
+    return '';
+  }
+
+  const pattern = new RegExp(`^${label}:\\s*(.+)$`, 'im');
+  const match = noteText.match(pattern);
+  return match ? String(match[1] || '').trim() : '';
+}
+
+function getNextInvoiceId(invoices) {
+  const highest = invoices.reduce((max, invoice) => {
+    const value = Number(String(invoice.id || '').replace(/[^0-9]/g, ''));
+    if (Number.isNaN(value)) {
+      return max;
+    }
+    return Math.max(max, value);
+  }, 1000);
+
+  return `INV-${String(highest + 1).padStart(5, '0')}`;
+}
+
+function getNextPayoutRunId(payoutRuns) {
+  const highest = payoutRuns.reduce((max, run) => {
+    const value = Number(String(run.id || '').replace(/[^0-9]/g, ''));
+    if (Number.isNaN(value)) {
+      return max;
+    }
+    return Math.max(max, value);
+  }, 500);
+
+  return `PAY-${String(highest + 1).padStart(5, '0')}`;
+}
+
+function getNextTemplateId(templates) {
+  const highest = templates.reduce((max, template) => {
+    const value = Number(String(template.id || '').replace(/[^0-9]/g, ''));
+    if (Number.isNaN(value)) {
+      return max;
+    }
+    return Math.max(max, value);
+  }, 0);
+
+  return `TPL-CUSTOM-${String(highest + 1).padStart(3, '0')}`;
+}
+
+function getNextEntityId(collection, prefix, minValue = 1, padding = 4) {
+  const highest = collection.reduce((max, item) => {
+    const value = Number(String(item?.id || '').replace(/[^0-9]/g, ''));
+    if (Number.isNaN(value)) {
+      return max;
+    }
+    return Math.max(max, value);
+  }, minValue - 1);
+  return `${prefix}-${String(highest + 1).padStart(padding, '0')}`;
+}
+
+function getDefaultChecklistControlsByRegime(regime) {
+  const normalized = String(regime || '').toUpperCase();
+  if (normalized === 'LOLER') {
+    return [
+      'Asset identification and SWL verified',
+      'Safety devices and guards checked',
+      'Operator controls and emergency stop tested',
+      'Load path and environment free from hazards',
+    ];
+  }
+  if (normalized === 'PUWER') {
+    return [
+      'Work equipment suitable for task',
+      'Controls and isolation points tested',
+      'Guards/interlocks present and effective',
+      'Operator instructions and signage available',
+    ];
+  }
+  if (normalized === 'PSSR') {
+    return [
+      'Written scheme in date and available',
+      'Pressure boundaries visually checked',
+      'Relief devices set and in calibration',
+      'Associated controls and alarms verified',
+    ];
+  }
+  return [
+    'Site access and permit verified',
+    'Primary controls checked',
+    'Evidence captured',
+    'Findings and actions reviewed',
+  ];
+}
+
+function normalizeCompanyIdentifier(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function resolveCompanyTemplateContext(companyContext = {}) {
+  const normalizedCompanyId = normalizeCompanyIdentifier(companyContext?.companyId || companyContext?.id);
+  const normalizedCompanyName = normalizeCompanyIdentifier(companyContext?.companyName || companyContext?.name);
+  return {
+    companyId: normalizedCompanyId || normalizedCompanyName,
+    companyName: String(companyContext?.companyName || companyContext?.name || '').trim(),
+  };
+}
+
+function getTemplateVisibility(template) {
+  return String(template?.visibility || '').toLowerCase() === 'company' ? 'company' : 'global';
+}
+
+function getTemplateOwnerKey(template) {
+  const normalizedOwnerId = normalizeCompanyIdentifier(template?.ownerCompanyId);
+  if (normalizedOwnerId) {
+    return normalizedOwnerId;
+  }
+  return normalizeCompanyIdentifier(template?.ownerCompanyName);
+}
+
+function isTemplateVisibleForCompany(template, companyContext = null) {
+  if (!template || typeof template !== 'object') {
+    return false;
+  }
+  if (getTemplateVisibility(template) !== 'company') {
+    return true;
+  }
+  const ownerKey = getTemplateOwnerKey(template);
+  if (!ownerKey) {
+    return false;
+  }
+  const resolvedCompany = resolveCompanyTemplateContext(companyContext || {});
+  if (!resolvedCompany.companyId) {
+    return false;
+  }
+  return ownerKey === resolvedCompany.companyId;
+}
+
+function getInspectionTemplateMatchKey(template) {
+  const templateIdKey = String(template?.templateId || '')
+    .trim()
+    .toUpperCase();
+  if (templateIdKey) {
+    return `TEMPLATE_ID::${templateIdKey}`;
+  }
+
+  return getInspectionTemplateLegacyMatchKey(template);
+}
+
+function getInspectionTemplateLegacyMatchKey(template) {
+  const regimeKey = String(template?.regime || '')
+    .trim()
+    .toUpperCase();
+  const nameKey = String(template?.name || '')
+    .trim()
+    .toLowerCase();
+  const visibilityKey = getTemplateVisibility(template);
+  const ownerKey = visibilityKey === 'company' ? getTemplateOwnerKey(template) : '';
+  return `${regimeKey}::${nameKey}::${visibilityKey}::${ownerKey}`;
+}
+
+function normalizeTemplateControlList(controls) {
+  const seen = new Set();
+  return (Array.isArray(controls) ? controls : [])
+    .map((control) => String(control || '').trim())
+    .filter((control) => {
+      if (!control) {
+        return false;
+      }
+      const key = control.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+}
+
+function getCatalogTemplateByInspectionTemplate(template, fallbackRegime = '') {
+  if (!template || !Array.isArray(aooTemplateCatalog)) {
+    return null;
+  }
+
+  const normalizedTemplateId = String(template?.templateId || '').trim();
+  const normalizedName = String(template?.name || '')
+    .trim()
+    .toLowerCase();
+  const normalizedRegime = String(template?.regime || fallbackRegime || '')
+    .trim()
+    .toUpperCase();
+
+  return (
+    aooTemplateCatalog.find((candidate) => {
+      const candidateTemplateId = String(candidate?.templateId || '').trim();
+      if (normalizedTemplateId && candidateTemplateId === normalizedTemplateId) {
+        return true;
+      }
+
+      const candidateName = String(candidate?.name || '')
+        .trim()
+        .toLowerCase();
+      const candidateRegime = String(candidate?.regime || '')
+        .trim()
+        .toUpperCase();
+      return Boolean(normalizedName && normalizedRegime && candidateName === normalizedName && candidateRegime === normalizedRegime);
+    }) || null
+  );
+}
+
+function hydrateInspectionTemplateRecord(template, index, fallbackTemplate = null) {
+  const sourceTemplate = template && typeof template === 'object' ? template : {};
+  const fallback = fallbackTemplate && typeof fallbackTemplate === 'object' ? fallbackTemplate : {};
+
+  const regime = String(sourceTemplate.regime || fallback.regime || 'PUWER');
+  const name = String(sourceTemplate.name || fallback.name || `Template ${index + 1}`);
+  const storedControls = normalizeTemplateControlList(sourceTemplate.controls);
+  const fallbackControls = normalizeTemplateControlList(fallback.controls);
+  const resolvedId = String(sourceTemplate.id || fallback.id || '').trim();
+  const isCatalogManagedTemplate = Boolean(
+    sourceTemplate.templateId ||
+      fallback.templateId ||
+      resolvedId.startsWith('TPL-AOO-') ||
+      (Array.isArray(fallback.sourceCoverage) && fallback.sourceCoverage.length > 0)
+  );
+  const controls =
+    isCatalogManagedTemplate && fallbackControls.length > 0
+      ? fallbackControls
+      : storedControls.length > 0
+        ? storedControls
+        : fallbackControls;
+
+  const resolvedMaxScore = Number(sourceTemplate.maxScore ?? fallback.maxScore ?? controls.length);
+  const maxScore = Number.isFinite(resolvedMaxScore) && resolvedMaxScore > 0
+    ? Math.round(resolvedMaxScore)
+    : Math.max(controls.length, 1);
+  const resolvedPassScore = Number(sourceTemplate.passScore ?? fallback.passScore ?? Math.round(maxScore * 0.8));
+  const passScore = Number.isFinite(resolvedPassScore) && resolvedPassScore > 0
+    ? Math.min(maxScore, Math.round(resolvedPassScore))
+    : Math.round(maxScore * 0.8);
+  const hasCompanyOwner = Boolean(
+    normalizeCompanyIdentifier(
+      sourceTemplate.ownerCompanyId ||
+        sourceTemplate.ownerCompanyName ||
+        fallback.ownerCompanyId ||
+        fallback.ownerCompanyName
+    )
+  );
+  const explicitVisibility = String(sourceTemplate.visibility || fallback.visibility || '')
+    .trim()
+    .toLowerCase();
+  const visibility = explicitVisibility === 'company' || (!explicitVisibility && hasCompanyOwner) ? 'company' : 'global';
+  const ownerCompanyId = visibility === 'company'
+    ? normalizeCompanyIdentifier(
+        sourceTemplate.ownerCompanyId ||
+          fallback.ownerCompanyId ||
+          sourceTemplate.ownerCompanyName ||
+          fallback.ownerCompanyName
+      )
+    : '';
+  const ownerCompanyName = visibility === 'company'
+    ? String(
+        sourceTemplate.ownerCompanyName ||
+          fallback.ownerCompanyName ||
+          sourceTemplate.ownerCompanyId ||
+          fallback.ownerCompanyId ||
+          ''
+      ).trim()
+    : '';
+
+  return {
+    id: String(sourceTemplate.id || fallback.id || `TPL-CUSTOM-${index + 1}`),
+    regime,
+    name,
+    version: String(sourceTemplate.version || fallback.version || '1.0'),
+    active:
+      typeof sourceTemplate.active === 'boolean'
+        ? sourceTemplate.active
+        : typeof fallback.active === 'boolean'
+          ? fallback.active
+          : true,
+    controls,
+    sourceCoverage: Array.isArray(sourceTemplate.sourceCoverage)
+      ? [...sourceTemplate.sourceCoverage]
+      : Array.isArray(fallback.sourceCoverage)
+        ? [...fallback.sourceCoverage]
+        : [],
+    templateId: String(sourceTemplate.templateId || fallback.templateId || ''),
+    passScore,
+    maxScore,
+    visibility,
+    ownerCompanyId,
+    ownerCompanyName,
+  };
+}
+
+function hydrateInspectionTemplates(templates) {
+  const normalizedDefaults = (Array.isArray(defaultInspectionTemplates) ? defaultInspectionTemplates : []).map(
+    (template, index) => hydrateInspectionTemplateRecord(template, index)
+  );
+
+  const defaultTemplatesByKey = new Map();
+  const defaultTemplatesByTemplateId = new Map();
+  normalizedDefaults.forEach((template) => {
+    const key = getInspectionTemplateMatchKey(template);
+    if (key && key !== '::') {
+      defaultTemplatesByKey.set(key, template);
+    }
+    const legacyKey = getInspectionTemplateLegacyMatchKey(template);
+    if (legacyKey && legacyKey !== '::') {
+      defaultTemplatesByKey.set(legacyKey, template);
+    }
+    const templateId = String(template.templateId || '').trim();
+    if (templateId) {
+      defaultTemplatesByTemplateId.set(templateId, template);
+    }
+  });
+
+  const normalizedStoredTemplates = (Array.isArray(templates) ? templates : [])
+    .filter((template) => template && typeof template === 'object')
+    .map((template, index) => {
+      const templateId = String(template?.templateId || '').trim();
+      const fallbackByTemplateId = templateId ? defaultTemplatesByTemplateId.get(templateId) : null;
+      const fallbackByName =
+        defaultTemplatesByKey.get(getInspectionTemplateMatchKey(template)) ||
+        defaultTemplatesByKey.get(getInspectionTemplateLegacyMatchKey(template));
+      return hydrateInspectionTemplateRecord(template, index, fallbackByTemplateId || fallbackByName || null);
+    });
+
+  const dedupedTemplates = [];
+  const seenKeys = new Set();
+
+  const addIfUnique = (template, indexHint) => {
+    const key = getInspectionTemplateMatchKey(template);
+    const uniqueKey = key && key !== '::' ? key : `${template.id}-${indexHint}`;
+    if (seenKeys.has(uniqueKey)) {
+      return;
+    }
+    seenKeys.add(uniqueKey);
+    dedupedTemplates.push(template);
+  };
+
+  normalizedStoredTemplates.forEach((template, index) => addIfUnique(template, index));
+  normalizedDefaults.forEach((template, index) => addIfUnique(template, normalizedStoredTemplates.length + index));
+
+  return dedupedTemplates;
+}
+
+function pickBestInspectionTemplateForRegime(templates, regime, options = {}) {
+  const normalizedRegime = String(regime || '').toUpperCase();
+  const normalizedTemplateId = String(options?.templateId || '').trim();
+  const companyContext = resolveCompanyTemplateContext({
+    companyId: options?.companyId,
+    companyName: options?.companyName,
+  });
+  const allTemplates = Array.isArray(templates) ? templates.filter((template) => template && typeof template === 'object') : [];
+  if (allTemplates.length === 0) {
+    return null;
+  }
+
+  if (normalizedTemplateId) {
+    const exactTemplate = allTemplates.find((template) => {
+      const templateInternalId = String(template?.id || '').trim();
+      const templateCatalogId = String(template?.templateId || '').trim();
+      const matchesId = templateInternalId === normalizedTemplateId || templateCatalogId === normalizedTemplateId;
+      return matchesId && isTemplateVisibleForCompany(template, companyContext);
+    });
+    if (exactTemplate) {
+      return exactTemplate;
+    }
+  }
+
+  const activeTemplates = allTemplates.filter((template) => template?.active);
+  if (activeTemplates.length === 0) {
+    return null;
+  }
+
+  const visibleTemplates = activeTemplates.filter((template) => isTemplateVisibleForCompany(template, companyContext));
+  const globalFallbackTemplates = activeTemplates.filter((template) => getTemplateVisibility(template) === 'global');
+  const scopedTemplates = visibleTemplates.length > 0 ? visibleTemplates : globalFallbackTemplates;
+  if (scopedTemplates.length === 0) {
+    return null;
+  }
+
+  const regimeTemplates = scopedTemplates.filter(
+    (template) => String(template?.regime || '').toUpperCase() === normalizedRegime
+  );
+  const candidateTemplates = regimeTemplates.length > 0 ? regimeTemplates : scopedTemplates;
+
+  const getControlCount = (template) => {
+    const directControls = Array.isArray(template?.controls) ? template.controls.length : 0;
+    const catalogTemplate = getCatalogTemplateByInspectionTemplate(template, normalizedRegime);
+    const catalogBooleanControls = Array.isArray(catalogTemplate?.questions)
+      ? catalogTemplate.questions.filter((question) => String(question?.type || '').toLowerCase() === 'boolean').length
+      : 0;
+    return Math.max(directControls, catalogBooleanControls);
+  };
+
+  const getTemplatePriority = (template) => {
+    const isCompanyScoped =
+      getTemplateVisibility(template) === 'company' && isTemplateVisibleForCompany(template, companyContext);
+    return isCompanyScoped ? 2 : 1;
+  };
+
+  return candidateTemplates.reduce((bestTemplate, currentTemplate) => {
+    if (!bestTemplate) {
+      return currentTemplate;
+    }
+    const bestPriority = getTemplatePriority(bestTemplate);
+    const currentPriority = getTemplatePriority(currentTemplate);
+    if (currentPriority !== bestPriority) {
+      return currentPriority > bestPriority ? currentTemplate : bestTemplate;
+    }
+    const bestControlCount = getControlCount(bestTemplate);
+    const currentControlCount = getControlCount(currentTemplate);
+    return currentControlCount > bestControlCount ? currentTemplate : bestTemplate;
+  }, null);
+}
+
+function incrementTemplateVersion(versionValue) {
+  const [majorRaw, minorRaw] = String(versionValue || '1.0').split('.');
+  const major = Number(majorRaw);
+  const minor = Number(minorRaw || '0');
+  if (Number.isNaN(major) || Number.isNaN(minor)) {
+    return '1.0';
+  }
+  return `${major}.${minor + 1}`;
+}
+
+function getSeverityRiskScore(severity) {
+  const lookup = {
+    low: 4,
+    medium: 9,
+    high: 16,
+    critical: 25,
+  };
+  return lookup[String(severity || '').toLowerCase()] || 9;
+}
+
+function getDefaultActionDueDate(severity, fromDate = new Date()) {
+  const horizonDays = {
+    low: 21,
+    medium: 14,
+    high: 7,
+    critical: 2,
+  };
+  const severityKey = String(severity || '').toLowerCase();
+  const offset = horizonDays[severityKey] || 14;
+  const dueDate = new Date(fromDate.getTime());
+  dueDate.setDate(dueDate.getDate() + offset);
+  return dueDate.toISOString().slice(0, 10);
+}
+
+function getAuditorRateCard(auditor, regime) {
+  if (!auditor?.rateCards) {
+    return DEFAULT_RATE_CARD;
+  }
+  return auditor.rateCards[regime] || Object.values(auditor.rateCards)[0] || DEFAULT_RATE_CARD;
+}
+
+function isAuditorAvailableForJob(job, auditor, nowTimestamp = Date.now()) {
+  const scope = getMarketplaceJobScope(job);
+  const availability = auditor?.availability || { weekdays: [1, 2, 3, 4, 5], weekend: false };
+  const dueDate = parseISODate(job?.dueDate || '');
+  const dueWeekday = dueDate ? dueDate.getDay() : new Date(nowTimestamp).getDay();
+  const weekdayMatch = Array.isArray(availability.weekdays)
+    ? availability.weekdays.includes(dueWeekday)
+    : true;
+  const weekendMatch = scope.weekendAccess ? Boolean(availability.weekend) : true;
+  const capacityRemaining = Math.max(0, (auditor?.maxConcurrentJobs || 8) - Number(auditor?.activeJobs || 0));
+  const capacityMatch = capacityRemaining > 0;
+
+  return {
+    isAvailable: weekdayMatch && weekendMatch && capacityMatch,
+    capacityRemaining,
+    weekendMatch,
+  };
+}
+
+function getNextMarketplaceJobId(jobs) {
+  const highest = jobs.reduce((max, job) => {
+    const value = Number(String(job.id || '').replace(/[^0-9]/g, ''));
+    if (Number.isNaN(value)) {
+      return max;
+    }
+    return Math.max(max, value);
+  }, 1000);
+
+  return `JOB-${String(highest + 1).padStart(4, '0')}`;
+}
+
+function getSiteRegion(siteName) {
+  const normalized = String(siteName || '').toLowerCase();
+  if (normalized.includes('london')) {
+    return 'london';
+  }
+  if (normalized.includes('manchester')) {
+    return 'manchester';
+  }
+  if (normalized.includes('birmingham')) {
+    return 'birmingham';
+  }
+  return 'other';
+}
+
+function computeAuditorMatch(job, auditor, nowTimestamp = Date.now()) {
+  const hasRegime = auditor.regimes.includes(job.regime);
+  const scope = getMarketplaceJobScope(job);
+  const auditorQuote = calculateMarketplaceQuote({
+    scope,
+    regime: job.regime,
+    site: job.site,
+    auditor,
+  });
+  const dispatch = getMarketplaceJobDispatch(job);
+  const availability = isAuditorAvailableForJob(job, auditor, nowTimestamp);
+
+  const siteRegion = getSiteRegion(job.site);
+  const auditorRegion = getSiteRegion(auditor.baseLocation);
+  const regionBonus = siteRegion === auditorRegion ? 14 : 4;
+  const responseScore = Math.max(0, 14 - Math.floor((auditor.avgResponseMins || 80) / 10));
+  const ratingScore = Math.round((auditor.rating || 4) * 6);
+  const capacityScore = Math.min(18, availability.capacityRemaining * 4);
+  const priceFitScore = Math.max(0, 14 - Math.floor(Math.abs((auditorQuote.auditorHourlyRate || 37) - 37) / 1.5));
+  const weekendScore = scope.weekendAccess && !availability.weekendMatch ? -16 : 4;
+  const availabilityScore = availability.isAvailable ? 16 : -40;
+  const regimeScore = hasRegime ? 38 : -60;
+
+  const total = Math.max(
+    0,
+    Math.min(
+      100,
+      regimeScore +
+        regionBonus +
+        responseScore +
+        ratingScore +
+        capacityScore +
+        priceFitScore +
+        weekendScore +
+        availabilityScore
+    )
+  );
+
+  const payoutEstimate = roundMoney(Math.max(0, auditorQuote.providerPayoutExVat));
+  const etaHours = Math.max(2, Math.ceil((auditor.avgResponseMins || 80) / 30));
+
+  return {
+    score: total,
+    hasRegime,
+    isAvailable: availability.isAvailable,
+    canAccept: hasRegime && availability.isAvailable,
+    etaHours,
+    payoutEstimate,
+    capacityRemaining: availability.capacityRemaining,
+    offerWindowMins: resolveOfferTtlMinutes(scope),
+    dispatchSlaMins: dispatch.slaMinutes,
+    auditorHourlyRate: auditorQuote.auditorHourlyRate,
+    auditorBillableHours: auditorQuote.auditorBillableHours,
+    explanation: hasRegime
+      ? `${auditor.name} covers ${job.regime}, has ${availability.capacityRemaining} slot(s), and responds in ~${auditor.avgResponseMins} mins`
+      : `${auditor.name} lacks ${job.regime} specialization`,
+  };
+}
+
+function rankAuditorsForJob(job, auditors, nowTimestamp = Date.now()) {
+  return auditors
+    .map((auditor) => ({
+      auditor,
+      ...computeAuditorMatch(job, auditor, nowTimestamp),
+    }))
+    .filter((entry) => entry.hasRegime && entry.isAvailable)
+    .sort((first, second) => second.score - first.score);
+}
+
+function getNextAssetId(assets) {
+  const highest = assets.reduce((max, asset) => {
+    const value = Number(String(asset.id || '').replace(/[^0-9]/g, ''));
+    if (Number.isNaN(value)) {
+      return max;
+    }
+    return Math.max(max, value);
+  }, 0);
+
+  return `AST-${String(highest + 1).padStart(3, '0')}`;
+}
+
+function loadStoredAssets() {
+  try {
+    const raw = window.localStorage.getItem(ASSET_STORAGE_KEY);
+    if (!raw) {
+      return initialAssets;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return initialAssets;
+    }
+
+    return parsed;
+  } catch {
+    return initialAssets;
+  }
+}
+
+function loadStoredMarketplaceJobs() {
+  const hydrateJobs = (jobs) =>
+    jobs.map((job) => {
+      const pricing = getMarketplaceJobPricing(job);
+      const pricingHistory = getMarketplaceJobPricingHistory(job, pricing);
+      const companyName = String(job?.companyName || 'Acme Logistics').trim() || 'Acme Logistics';
+      const companyId =
+        String(job?.companyId || '').trim() || normalizeCompanyIdentifier(companyName) || 'acme-logistics';
+      const existingTemplateId = String(job?.inspectionTemplateId || '').trim();
+      const existingTemplateName = String(job?.inspectionTemplateName || '').trim();
+      const templateNameFromAsset = (() => {
+        const assetName = String(job?.assetName || '').trim();
+        const match = assetName.match(/\(([^)]+)\)\s*$/);
+        return match ? String(match[1] || '').trim() : '';
+      })();
+      const inferredTemplate = defaultInspectionTemplates.find((template) => {
+        if (!template || typeof template !== 'object') {
+          return false;
+        }
+        if (existingTemplateId && String(template.id || '').trim() === existingTemplateId) {
+          return true;
+        }
+        const candidateName = String(template.name || '').trim().toLowerCase();
+        const candidateRegime = String(template.regime || '').trim().toUpperCase();
+        const targetName = String(existingTemplateName || templateNameFromAsset || '').trim().toLowerCase();
+        const targetRegime = String(job?.regime || '').trim().toUpperCase();
+        return Boolean(targetName && candidateRegime === targetRegime && candidateName === targetName);
+      });
+      const resolvedTemplateId = existingTemplateId || String(inferredTemplate?.id || '').trim();
+      const resolvedTemplateName = existingTemplateName || String(inferredTemplate?.name || '').trim();
+      const auditExecutionMode = normalizeAuditExecutionMode(job?.auditExecutionMode);
+      const externalSoftwareWithholdPct = resolveExternalSoftwareWithholdPct({
+        ...job,
+        auditExecutionMode,
+      });
+      const externalAuditReviewStatus = resolveExternalAuditReviewStatus(job, auditExecutionMode);
+      const normalizedStatus = ['open', 'offered', 'assigned', 'in_progress', 'awaiting_review', 'completed'].includes(
+        job.status
+      )
+        ? job.status
+        : 'open';
+      const auditMethodLocked =
+        Boolean(job?.auditMethodLocked) ||
+        normalizedStatus === 'awaiting_review' ||
+        normalizedStatus === 'completed';
+      return {
+        ...job,
+        companyName,
+        companyId,
+        status: normalizedStatus,
+        auditExecutionMode,
+        externalAuditReviewStatus,
+        externalSoftwareWithholdPct,
+        auditMethodLocked,
+        inspectionTemplateId: resolvedTemplateId,
+        inspectionTemplateName: resolvedTemplateName,
+        scope: getMarketplaceJobScope(job),
+        pricing,
+        pricingHistory,
+        pricingAdjustments: getMarketplaceJobPricingAdjustments(job),
+        pricingLock: getMarketplaceJobPricingLock(job, pricing),
+        settlement: getMarketplaceJobSettlement(job, pricing),
+        dispatch: getMarketplaceJobDispatch(job),
+        timeline: Array.isArray(job.timeline) ? job.timeline : [],
+        documents: Array.isArray(job.documents) ? job.documents : [],
+      };
+    });
+  const mergeWithSeedJobs = (storedJobs) => {
+    const normalizedStored = Array.isArray(storedJobs)
+      ? storedJobs.filter((job) => job && typeof job === 'object')
+      : [];
+    const existingIds = new Set(
+      normalizedStored
+        .map((job) => String(job.id || '').trim())
+        .filter(Boolean)
+    );
+    const missingSeedJobs = initialMarketplaceJobs.filter((job) => !existingIds.has(String(job.id || '').trim()));
+    return [...normalizedStored, ...missingSeedJobs];
+  };
+
+  try {
+    const raw = window.localStorage.getItem(MARKETPLACE_JOBS_STORAGE_KEY);
+    if (!raw) {
+      return hydrateJobs(initialMarketplaceJobs);
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return hydrateJobs(initialMarketplaceJobs);
+    }
+
+    return hydrateJobs(mergeWithSeedJobs(parsed));
+  } catch {
+    return hydrateJobs(initialMarketplaceJobs);
+  }
+}
+
+function loadStoredInspectionLogs() {
+  try {
+    const raw = window.localStorage.getItem(INSPECTION_LOG_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((item) => item && typeof item === 'object');
+  } catch {
+    return [];
+  }
+}
+
+function loadStoredRecurringProgrammes() {
+  try {
+    const raw = window.localStorage.getItem(RECURRING_PROGRAMMES_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((item) => item && typeof item === 'object');
+  } catch {
+    return [];
+  }
+}
+
+function loadStoredPublicSiteConfig() {
+  try {
+    const raw = window.localStorage.getItem(PUBLIC_SITE_CONFIG_STORAGE_KEY);
+    if (!raw) {
+      return defaultPublicSiteConfig;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return defaultPublicSiteConfig;
+    }
+
+    return {
+      ...defaultPublicSiteConfig,
+      ...parsed,
+    };
+  } catch {
+    return defaultPublicSiteConfig;
+  }
+}
+
+function loadStoredOnboardingTasks() {
+  try {
+    const raw = window.localStorage.getItem(ONBOARDING_TASKS_STORAGE_KEY);
+    if (!raw) {
+      return defaultOnboardingTasks;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return defaultOnboardingTasks;
+    }
+
+    return parsed
+      .filter((task) => task && typeof task === 'object')
+      .map((task, index) => ({
+        id: String(task.id || `task-${index + 1}`),
+        label: String(task.label || `Task ${index + 1}`),
+        completed: Boolean(task.completed),
+      }));
+  } catch {
+    return defaultOnboardingTasks;
+  }
+}
+
+function loadStoredFinanceInvoices() {
+  try {
+    const raw = window.localStorage.getItem(FINANCE_INVOICES_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((invoice) => invoice && typeof invoice === 'object');
+  } catch {
+    return [];
+  }
+}
+
+function loadStoredPayoutRuns() {
+  try {
+    const raw = window.localStorage.getItem(PAYOUT_RUNS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((run) => run && typeof run === 'object');
+  } catch {
+    return [];
+  }
+}
+
+function loadStoredInspectionTemplates() {
+  try {
+    const raw = window.localStorage.getItem(INSPECTION_TEMPLATES_STORAGE_KEY);
+    if (!raw) {
+      return hydrateInspectionTemplates(defaultInspectionTemplates);
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return hydrateInspectionTemplates(defaultInspectionTemplates);
+    }
+
+    return hydrateInspectionTemplates(parsed);
+  } catch {
+    return hydrateInspectionTemplates(defaultInspectionTemplates);
+  }
+}
+
+function loadStoredIntegrationConnections() {
+  try {
+    const raw = window.localStorage.getItem(INTEGRATION_CONNECTIONS_STORAGE_KEY);
+    if (!raw) {
+      return defaultIntegrationConnections;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return defaultIntegrationConnections;
+    }
+
+    return parsed
+      .filter((integration) => integration && typeof integration === 'object')
+      .map((integration, index) => ({
+        id: String(integration.id || `INT-CUSTOM-${index + 1}`),
+        name: String(integration.name || `Integration ${index + 1}`),
+        category: String(integration.category || 'ERP'),
+        status: integration.status === 'connected' ? 'connected' : 'not_connected',
+        endpoint: String(integration.endpoint || ''),
+        lastSyncAt: String(integration.lastSyncAt || ''),
+      }));
+  } catch {
+    return defaultIntegrationConnections;
+  }
+}
+
+function loadStoredCollection(storageKey, fallback) {
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      return fallback;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return fallback;
+    }
+    return parsed.filter((item) => item && typeof item === 'object');
+  } catch {
+    return fallback;
+  }
+}
+
+function loadStoredTemplateBlueprints() {
+  return loadStoredCollection(TEMPLATE_BLUEPRINTS_STORAGE_KEY, defaultTemplateBlueprints);
+}
+
+function loadStoredTemplateListings() {
+  return loadStoredCollection(TEMPLATE_LISTINGS_STORAGE_KEY, defaultTemplateListings);
+}
+
+function loadStoredLicenceGrants() {
+  return loadStoredCollection(LICENCE_GRANTS_STORAGE_KEY, defaultLicenceGrants);
+}
+
+function loadStoredAuditRuns() {
+  return loadStoredCollection(AUDIT_RUNS_STORAGE_KEY, defaultAuditRuns);
+}
+
+function loadStoredAuditFindings() {
+  return loadStoredCollection(AUDIT_FINDINGS_STORAGE_KEY, defaultAuditFindings);
+}
+
+function loadStoredAuditActions() {
+  return loadStoredCollection(AUDIT_ACTIONS_STORAGE_KEY, defaultAuditActions);
+}
+
+function loadStoredReportArtifacts() {
+  return loadStoredCollection(REPORT_ARTIFACTS_STORAGE_KEY, defaultReportArtifacts);
+}
+
+function loadStoredShareLinks() {
+  return loadStoredCollection(SHARE_LINKS_STORAGE_KEY, defaultShareLinks);
+}
+
+function loadStoredAuthSession() {
+  try {
+    const raw = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+    if (!raw) {
+      return defaultAuthSession;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return defaultAuthSession;
+    }
+
+    const email = String(parsed.email || '').trim();
+    return {
+      ...defaultAuthSession,
+      ...parsed,
+      email,
+      isAuthenticated: Boolean(parsed.isAuthenticated && email),
+    };
+  } catch {
+    return defaultAuthSession;
+  }
+}
+
+function loadStoredDebugRole() {
+  try {
+    const raw = window.localStorage.getItem(DEBUG_ROLE_STORAGE_KEY);
+    if (!raw) {
+      return normalizeUserRole(defaultAuthSession.accountType);
+    }
+    return normalizeUserRole(raw, normalizeUserRole(defaultAuthSession.accountType));
+  } catch {
+    return normalizeUserRole(defaultAuthSession.accountType);
+  }
+}
+
+function getLocalDateTimeInputValue(date = new Date()) {
+  const target = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return target.toISOString().slice(0, 16);
+}
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+
+  // Data State
+  const [assets, setAssets] = useState(() => {
+    if (typeof window === 'undefined') {
+      return initialAssets;
+    }
+    return loadStoredAssets();
+  });
+  const [certificates, setCertificates] = useState(initialCertificates);
+  const [auditors, setAuditors] = useState(mockProviders);
+  const [marketplaceJobs, setMarketplaceJobs] = useState(() => {
+    if (typeof window === 'undefined') {
+      return initialMarketplaceJobs;
+    }
+    return loadStoredMarketplaceJobs();
+  });
+  const [inspectionLogs, setInspectionLogs] = useState(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+    return loadStoredInspectionLogs();
+  });
+  const [recurringProgrammes, setRecurringProgrammes] = useState(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+    return loadStoredRecurringProgrammes();
+  });
+  const [publicSiteConfig, setPublicSiteConfig] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultPublicSiteConfig;
+    }
+    return loadStoredPublicSiteConfig();
+  });
+  const [onboardingTasks, setOnboardingTasks] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultOnboardingTasks;
+    }
+    return loadStoredOnboardingTasks();
+  });
+  const [financeInvoices, setFinanceInvoices] = useState(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+    return loadStoredFinanceInvoices();
+  });
+  const [payoutRuns, setPayoutRuns] = useState(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+    return loadStoredPayoutRuns();
+  });
+  const [inspectionTemplates, setInspectionTemplates] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultInspectionTemplates;
+    }
+    return loadStoredInspectionTemplates();
+  });
+  const [integrationConnections, setIntegrationConnections] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultIntegrationConnections;
+    }
+    return loadStoredIntegrationConnections();
+  });
+  const [templateBlueprints, setTemplateBlueprints] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultTemplateBlueprints;
+    }
+    return loadStoredTemplateBlueprints();
+  });
+  const [templateListings, setTemplateListings] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultTemplateListings;
+    }
+    return loadStoredTemplateListings();
+  });
+  const [licenceGrants, setLicenceGrants] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultLicenceGrants;
+    }
+    return loadStoredLicenceGrants();
+  });
+  const [auditRuns, setAuditRuns] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultAuditRuns;
+    }
+    return loadStoredAuditRuns();
+  });
+  const [auditFindings, setAuditFindings] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultAuditFindings;
+    }
+    return loadStoredAuditFindings();
+  });
+  const [auditActions, setAuditActions] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultAuditActions;
+    }
+    return loadStoredAuditActions();
+  });
+  const [reportArtifacts, setReportArtifacts] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultReportArtifacts;
+    }
+    return loadStoredReportArtifacts();
+  });
+  const [shareLinks, setShareLinks] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultShareLinks;
+    }
+    return loadStoredShareLinks();
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // UI State
+  const [toasts, setToasts] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Modal/Drawer State
+  const [showAddAssetModal, setShowAddAssetModal] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [showProgrammeModal, setShowProgrammeModal] = useState(false);
+  const [selectedProviderForRequest, setSelectedProviderForRequest] = useState('');
+  const [selectedAssetForDetails, setSelectedAssetForDetails] = useState(null);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showMobileQuickPanel, setShowMobileQuickPanel] = useState(false);
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [assetForQrLabel, setAssetForQrLabel] = useState(null);
+  const [vaultFocusCertificateId, setVaultFocusCertificateId] = useState('');
+  const [authSession, setAuthSession] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultAuthSession;
+    }
+    return loadStoredAuthSession();
+  });
+  const [debugRole, setDebugRole] = useState(() => {
+    if (typeof window === 'undefined') {
+      return normalizeUserRole(defaultAuthSession.accountType);
+    }
+    return loadStoredDebugRole();
+  });
+  const handledHashRef = useRef('');
+
+  useEffect(() => {
+    setInspectionTemplates((currentTemplates) => {
+      const hydratedTemplates = hydrateInspectionTemplates(currentTemplates);
+      if (JSON.stringify(hydratedTemplates) === JSON.stringify(currentTemplates)) {
+        return currentTemplates;
+      }
+      return hydratedTemplates;
+    });
+  }, []);
+
+  const enrichedAssets = useMemo(() => {
+    return assets
+      .map((asset) => ({
+        ...asset,
+        status: deriveAssetStatus(asset.nextDue),
+      }))
+      .sort((a, b) => {
+        const first = parseISODate(a.nextDue)?.getTime() || 0;
+        const second = parseISODate(b.nextDue)?.getTime() || 0;
+        return first - second;
+      });
+  }, [assets]);
+
+  const enrichedCertificates = useMemo(() => {
+    return certificates.map((certificate) => ({
+      ...certificate,
+      status: deriveCertificateStatus(certificate.expiryDate),
+    }));
+  }, [certificates]);
+
+  const certificatesByAsset = useMemo(() => {
+    const groupedCertificates = new Map();
+    enrichedCertificates.forEach((certificate) => {
+      if (!groupedCertificates.has(certificate.assetId)) {
+        groupedCertificates.set(certificate.assetId, []);
+      }
+      groupedCertificates.get(certificate.assetId).push(certificate);
+    });
+
+    groupedCertificates.forEach((list) => {
+      list.sort((first, second) => {
+        const firstDate = parseISODate(first.issueDate)?.getTime() || 0;
+        const secondDate = parseISODate(second.issueDate)?.getTime() || 0;
+        return secondDate - firstDate;
+      });
+    });
+
+    return groupedCertificates;
+  }, [enrichedCertificates]);
+
+  const urgentAssets = useMemo(() => {
+    return enrichedAssets
+      .filter((asset) => asset.status !== 'compliant')
+      .sort((first, second) => {
+        const firstDue = daysUntil(first.nextDue) ?? Number.MAX_SAFE_INTEGER;
+        const secondDue = daysUntil(second.nextDue) ?? Number.MAX_SAFE_INTEGER;
+        return firstDue - secondDue;
+      })
+      .slice(0, 6);
+  }, [enrichedAssets]);
+
+  const upcomingAssets = useMemo(() => {
+    return enrichedAssets
+      .filter((asset) => {
+        const delta = daysUntil(asset.nextDue);
+        return delta !== null && delta >= 0 && delta <= 45;
+      })
+      .slice(0, 6);
+  }, [enrichedAssets]);
+
+  const complianceTrend = useMemo(() => {
+    const compliantAssets = enrichedAssets.filter((asset) => asset.status === 'compliant').length;
+    const compliancePercentage =
+      enrichedAssets.length > 0 ? Math.round((compliantAssets / enrichedAssets.length) * 100) : 0;
+    return buildTrendPoints(compliancePercentage);
+  }, [enrichedAssets]);
+
+  const queuedInspectionCount = useMemo(
+    () => inspectionLogs.filter((entry) => entry.syncStatus === 'queued').length,
+    [inspectionLogs]
+  );
+  const activeCompanyContext = useMemo(() => {
+    const fallbackName = 'Acme Logistics';
+    const companyFromJobs = String(
+      marketplaceJobs.find((job) => String(job?.companyName || '').trim())?.companyName || ''
+    ).trim();
+    const companyFromSiteTitle = String(publicSiteConfig?.siteTitle || '')
+      .replace(/\s+Compliance Portal$/i, '')
+      .trim();
+    const resolvedName = companyFromJobs || companyFromSiteTitle || fallbackName;
+    return {
+      id: normalizeCompanyIdentifier(resolvedName) || 'acme-logistics',
+      name: resolvedName,
+    };
+  }, [marketplaceJobs, publicSiteConfig?.siteTitle]);
+  const activeCompanyInitials = useMemo(() => {
+    const initials = String(activeCompanyContext.name || '')
+      .split(/\s+/)
+      .map((part) => part[0] || '')
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+    return initials || 'CO';
+  }, [activeCompanyContext.name]);
+  const effectiveUserRole = useMemo(
+    () => normalizeUserRole(debugRole, normalizeUserRole(authSession.accountType)),
+    [debugRole, authSession.accountType]
+  );
+  const allowedTabsForRole = useMemo(
+    () => USER_ROLE_TAB_ACCESS[effectiveUserRole] || USER_ROLE_TAB_ACCESS.company,
+    [effectiveUserRole]
+  );
+  const primaryRoleTab = allowedTabsForRole[0] || 'help';
+  const effectiveRoleLabel = useMemo(
+    () => USER_ROLE_OPTIONS.find((option) => option.id === effectiveUserRole)?.label || 'Company',
+    [effectiveUserRole]
+  );
+
+  // Initialization & Theme
+  useEffect(() => {
+    setIsLoaded(true);
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (storedTheme === 'dark') {
+      setIsDarkMode(true);
+      return;
+    }
+
+    if (storedTheme === 'light') {
+      setIsDarkMode(false);
+      return;
+    }
+
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setIsDarkMode(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, isDarkMode ? 'dark' : 'light');
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ASSET_STORAGE_KEY, JSON.stringify(assets));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [assets]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MARKETPLACE_JOBS_STORAGE_KEY, JSON.stringify(marketplaceJobs));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [marketplaceJobs]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(INSPECTION_LOG_STORAGE_KEY, JSON.stringify(inspectionLogs));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [inspectionLogs]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RECURRING_PROGRAMMES_STORAGE_KEY, JSON.stringify(recurringProgrammes));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [recurringProgrammes]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PUBLIC_SITE_CONFIG_STORAGE_KEY, JSON.stringify(publicSiteConfig));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [publicSiteConfig]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ONBOARDING_TASKS_STORAGE_KEY, JSON.stringify(onboardingTasks));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [onboardingTasks]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FINANCE_INVOICES_STORAGE_KEY, JSON.stringify(financeInvoices));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [financeInvoices]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PAYOUT_RUNS_STORAGE_KEY, JSON.stringify(payoutRuns));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [payoutRuns]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(INSPECTION_TEMPLATES_STORAGE_KEY, JSON.stringify(inspectionTemplates));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [inspectionTemplates]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(INTEGRATION_CONNECTIONS_STORAGE_KEY, JSON.stringify(integrationConnections));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [integrationConnections]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(TEMPLATE_BLUEPRINTS_STORAGE_KEY, JSON.stringify(templateBlueprints));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [templateBlueprints]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(TEMPLATE_LISTINGS_STORAGE_KEY, JSON.stringify(templateListings));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [templateListings]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LICENCE_GRANTS_STORAGE_KEY, JSON.stringify(licenceGrants));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [licenceGrants]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AUDIT_RUNS_STORAGE_KEY, JSON.stringify(auditRuns));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [auditRuns]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AUDIT_FINDINGS_STORAGE_KEY, JSON.stringify(auditFindings));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [auditFindings]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AUDIT_ACTIONS_STORAGE_KEY, JSON.stringify(auditActions));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [auditActions]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(REPORT_ARTIFACTS_STORAGE_KEY, JSON.stringify(reportArtifacts));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [reportArtifacts]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SHARE_LINKS_STORAGE_KEY, JSON.stringify(shareLinks));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [shareLinks]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(authSession));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [authSession]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DEBUG_ROLE_STORAGE_KEY, effectiveUserRole);
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [effectiveUserRole]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const hasStoredDebugRole = Boolean(window.localStorage.getItem(DEBUG_ROLE_STORAGE_KEY));
+    if (hasStoredDebugRole) {
+      return;
+    }
+    setDebugRole(normalizeUserRole(authSession.accountType));
+  }, [authSession.accountType]);
+
+  useEffect(() => {
+    if (allowedTabsForRole.includes(activeTab)) {
+      return;
+    }
+    setActiveTab(primaryRoleTab);
+    setSearchQuery('');
+  }, [activeTab, allowedTabsForRole, primaryRoleTab]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+
+    setIsOnline(window.navigator.onLine);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOnline || queuedInspectionCount === 0) {
+      return;
+    }
+
+    const syncedAt = new Date().toISOString();
+    setInspectionLogs((previousLogs) =>
+      previousLogs.map((entry) =>
+        entry.syncStatus === 'queued'
+          ? {
+              ...entry,
+              syncStatus: 'synced',
+              syncedAt,
+            }
+          : entry
+      )
+    );
+
+    addToast(
+      `${queuedInspectionCount} offline inspection ${queuedInspectionCount === 1 ? 'log' : 'logs'} synced`,
+      'success'
+    );
+  }, [isOnline, queuedInspectionCount]);
+
+  useEffect(() => {
+    const onEscape = (event) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      setShowNotifications(false);
+      setShowAddAssetModal(false);
+      setShowRequestModal(false);
+      setShowProgrammeModal(false);
+      setSelectedAssetForDetails(null);
+      setShowCommandPalette(false);
+      setShowMobileQuickPanel(false);
+      setShowScanModal(false);
+      setAssetForQrLabel(null);
+    };
+
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, []);
+
+  useEffect(() => {
+    const onShortcut = (event) => {
+      const isCommandPaletteShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
+      if (!isCommandPaletteShortcut) {
+        return;
+      }
+
+      event.preventDefault();
+      setShowCommandPalette(true);
+    };
+
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const resolveFromHash = () => {
+      const hashValue = window.location.hash || '';
+      if (!hashValue || handledHashRef.current === hashValue) {
+        return;
+      }
+
+      const parsed = parseCertexScanValue(hashValue);
+      if (!parsed) {
+        return;
+      }
+
+      if (parsed.type === 'asset') {
+        const targetAsset = enrichedAssets.find((asset) => asset.id.toUpperCase() === parsed.id);
+        if (!targetAsset) {
+          return;
+        }
+        handledHashRef.current = hashValue;
+        setActiveTab('assets');
+        setSearchQuery('');
+        setSelectedAssetForDetails(targetAsset);
+        return;
+      }
+
+      if (parsed.type === 'certificate') {
+        const targetCertificate = enrichedCertificates.find(
+          (certificate) => certificate.id.toUpperCase() === parsed.id
+        );
+        if (!targetCertificate) {
+          return;
+        }
+        handledHashRef.current = hashValue;
+        setActiveTab('vault');
+        setSearchQuery('');
+        setVaultFocusCertificateId(targetCertificate.id);
+      }
+    };
+
+    resolveFromHash();
+    window.addEventListener('hashchange', resolveFromHash);
+    return () => window.removeEventListener('hashchange', resolveFromHash);
+  }, [enrichedAssets, enrichedCertificates]);
+
+  const toggleTheme = () => setIsDarkMode((previous) => !previous);
+
+  // Toast System
+  const addToast = (message, type = 'success') => {
+    const id = Date.now();
+    setToasts((previous) => [...previous, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((previous) => previous.filter((toast) => toast.id !== id));
+    }, 4000);
+  };
+
+  const authenticateUser = ({ mode = 'signin', email = '', fullName = '', accountType = 'company' }) => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) {
+      addToast('Enter a valid email address', 'info');
+      return false;
+    }
+    const normalizedRole = normalizeUserRole(accountType);
+
+    setAuthSession({
+      isAuthenticated: true,
+      email: normalizedEmail,
+      fullName: String(fullName || '').trim(),
+      accountType: normalizedRole,
+      signedInAt: new Date().toISOString(),
+    });
+    setDebugRole(normalizedRole);
+    setActiveTab((USER_ROLE_TAB_ACCESS[normalizedRole] || USER_ROLE_TAB_ACCESS.company)[0] || 'dashboard');
+    addToast(mode === 'signup' ? 'Account created. Welcome to CertEx.' : 'Signed in to CertEx', 'success');
+    return true;
+  };
+
+  const openTab = (tab) => {
+    const targetTab = allowedTabsForRole.includes(tab) ? tab : primaryRoleTab;
+    setActiveTab(targetTab);
+    setSearchQuery('');
+    setShowNotifications(false);
+    setShowCommandPalette(false);
+    setShowMobileQuickPanel(false);
+    setShowScanModal(false);
+    setShowRequestModal(false);
+    setShowProgrammeModal(false);
+  };
+
+  const switchDebugRole = (role) => {
+    const normalizedRole = normalizeUserRole(role, effectiveUserRole);
+    setDebugRole(normalizedRole);
+    setAuthSession((previousSession) => ({
+      ...previousSession,
+      accountType: normalizedRole,
+    }));
+    const nextTab = (USER_ROLE_TAB_ACCESS[normalizedRole] || USER_ROLE_TAB_ACCESS.company)[0] || 'help';
+    setActiveTab(nextTab);
+    setSearchQuery('');
+    setShowNotifications(false);
+    setShowCommandPalette(false);
+    setShowMobileQuickPanel(false);
+    setShowScanModal(false);
+    setShowRequestModal(false);
+    setShowProgrammeModal(false);
+    addToast(`Debug role switched to ${USER_ROLE_OPTIONS.find((option) => option.id === normalizedRole)?.label || 'Company'}`, 'info');
+  };
+
+  const signOutUser = () => {
+    setAuthSession(defaultAuthSession);
+    setDebugRole(normalizeUserRole(defaultAuthSession.accountType));
+    setActiveTab('dashboard');
+    setSearchQuery('');
+    setShowNotifications(false);
+    setShowCommandPalette(false);
+    setShowMobileQuickPanel(false);
+    setShowScanModal(false);
+    setShowAddAssetModal(false);
+    setShowRequestModal(false);
+    setShowProgrammeModal(false);
+    setSelectedAssetForDetails(null);
+    setAssetForQrLabel(null);
+    setVaultFocusCertificateId('');
+    addToast('Signed out', 'info');
+  };
+
+  const exportAuditPack = () => {
+    downloadAuditPackPdf({
+      assets: enrichedAssets,
+      certificates: enrichedCertificates,
+    });
+    addToast('Audit pack PDF downloaded', 'success');
+  };
+
+  const openAssetRecordById = (assetId, showFeedback = true) => {
+    const targetAsset = enrichedAssets.find((asset) => asset.id.toUpperCase() === String(assetId || '').toUpperCase());
+    if (!targetAsset) {
+      if (showFeedback) {
+        addToast(`Asset ${assetId} not found`, 'info');
+      }
+      return false;
+    }
+
+    openTab('assets');
+    setAssetForQrLabel(null);
+    setSelectedAssetForDetails(targetAsset);
+    if (typeof window !== 'undefined') {
+      const hashValue = `asset=${encodeURIComponent(targetAsset.id)}`;
+      handledHashRef.current = `#${hashValue}`;
+      window.location.hash = hashValue;
+    }
+    if (showFeedback) {
+      addToast(`Opened ${targetAsset.id} record`, 'success');
+    }
+    return true;
+  };
+
+  const openCertificateRecordById = (certificateId, showFeedback = true) => {
+    const targetCertificate = enrichedCertificates.find(
+      (certificate) => certificate.id.toUpperCase() === String(certificateId || '').toUpperCase()
+    );
+    if (!targetCertificate) {
+      if (showFeedback) {
+        addToast(`Certificate ${certificateId} not found`, 'info');
+      }
+      return false;
+    }
+
+    openTab('vault');
+    setSelectedAssetForDetails(null);
+    setAssetForQrLabel(null);
+    setVaultFocusCertificateId(targetCertificate.id);
+    if (typeof window !== 'undefined') {
+      const hashValue = `certificate=${encodeURIComponent(targetCertificate.id)}`;
+      handledHashRef.current = `#${hashValue}`;
+      window.location.hash = hashValue;
+    }
+    if (showFeedback) {
+      addToast(`Opened ${targetCertificate.id}`, 'success');
+    }
+    return true;
+  };
+
+  const handleScanLookup = (scanValue) => {
+    const parsed = parseCertexScanValue(scanValue);
+    if (!parsed) {
+      addToast('Unable to parse code. Use AST-xxx, CERT-xxxx, or a CertEx link.', 'info');
+      return false;
+    }
+
+    if (parsed.type === 'asset') {
+      const didOpenAsset = openAssetRecordById(parsed.id);
+      if (didOpenAsset) {
+        setShowScanModal(false);
+      }
+      return didOpenAsset;
+    }
+
+    const didOpenCertificate = openCertificateRecordById(parsed.id);
+    if (didOpenCertificate) {
+      setShowScanModal(false);
+    }
+    return didOpenCertificate;
+  };
+
+  // Handlers for interactions
+  const handleAddAsset = (newAsset) => {
+    setAssets((previousAssets) => [
+      ...previousAssets,
+      {
+        ...newAsset,
+        id: getNextAssetId(previousAssets),
+      },
+    ]);
+    setShowAddAssetModal(false);
+    addToast('Asset successfully added to register', 'success');
+  };
+
+  const handleRequestInspection = (payload) => {
+    if (!payload || !payload.assetId) {
+      addToast('Unable to create booking request. Please review scope details.', 'info');
+      return false;
+    }
+
+    const createdJobId = createMarketplaceJob({
+      assetId: payload.assetId,
+      dueDate: payload.dueDate,
+      notes: payload.notes,
+      scope: payload.scope,
+      pricing: payload.pricing,
+      dispatchSlaMins: payload.dispatchSlaMins,
+    });
+
+    if (!createdJobId) {
+      return false;
+    }
+
+    if (payload.preferredAuditorId) {
+      dispatchMarketplaceJob(createdJobId, payload.preferredAuditorId, 'Preferred provider booking');
+    }
+
+    setShowRequestModal(false);
+    setSelectedProviderForRequest('');
+    openTab('marketplace');
+    return true;
+  };
+
+  const handleLogInspection = ({ assetId, performedAt, notes }) => {
+    const targetAsset = enrichedAssets.find((asset) => asset.id === assetId);
+    if (!targetAsset) {
+      addToast('Unable to log inspection: asset not found', 'info');
+      return false;
+    }
+
+    const createdAt = new Date().toISOString();
+    const entry = {
+      id: `INSP-${Date.now()}`,
+      assetId: targetAsset.id,
+      assetName: targetAsset.name,
+      performedAt: performedAt || getLocalDateTimeInputValue(),
+      notes: String(notes || '').trim() || 'No inspection notes provided.',
+      createdAt,
+      syncStatus: isOnline ? 'synced' : 'queued',
+      syncedAt: isOnline ? createdAt : null,
+    };
+
+    setInspectionLogs((previousLogs) => [entry, ...previousLogs].slice(0, 250));
+    if (isOnline) {
+      addToast('Inspection log saved and synced', 'success');
+    } else {
+      addToast('Offline mode: inspection saved and queued for sync', 'info');
+    }
+    return true;
+  };
+
+  const openDispatch = (providerName = '') => {
+    const matchedProvider = auditors.find(
+      (auditor) => auditor.id === providerName || auditor.name === providerName
+    );
+    setSelectedProviderForRequest(matchedProvider?.id || '');
+    setShowRequestModal(true);
+  };
+
+  const handleCreateRecurringProgramme = (programmePayload) => {
+    const name = String(programmePayload?.name || '').trim();
+    if (!name) {
+      addToast('Programme name is required', 'info');
+      return false;
+    }
+
+    const createdAt = new Date().toISOString();
+    const programme = {
+      id: `PRG-${Date.now()}`,
+      name,
+      cadence: programmePayload.cadence || 'quarterly',
+      leadDays: Math.max(7, Number(programmePayload.leadDays || 30)),
+      preferredAuditorId: programmePayload.preferredAuditorId || '',
+      budgetCap: roundMoney(programmePayload.budgetCap || 0),
+      startDate: programmePayload.startDate || new Date().toISOString().slice(0, 10),
+      approvalChain: String(programmePayload.approvalChain || '').trim() || 'Site Manager > Finance',
+      createdAt,
+    };
+
+    setRecurringProgrammes((previousProgrammes) => [programme, ...previousProgrammes].slice(0, 50));
+    setShowProgrammeModal(false);
+    addToast(`Recurring programme created: ${programme.name}`, 'success');
+    return true;
+  };
+
+  const createMarketplaceJob = ({ assetId, dueDate, notes, scope, pricing, dispatchSlaMins }) => {
+    const linkedAsset = enrichedAssets.find((asset) => asset.id === assetId);
+    if (!linkedAsset) {
+      addToast('Unable to create job: asset not found', 'info');
+      return '';
+    }
+    const companyName = activeCompanyContext.name;
+    const companyId = activeCompanyContext.id;
+    const assignedInspectionTemplate = pickBestInspectionTemplateForRegime(inspectionTemplates, linkedAsset.regime, {
+      companyId,
+      companyName,
+    });
+
+    const createdAt = new Date();
+    const createdAtIsoDate = createdAt.toISOString().slice(0, 10);
+    const nextJobId = getNextMarketplaceJobId(marketplaceJobs);
+    const normalizedScope = normalizeMarketplaceScope({
+      ...scope,
+      estimatedHours:
+        Number(scope?.estimatedHours) ||
+        estimateScopeHours(scope?.template, scope?.assetCount, Boolean(scope?.weekendAccess)),
+    });
+    const quote = normalizeMarketplacePricing(
+      pricing && typeof pricing === 'object'
+        ? pricing
+        : calculateMarketplaceQuote({
+            scope: normalizedScope,
+            regime: linkedAsset.regime,
+            site: linkedAsset.site,
+          }),
+      {
+        scope: normalizedScope,
+        regime: linkedAsset.regime,
+        site: linkedAsset.site,
+        jobId: nextJobId,
+      }
+    );
+    const quoteSnapshot = {
+      ...quote,
+      quoteVersion: 1,
+      quoteId: buildMarketplaceQuoteId(nextJobId, 1),
+      mappingEstimateTimestamp: createdAt.toISOString(),
+      validUntil: new Date(createdAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+    };
+    const slaMinutes = Math.max(60, Number(dispatchSlaMins || resolveDispatchSlaMinutes(normalizedScope)));
+    const dispatchDeadlineAt = new Date(createdAt.getTime() + slaMinutes * 60000).toISOString();
+    const timelineAt = getTimelineStamp(createdAt);
+
+    setMarketplaceJobs((previousJobs) => [
+      {
+        id: nextJobId,
+        companyName,
+        companyId,
+        assetId: linkedAsset.id,
+        assetName: linkedAsset.name,
+        site: linkedAsset.site,
+        regime: linkedAsset.regime,
+        inspectionTemplateId: String(assignedInspectionTemplate?.id || '').trim(),
+        inspectionTemplateName: String(assignedInspectionTemplate?.name || '').trim(),
+        status: 'open',
+        dueDate,
+        budget: quoteSnapshot.total,
+        createdAt: createdAtIsoDate,
+        matchedAuditorId: null,
+        auditExecutionMode: AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE,
+        externalAuditReviewStatus: EXTERNAL_AUDIT_REVIEW_STATUSES.NOT_REQUIRED,
+        externalSoftwareWithholdPct: 0,
+        auditMethodLocked: false,
+        notes: notes || 'No additional site notes provided.',
+        scope: normalizedScope,
+        pricing: quoteSnapshot,
+        pricingHistory: [quoteSnapshot],
+        pricingAdjustments: [],
+        pricingLock: null,
+        settlement: null,
+        dispatch: {
+          slaMinutes,
+          dispatchDeadlineAt,
+          dispatchedAt: null,
+          offerExpiresAt: null,
+          acceptedAt: null,
+          attempts: 0,
+        },
+        documents: [],
+        timeline: [
+          { label: 'Job advertised', at: timelineAt, actor: companyName },
+          {
+            label: `Instant quote v1 generated (${formatCurrencyGBP(quoteSnapshot.total)} inc VAT)`,
+            at: timelineAt,
+            actor: 'Certex Pricing Engine',
+          },
+          ...(assignedInspectionTemplate
+            ? [
+                {
+                  label: `Template selected: ${assignedInspectionTemplate.name}`,
+                  at: timelineAt,
+                  actor: 'Template Engine',
+                },
+              ]
+            : []),
+        ],
+      },
+      ...previousJobs,
+    ]);
+    addToast(`Audit job advertised with quote ${formatCurrencyGBP(quoteSnapshot.total)} inc VAT`, 'success');
+    return nextJobId;
+  };
+
+  const buildAuditorBoundQuote = (job, auditor, lockTimestamp = new Date()) => {
+    const scope = getMarketplaceJobScope(job);
+    const currentPricing = getMarketplaceJobPricing(job);
+    const repricedCandidate = normalizeMarketplacePricing(
+      calculateMarketplaceQuote({
+        scope,
+        regime: job.regime,
+        site: job.site,
+        auditor,
+      }),
+      {
+        scope,
+        regime: job.regime,
+        site: job.site,
+        jobId: job.id,
+      }
+    );
+    const requiresReprice =
+      roundMoney(repricedCandidate.providerPayoutExVat) !== roundMoney(currentPricing.providerPayoutExVat) ||
+      roundMoney(repricedCandidate.platformFeeExVat) !== roundMoney(currentPricing.platformFeeExVat) ||
+      roundMoney(repricedCandidate.total) !== roundMoney(currentPricing.total) ||
+      repricedCandidate.pricingModelVersion !== currentPricing.pricingModelVersion;
+
+    if (!requiresReprice) {
+      return {
+        quote: currentPricing,
+        history: getMarketplaceJobPricingHistory(job, currentPricing),
+        repriced: false,
+      };
+    }
+
+    const nextVersion = Math.max(1, Number(currentPricing.quoteVersion || 1)) + 1;
+    const nextQuote = {
+      ...repricedCandidate,
+      quoteVersion: nextVersion,
+      quoteId: buildMarketplaceQuoteId(job.id, nextVersion),
+      mappingEstimateTimestamp: lockTimestamp.toISOString(),
+      validUntil: new Date(lockTimestamp.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+    };
+
+    return {
+      quote: nextQuote,
+      history: [...getMarketplaceJobPricingHistory(job, currentPricing), nextQuote],
+      repriced: true,
+    };
+  };
+
+  const dispatchMarketplaceJob = (jobId, auditorId, source = 'Certex Match Engine') => {
+    const targetAuditor = auditors.find((auditor) => auditor.id === auditorId);
+    if (!targetAuditor) {
+      addToast('Auditor not found for dispatch', 'info');
+      return;
+    }
+
+    const now = new Date();
+    const timelineAt = getTimelineStamp(now);
+    let dispatchState = 'none';
+    let blockedReason = '';
+
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) => {
+        if (job.id !== jobId) {
+          return job;
+        }
+
+        if (['assigned', 'in_progress', 'awaiting_review', 'completed'].includes(job.status)) {
+          blockedReason = 'Job is already confirmed with an auditor';
+          return job;
+        }
+
+        if (job.status === 'offered' && !isOfferExpired(job, now.getTime()) && job.matchedAuditorId !== auditorId) {
+          blockedReason = 'An active offer already exists for this job';
+          return job;
+        }
+
+        const scope = getMarketplaceJobScope(job);
+        const dispatch = getMarketplaceJobDispatch(job);
+        const offerTtlMinutes = resolveOfferTtlMinutes(scope);
+        const offerExpiresAt = new Date(now.getTime() + offerTtlMinutes * 60000).toISOString();
+        const hasExpiredOffer = job.status === 'offered' && isOfferExpired(job, now.getTime());
+        dispatchState = hasExpiredOffer ? 'reoffered' : 'offered';
+
+        return {
+          ...job,
+          status: 'offered',
+          matchedAuditorId: auditorId,
+          dispatch: {
+            ...dispatch,
+            dispatchedAt: now.toISOString(),
+            offerExpiresAt,
+            attempts: dispatch.attempts + 1,
+          },
+          timeline: [
+            ...job.timeline,
+            ...(hasExpiredOffer
+              ? [
+                  {
+                    label: 'Previous offer expired; dispatch re-opened',
+                    at: timelineAt,
+                    actor: 'Certex Dispatch Engine',
+                  },
+                ]
+              : []),
+            {
+              label: `Offer sent to ${targetAuditor.name} (expires ${formatDateTimeLabel(offerExpiresAt)})`,
+              at: timelineAt,
+              actor: source,
+            },
+          ],
+        };
+      })
+    );
+
+    if (dispatchState === 'none') {
+      addToast(blockedReason || 'Unable to dispatch this job right now', 'info');
+      return;
+    }
+
+    addToast(
+      dispatchState === 'reoffered'
+        ? `Offer re-routed to ${targetAuditor.name}`
+        : `Offer sent to ${targetAuditor.name}`,
+      'success'
+    );
+  };
+
+  const acceptMarketplaceOffer = (
+    jobId,
+    auditorId,
+    source = 'Auditor Console',
+    executionMode = AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+  ) => {
+    const targetAuditor = auditors.find((auditor) => auditor.id === auditorId);
+    if (!targetAuditor) {
+      addToast('Auditor not found', 'info');
+      return false;
+    }
+
+    const now = new Date();
+    const timelineAt = getTimelineStamp(now);
+    const selectedExecutionMode = normalizeAuditExecutionMode(executionMode);
+    const externalSoftwareWithholdPct =
+      selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+        ? PRICING_ENGINE_CONFIG.externalSoftwareWithholdPct
+        : 0;
+    const externalAuditReviewStatus =
+      selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+        ? EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_EVIDENCE
+        : EXTERNAL_AUDIT_REVIEW_STATUSES.NOT_REQUIRED;
+    let acceptanceState = 'none';
+
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) => {
+        if (job.id !== jobId) {
+          return job;
+        }
+
+        if (['in_progress', 'awaiting_review', 'completed'].includes(job.status)) {
+          return job;
+        }
+
+        const dispatch = getMarketplaceJobDispatch(job);
+
+        if (job.status === 'offered') {
+          if (job.matchedAuditorId !== auditorId) {
+            return job;
+          }
+
+          if (isOfferExpired(job, now.getTime())) {
+            acceptanceState = 'expired';
+            return {
+              ...job,
+              status: 'open',
+              matchedAuditorId: null,
+              dispatch: {
+                ...dispatch,
+                offerExpiresAt: null,
+              },
+              timeline: [
+                ...job.timeline,
+                {
+                  label: 'Offer expired before acceptance',
+                  at: timelineAt,
+                  actor: 'Certex Dispatch Engine',
+                },
+              ],
+            };
+          }
+
+          acceptanceState = 'accepted';
+          const { quote: pricing, history: pricingHistory, repriced } = buildAuditorBoundQuote(job, targetAuditor, now);
+          const pricingLock = getMarketplaceJobPricingLock(job, pricing) ||
+            buildMarketplacePricingLock({
+              jobId: job.id,
+              quote: pricing,
+              lockedAt: now.toISOString(),
+              lockedBy: targetAuditor.name,
+            });
+          return {
+            ...job,
+            status: 'assigned',
+            auditExecutionMode: selectedExecutionMode,
+            externalAuditReviewStatus,
+            externalSoftwareWithholdPct,
+            auditMethodLocked: true,
+            pricing,
+            pricingHistory,
+            budget: pricing.total,
+            pricingLock,
+            settlement: buildMarketplaceSettlement(pricing, {
+              payoutStatus: 'pending_completion',
+              completedAt: now.toISOString(),
+              externalSoftwareWithholdPct,
+            }),
+            dispatch: {
+              ...dispatch,
+              acceptedAt: now.toISOString(),
+              offerExpiresAt: null,
+            },
+            timeline: [
+              ...job.timeline,
+              {
+                label: 'Auditor accepted offer',
+                at: timelineAt,
+                actor: targetAuditor.name,
+              },
+              {
+                label:
+                  selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+                    ? 'Audit method selected: auditor software'
+                    : 'Audit method selected: Certex template',
+                at: timelineAt,
+                actor: targetAuditor.name,
+              },
+              ...(repriced
+                ? [
+                    {
+                      label: `Payout profile applied (${formatCurrencyGBP(pricing.providerPayoutExVat)} ex VAT @ £${Number(
+                        pricing.auditorHourlyRate || 0
+                      ).toFixed(2)}/h)`,
+                      at: timelineAt,
+                      actor: 'Certex Pricing Engine',
+                    },
+                  ]
+                : []),
+              {
+                label: `Quote locked (${pricingLock?.quoteId || pricing.quoteId})`,
+                at: timelineAt,
+                actor: 'Certex Pricing Engine',
+              },
+            ],
+          };
+        }
+
+        if (job.status === 'open') {
+          acceptanceState = 'claimed';
+          const { quote: pricing, history: pricingHistory, repriced } = buildAuditorBoundQuote(job, targetAuditor, now);
+          const pricingLock = getMarketplaceJobPricingLock(job, pricing) ||
+            buildMarketplacePricingLock({
+              jobId: job.id,
+              quote: pricing,
+              lockedAt: now.toISOString(),
+              lockedBy: source,
+            });
+          return {
+            ...job,
+            status: 'assigned',
+            matchedAuditorId: auditorId,
+            auditExecutionMode: selectedExecutionMode,
+            externalAuditReviewStatus,
+            externalSoftwareWithholdPct,
+            auditMethodLocked: true,
+            pricing,
+            pricingHistory,
+            budget: pricing.total,
+            pricingLock,
+            settlement: buildMarketplaceSettlement(pricing, {
+              payoutStatus: 'pending_completion',
+              completedAt: now.toISOString(),
+              externalSoftwareWithholdPct,
+            }),
+            dispatch: {
+              ...dispatch,
+              dispatchedAt: dispatch.dispatchedAt || now.toISOString(),
+              acceptedAt: now.toISOString(),
+              attempts: Math.max(1, dispatch.attempts),
+            },
+            timeline: [
+              ...job.timeline,
+              {
+                label: 'Auditor claimed open marketplace job',
+                at: timelineAt,
+                actor: source,
+              },
+              {
+                label:
+                  selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+                    ? 'Audit method selected: auditor software'
+                    : 'Audit method selected: Certex template',
+                at: timelineAt,
+                actor: targetAuditor.name,
+              },
+              ...(repriced
+                ? [
+                    {
+                      label: `Payout profile applied (${formatCurrencyGBP(pricing.providerPayoutExVat)} ex VAT @ £${Number(
+                        pricing.auditorHourlyRate || 0
+                      ).toFixed(2)}/h)`,
+                      at: timelineAt,
+                      actor: 'Certex Pricing Engine',
+                    },
+                  ]
+                : []),
+              {
+                label: `Quote locked (${pricingLock?.quoteId || pricing.quoteId})`,
+                at: timelineAt,
+                actor: 'Certex Pricing Engine',
+              },
+            ],
+          };
+        }
+
+        if (job.status === 'assigned' && job.matchedAuditorId === auditorId) {
+          acceptanceState = 'already_assigned';
+        }
+        return job;
+      })
+    );
+
+    if (acceptanceState === 'expired') {
+      addToast('Offer expired before acceptance. Dispatch the job again.', 'info');
+      return false;
+    }
+
+    if (!['accepted', 'claimed'].includes(acceptanceState)) {
+      addToast('No eligible offer to accept for this job', 'info');
+      return false;
+    }
+
+    setAuditors((previousAuditors) =>
+      previousAuditors.map((auditor) =>
+        auditor.id === auditorId
+          ? {
+              ...auditor,
+              activeJobs: auditor.activeJobs + 1,
+            }
+          : auditor
+      )
+    );
+
+    addToast(
+      acceptanceState === 'claimed'
+        ? `${targetAuditor.name} claimed this job`
+        : `${targetAuditor.name} accepted the dispatch offer`,
+      'success'
+    );
+    return true;
+  };
+
+  const startMarketplaceAudit = (
+    jobId,
+    auditorId,
+    executionMode = AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+  ) => {
+    const targetJob = marketplaceJobs.find((job) => job.id === jobId);
+    const canStartAssigned = targetJob?.status === 'assigned';
+    const canBackfillMethodForInProgress = targetJob?.status === 'in_progress' && !targetJob?.auditMethodLocked;
+    if (
+      !targetJob ||
+      targetJob.matchedAuditorId !== auditorId ||
+      (!canStartAssigned && !canBackfillMethodForInProgress)
+    ) {
+      addToast('Only assigned jobs or legacy in-progress jobs can be started', 'info');
+      return false;
+    }
+
+    const selectedExecutionMode = normalizeAuditExecutionMode(executionMode);
+    const startedAt = new Date();
+    const timelineAt = getTimelineStamp(startedAt);
+    const externalSoftwareWithholdPct =
+      selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+        ? PRICING_ENGINE_CONFIG.externalSoftwareWithholdPct
+        : 0;
+    let didStart = false;
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) =>
+        job.id === jobId &&
+        job.matchedAuditorId === auditorId &&
+        (job.status === 'assigned' || (job.status === 'in_progress' && !job.auditMethodLocked))
+          ? {
+              ...job,
+              status: 'in_progress',
+              auditExecutionMode: selectedExecutionMode,
+              externalAuditReviewStatus:
+                selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+                  ? EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_EVIDENCE
+                  : EXTERNAL_AUDIT_REVIEW_STATUSES.NOT_REQUIRED,
+              externalSoftwareWithholdPct,
+              auditMethodLocked: true,
+              settlement: buildMarketplaceSettlement(getMarketplaceJobPricing(job), {
+                payoutStatus: 'pending_completion',
+                completedAt: startedAt.toISOString(),
+                externalSoftwareWithholdPct,
+                scheduledPayoutDate: job?.settlement?.scheduledPayoutDate,
+                holdbackReleaseDate: job?.settlement?.holdbackReleaseDate,
+              }),
+              timeline: [
+                ...job.timeline,
+                {
+                  label: job.status === 'assigned'
+                    ? selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+                      ? 'Audit started (auditor software selected)'
+                      : 'Audit started (Certex template)'
+                    : selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+                      ? 'Audit method selected (auditor software)'
+                      : 'Audit method selected (Certex template)',
+                  at: timelineAt,
+                  actor: auditors.find((auditor) => auditor.id === auditorId)?.name || 'Auditor',
+                },
+              ],
+            }
+          : job
+      )
+    );
+    didStart = true;
+    addToast(
+      selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+        ? 'Audit started with auditor software. Upload evidence and submit for Certex review.'
+        : canStartAssigned
+          ? 'Audit marked in progress'
+          : 'Audit method set to Certex template',
+      'success'
+    );
+    return didStart;
+  };
+
+  const uploadMarketplaceDocuments = (jobId, files, auditorId) => {
+    if (!files || files.length === 0) {
+      return;
+    }
+    const targetJob = marketplaceJobs.find((job) => job.id === jobId);
+    if (!targetJob || targetJob.matchedAuditorId !== auditorId || targetJob.status !== 'in_progress') {
+      addToast('Documents can only be uploaded for in-progress jobs', 'info');
+      return;
+    }
+    const timelineAt = getTimelineStamp(new Date());
+    const fileNames = files.map((file) => file.name);
+
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) =>
+        job.id === jobId && job.matchedAuditorId === auditorId && job.status === 'in_progress'
+          ? {
+              ...job,
+              documents: [...job.documents, ...fileNames],
+              timeline: [
+                ...job.timeline,
+                {
+                  label: `${fileNames.length} file(s) uploaded`,
+                  at: timelineAt,
+                  actor: auditors.find((auditor) => auditor.id === auditorId)?.name || 'Auditor',
+                },
+              ],
+            }
+          : job
+      )
+    );
+    addToast(`${fileNames.length} document(s) uploaded`, 'success');
+  };
+
+  const submitMarketplaceExternalAuditForReview = (jobId, auditorId) => {
+    const targetJob = marketplaceJobs.find((job) => job.id === jobId);
+    const targetAuditor = auditors.find((auditor) => auditor.id === auditorId);
+    if (!targetJob || !targetAuditor) {
+      addToast('Unable to submit audit for review', 'info');
+      return false;
+    }
+
+    if (
+      targetJob.matchedAuditorId !== auditorId ||
+      targetJob.status !== 'in_progress' ||
+      normalizeAuditExecutionMode(targetJob.auditExecutionMode) !== AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+    ) {
+      addToast('Only in-progress external audits can be submitted for review', 'info');
+      return false;
+    }
+
+    if (!Array.isArray(targetJob.documents) || targetJob.documents.length === 0) {
+      addToast('Upload external audit evidence before submitting for review', 'info');
+      return false;
+    }
+
+    const submittedAt = new Date();
+    const timelineAt = getTimelineStamp(submittedAt);
+    const externalSoftwareWithholdPct = resolveExternalSoftwareWithholdPct(targetJob);
+
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) =>
+        job.id === jobId && job.matchedAuditorId === auditorId && job.status === 'in_progress'
+          ? {
+              ...job,
+              status: 'awaiting_review',
+              externalAuditReviewStatus: EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_REVIEW,
+              settlement: buildMarketplaceSettlement(getMarketplaceJobPricing(job), {
+                payoutStatus: 'pending_review',
+                completedAt: submittedAt.toISOString(),
+                externalSoftwareWithholdPct,
+                scheduledPayoutDate: job?.settlement?.scheduledPayoutDate,
+                holdbackReleaseDate: job?.settlement?.holdbackReleaseDate,
+              }),
+              timeline: [
+                ...job.timeline,
+                {
+                  label: `External audit submitted for Certex review (${job.documents.length} evidence file(s))`,
+                  at: timelineAt,
+                  actor: targetAuditor.name,
+                },
+              ],
+            }
+          : job
+      )
+    );
+
+    addToast('External audit submitted for Certex review', 'success');
+    return true;
+  };
+
+  const reviewMarketplaceExternalAudit = (jobId, decision, reviewerName = 'Certex QA') => {
+    const targetJob = marketplaceJobs.find((job) => job.id === jobId);
+    if (!targetJob) {
+      addToast('Job not found for review', 'info');
+      return false;
+    }
+
+    const normalizedDecision = decision === 'reject' ? 'reject' : decision === 'approve' ? 'approve' : '';
+    if (!normalizedDecision) {
+      addToast('Invalid review decision', 'info');
+      return false;
+    }
+
+    if (
+      targetJob.status !== 'awaiting_review' ||
+      normalizeAuditExecutionMode(targetJob.auditExecutionMode) !== AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+    ) {
+      addToast('Only submitted external audits can be reviewed', 'info');
+      return false;
+    }
+
+    const reviewDate = new Date();
+    const reviewAt = getTimelineStamp(reviewDate);
+    const externalSoftwareWithholdPct = resolveExternalSoftwareWithholdPct(targetJob);
+    const targetAuditor = auditors.find((auditor) => auditor.id === targetJob.matchedAuditorId);
+    const auditorName = targetAuditor?.name || 'Assigned auditor';
+
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) => {
+        if (
+          job.id !== jobId ||
+          normalizeAuditExecutionMode(job.auditExecutionMode) !== AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+        ) {
+          return job;
+        }
+
+        if (normalizedDecision === 'approve') {
+          const settlement = buildMarketplaceSettlement(getMarketplaceJobPricing(job), {
+            payoutStatus: 'scheduled',
+            completedAt: reviewDate.toISOString(),
+            externalSoftwareWithholdPct,
+            scheduledPayoutDate: job?.settlement?.scheduledPayoutDate,
+            holdbackReleaseDate: job?.settlement?.holdbackReleaseDate,
+          });
+          return {
+            ...job,
+            status: 'completed',
+            externalAuditReviewStatus: EXTERNAL_AUDIT_REVIEW_STATUSES.APPROVED,
+            settlement,
+            timeline: [
+              ...job.timeline,
+              {
+                label: 'Certex approved external audit evidence',
+                at: reviewAt,
+                actor: reviewerName,
+              },
+              {
+                label: `Settlement scheduled for ${settlement.scheduledPayoutDate}`,
+                at: reviewAt,
+                actor: 'Certex Settlement Engine',
+              },
+            ],
+          };
+        }
+
+        return {
+          ...job,
+          status: 'in_progress',
+          externalAuditReviewStatus: EXTERNAL_AUDIT_REVIEW_STATUSES.REJECTED,
+          settlement: buildMarketplaceSettlement(getMarketplaceJobPricing(job), {
+            payoutStatus: 'pending_completion',
+            completedAt: reviewDate.toISOString(),
+            externalSoftwareWithholdPct,
+            scheduledPayoutDate: job?.settlement?.scheduledPayoutDate,
+            holdbackReleaseDate: job?.settlement?.holdbackReleaseDate,
+          }),
+          timeline: [
+            ...job.timeline,
+            {
+              label: 'Certex requested revisions to external audit evidence',
+              at: reviewAt,
+              actor: reviewerName,
+            },
+          ],
+        };
+      })
+    );
+
+    if (normalizedDecision === 'reject') {
+      addToast('External audit returned for additional evidence', 'info');
+      return true;
+    }
+
+    if (targetAuditor) {
+      setAuditors((previousAuditors) =>
+        previousAuditors.map((auditor) =>
+          auditor.id === targetAuditor.id
+            ? {
+                ...auditor,
+                activeJobs: Math.max(0, auditor.activeJobs - 1),
+                completedAudits: auditor.completedAudits + 1,
+              }
+            : auditor
+        )
+      );
+    }
+
+    const issueDate = reviewDate.toISOString().slice(0, 10);
+    const expiryDate = new Date(reviewDate);
+    expiryDate.setMonth(expiryDate.getMonth() + 6);
+    setCertificates((previousCertificates) => [
+      {
+        id: `CERT-${reviewDate.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        assetId: targetJob.assetId,
+        assetName: targetJob.assetName,
+        regime: targetJob.regime,
+        provider: auditorName,
+        issueDate,
+        expiryDate: expiryDate.toISOString().slice(0, 10),
+        hash: createPseudoHash(`${targetJob.id}-${targetAuditor?.id || 'external'}-${issueDate}`),
+      },
+      ...previousCertificates,
+    ]);
+
+    const inProgressRun = auditRuns.find((run) => run.auditJobId === jobId && run.status === 'in_progress');
+    if (inProgressRun) {
+      completeAuditRun(inProgressRun.id);
+    }
+
+    addToast('External audit approved and certificate issued', 'success');
+    return true;
+  };
+
+  const completeMarketplaceAudit = (jobId, auditorId) => {
+    const targetJob = marketplaceJobs.find((job) => job.id === jobId);
+    const targetAuditor = auditors.find((auditor) => auditor.id === auditorId);
+
+    if (!targetJob || !targetAuditor) {
+      addToast('Unable to complete job', 'info');
+      return false;
+    }
+
+    if (targetJob.matchedAuditorId !== auditorId || targetJob.status !== 'in_progress') {
+      addToast('Job must be in progress before completion', 'info');
+      return false;
+    }
+
+    if (normalizeAuditExecutionMode(targetJob.auditExecutionMode) === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE) {
+      addToast('External audits must be submitted for Certex review before completion', 'info');
+      return false;
+    }
+
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+    const expiry = new Date(today);
+    expiry.setMonth(expiry.getMonth() + 6);
+    const expiryIso = expiry.toISOString().slice(0, 10);
+    const timelineAt = getTimelineStamp(today);
+
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) => {
+        if (job.id === jobId && job.matchedAuditorId === auditorId && job.status === 'in_progress') {
+          const pricing = getMarketplaceJobPricing(job);
+          const pricingLock = getMarketplaceJobPricingLock(job, pricing) ||
+            buildMarketplacePricingLock({
+              jobId: job.id,
+              quote: pricing,
+              lockedAt: today.toISOString(),
+              lockedBy: targetAuditor.name,
+            });
+          const settlement = buildMarketplaceSettlement(pricing, {
+            payoutStatus: 'scheduled',
+            completedAt: today.toISOString(),
+            externalSoftwareWithholdPct: resolveExternalSoftwareWithholdPct(job),
+          });
+          return {
+            ...job,
+            status: 'completed',
+            externalAuditReviewStatus: EXTERNAL_AUDIT_REVIEW_STATUSES.NOT_REQUIRED,
+            pricingLock,
+            settlement,
+            timeline: [
+              ...job.timeline,
+              {
+                label: 'Audit completed',
+                at: timelineAt,
+                actor: targetAuditor.name,
+              },
+              {
+                label: `Settlement scheduled for ${settlement.scheduledPayoutDate}`,
+                at: timelineAt,
+                actor: 'Certex Settlement Engine',
+              },
+            ],
+          };
+        }
+        return job;
+      })
+    );
+
+    setAuditors((previousAuditors) =>
+      previousAuditors.map((auditor) =>
+        auditor.id === auditorId
+          ? {
+              ...auditor,
+              activeJobs: Math.max(0, auditor.activeJobs - 1),
+              completedAudits: auditor.completedAudits + 1,
+            }
+          : auditor
+      )
+    );
+
+    setCertificates((previousCertificates) => [
+      {
+        id: `CERT-${today.getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        assetId: targetJob.assetId,
+        assetName: targetJob.assetName,
+        regime: targetJob.regime,
+        provider: targetAuditor.name,
+        issueDate: todayIso,
+        expiryDate: expiryIso,
+        hash: createPseudoHash(`${targetJob.id}-${targetAuditor.id}-${todayIso}`),
+      },
+      ...previousCertificates,
+    ]);
+
+    const inProgressRun = auditRuns.find((run) => run.auditJobId === jobId && run.status === 'in_progress');
+    if (inProgressRun) {
+      completeAuditRun(inProgressRun.id);
+    }
+
+    addToast('Audit completed and certificate issued to Evidence Vault', 'success');
+    return true;
+  };
+
+  const applyMarketplaceAdjustment = (jobId, adjustmentPayload) => {
+    const targetJob = marketplaceJobs.find((job) => job.id === jobId);
+    if (!targetJob) {
+      addToast('Unable to apply adjustment: job not found', 'info');
+      return false;
+    }
+
+    const baselinePricing = getMarketplaceJobPricing(targetJob);
+    const pricingLock = getMarketplaceJobPricingLock(targetJob, baselinePricing);
+    if (!pricingLock) {
+      addToast('Quote must be locked before adjustments can be applied', 'info');
+      return false;
+    }
+
+    const adjustmentType = adjustmentPayload?.type || 'manual';
+    const reasonCode = String(adjustmentPayload?.reasonCode || 'manual_adjustment').trim() || 'manual_adjustment';
+    const evidenceRef = String(adjustmentPayload?.evidenceRef || '').trim();
+    const approvedByUserId = String(adjustmentPayload?.approvedByUserId || 'ops_user').trim() || 'ops_user';
+    const amountExVatDelta = roundMoney(adjustmentPayload?.amountExVatDelta);
+
+    if (amountExVatDelta === 0) {
+      addToast('Adjustment amount must be non-zero', 'info');
+      return false;
+    }
+
+    const now = new Date();
+    const timelineAt = getTimelineStamp(now);
+    let adjustmentApplied = false;
+
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) => {
+        if (job.id !== jobId) {
+          return job;
+        }
+
+        const currentPricing = getMarketplaceJobPricing(job);
+        const currentLock = getMarketplaceJobPricingLock(job, currentPricing);
+        if (!currentLock) {
+          return job;
+        }
+
+        const nextQuote = buildAdjustedMarketplaceQuote({
+          previousQuote: currentPricing,
+          jobId: job.id,
+          adjustmentType,
+          amountExVatDelta,
+          reasonCode,
+          evidenceRef,
+        });
+
+        const currentAdjustments = getMarketplaceJobPricingAdjustments(job);
+        const adjustmentEvent = {
+          adjustmentId: `ADJ-${job.id}-${currentAdjustments.length + 1}`,
+          type: adjustmentType,
+          reasonCode,
+          amountExVatDelta,
+          evidenceRef,
+          approvedByUserId,
+          quoteIdFrom: currentPricing.quoteId,
+          quoteIdTo: nextQuote.quoteId,
+          createdAt: now.toISOString(),
+        };
+
+        adjustmentApplied = true;
+        const nextPayoutStatus =
+          job.status === 'completed'
+            ? 'scheduled'
+            : job.status === 'awaiting_review'
+              ? 'pending_review'
+              : 'pending_completion';
+        const nextSettlement = buildMarketplaceSettlement(nextQuote, {
+          payoutStatus: nextPayoutStatus,
+          completedAt: now.toISOString(),
+          externalSoftwareWithholdPct: resolveExternalSoftwareWithholdPct(job),
+          scheduledPayoutDate: job?.settlement?.scheduledPayoutDate,
+          holdbackReleaseDate: job?.settlement?.holdbackReleaseDate,
+        });
+
+        return {
+          ...job,
+          budget: nextQuote.total,
+          pricing: nextQuote,
+          pricingHistory: [...getMarketplaceJobPricingHistory(job, currentPricing), nextQuote],
+          pricingAdjustments: [...currentAdjustments, adjustmentEvent],
+          settlement: nextSettlement,
+          timeline: [
+            ...job.timeline,
+            {
+              label: `Pricing adjustment ${adjustmentType.replace(/_/g, ' ')} (${amountExVatDelta >= 0 ? '+' : ''}${formatCurrencyGBP(amountExVatDelta)} ex VAT)`,
+              at: timelineAt,
+              actor: approvedByUserId,
+            },
+          ],
+        };
+      })
+    );
+
+    if (!adjustmentApplied) {
+      addToast('Unable to apply adjustment for this job state', 'info');
+      return false;
+    }
+
+    addToast(`Adjustment applied to ${jobId}: ${amountExVatDelta >= 0 ? '+' : ''}${formatCurrencyGBP(amountExVatDelta)} ex VAT`, 'success');
+    return true;
+  };
+
+  const updatePublicSiteConfig = (patch) => {
+    setPublicSiteConfig((previousConfig) => ({
+      ...previousConfig,
+      ...patch,
+      launchDate:
+        patch?.launchStatus === 'live'
+          ? patch.launchDate || previousConfig.launchDate || new Date().toISOString().slice(0, 10)
+          : patch?.launchDate ?? previousConfig.launchDate,
+      updatedAt: new Date().toISOString(),
+    }));
+  };
+
+  const toggleOnboardingTask = (taskId) => {
+    setOnboardingTasks((previousTasks) =>
+      previousTasks.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              completed: !task.completed,
+            }
+          : task
+      )
+    );
+  };
+
+  const runPilotFulfilmentLoop = () => {
+    const openJobs = marketplaceJobs.filter((job) => job.status === 'open');
+    if (openJobs.length === 0) {
+      addToast('No open jobs available for pilot fulfilment loop', 'info');
+      return;
+    }
+
+    let dispatched = 0;
+    openJobs.slice(0, 3).forEach((job) => {
+      const topCandidate = rankAuditorsForJob(job, auditors, Date.now())[0];
+      if (!topCandidate) {
+        return;
+      }
+      dispatchMarketplaceJob(job.id, topCandidate.auditor.id, 'Pilot fulfilment loop');
+      dispatched += 1;
+    });
+
+    if (dispatched === 0) {
+      addToast('Pilot loop found no eligible provider matches', 'info');
+      return;
+    }
+
+    addToast(`Pilot fulfilment dispatched ${dispatched} open job${dispatched === 1 ? '' : 's'}`, 'success');
+  };
+
+  const signCertificateFromTrustLayer = (certificateId) => {
+    const targetCertificate = certificates.find((certificate) => certificate.id === certificateId);
+    if (!targetCertificate) {
+      addToast('Certificate not found for signing', 'info');
+      return false;
+    }
+
+    const signedAt = new Date().toISOString();
+    const verificationLink = buildCertificateDeepLink(certificateId);
+    setCertificates((previousCertificates) =>
+      previousCertificates.map((certificate) =>
+        certificate.id === certificateId
+          ? {
+              ...certificate,
+              signedAt,
+              signatureAlgorithm: 'kms_sha256_rsa',
+              verificationLink,
+            }
+          : certificate
+      )
+    );
+    addToast(`Certificate ${certificateId} signed and verification published`, 'success');
+    return true;
+  };
+
+  const generateMissingInvoices = () => {
+    const completedJobs = marketplaceJobs.filter((job) => job.status === 'completed');
+    if (completedJobs.length === 0) {
+      addToast('No completed jobs available for invoicing', 'info');
+      return;
+    }
+
+    const existingInvoiceJobIds = new Set(financeInvoices.map((invoice) => invoice.jobId));
+    const issueDate = new Date().toISOString().slice(0, 10);
+    const dueDate = addDays(issueDate, 30);
+    const createdInvoices = [];
+    const nextInvoices = [...financeInvoices];
+
+    completedJobs.forEach((job) => {
+      if (existingInvoiceJobIds.has(job.id)) {
+        return;
+      }
+
+      const pricing = getMarketplaceJobPricing(job);
+      const settlement = getMarketplaceJobSettlement(job, pricing);
+      const poNumber = extractStructuredNoteValue(job.notes, 'PO') || 'PO-PENDING';
+      const costCentre = extractStructuredNoteValue(job.notes, 'Cost centre') || 'UNALLOCATED';
+      const approver = extractStructuredNoteValue(job.notes, 'Approver') || 'finance@acme-logistics.example';
+      const invoiceId = getNextInvoiceId(nextInvoices);
+      const invoice = {
+        id: invoiceId,
+        jobId: job.id,
+        quoteId: pricing.quoteId,
+        assetName: job.assetName,
+        providerName: auditors.find((auditor) => auditor.id === job.matchedAuditorId)?.name || 'Assigned provider',
+        issueDate,
+        dueDate,
+        poNumber,
+        costCentre,
+        approver,
+        subtotalExVat: pricing.subtotalExVat,
+        vatAmount: pricing.vatAmount,
+        totalIncVat: pricing.total,
+        settlementReference: settlement ? settlement.payoutEvent : 'EVIDENCE_ISSUED',
+        status: 'pending_approval',
+        approvedAt: '',
+        payoutScheduledAt: '',
+        paidAt: '',
+      };
+      nextInvoices.unshift(invoice);
+      existingInvoiceJobIds.add(job.id);
+      createdInvoices.push(invoice);
+    });
+
+    if (createdInvoices.length === 0) {
+      addToast('All completed jobs already have invoices', 'info');
+      return;
+    }
+
+    setFinanceInvoices(nextInvoices);
+    addToast(`${createdInvoices.length} invoice${createdInvoices.length === 1 ? '' : 's'} generated from completed jobs`, 'success');
+  };
+
+  const approveInvoice = (invoiceId) => {
+    let didApprove = false;
+    const approvedAt = new Date().toISOString();
+    setFinanceInvoices((previousInvoices) =>
+      previousInvoices.map((invoice) => {
+        if (invoice.id !== invoiceId || invoice.status !== 'pending_approval') {
+          return invoice;
+        }
+
+        didApprove = true;
+        return {
+          ...invoice,
+          status: 'approved',
+          approvedAt,
+        };
+      })
+    );
+
+    if (!didApprove) {
+      addToast('Invoice is not eligible for approval', 'info');
+      return false;
+    }
+
+    addToast(`Invoice ${invoiceId} approved`, 'success');
+    return true;
+  };
+
+  const schedulePayoutForInvoice = (invoiceId) => {
+    const targetInvoice = financeInvoices.find((invoice) => invoice.id === invoiceId);
+    if (!targetInvoice) {
+      addToast('Invoice not found for payout scheduling', 'info');
+      return false;
+    }
+    if (targetInvoice.status !== 'approved') {
+      addToast('Approve invoice before scheduling payout', 'info');
+      return false;
+    }
+    if (payoutRuns.some((run) => run.invoiceId === invoiceId)) {
+      addToast('Payout already scheduled for this invoice', 'info');
+      return false;
+    }
+
+    const linkedJob = marketplaceJobs.find((job) => job.id === targetInvoice.jobId);
+    const pricing = linkedJob ? getMarketplaceJobPricing(linkedJob) : null;
+    const settlement = linkedJob ? getMarketplaceJobSettlement(linkedJob, pricing) : null;
+    const runId = getNextPayoutRunId(payoutRuns);
+    const scheduledPayoutDate = settlement?.scheduledPayoutDate || getNextWeeklyPayoutDate(new Date());
+    const payoutAmount = settlement?.netProviderScheduled || roundMoney(targetInvoice.totalIncVat * 0.82);
+    const createdAt = new Date().toISOString();
+
+    setPayoutRuns((previousRuns) => [
+      {
+        id: runId,
+        invoiceId,
+        jobId: targetInvoice.jobId,
+        providerName: targetInvoice.providerName,
+        payoutAmount,
+        scheduledPayoutDate,
+        status: 'scheduled',
+        createdAt,
+      },
+      ...previousRuns,
+    ]);
+
+    setFinanceInvoices((previousInvoices) =>
+      previousInvoices.map((invoice) =>
+        invoice.id === invoiceId
+          ? {
+              ...invoice,
+              status: 'payout_scheduled',
+              payoutScheduledAt: createdAt,
+            }
+          : invoice
+      )
+    );
+
+    addToast(`Payout run ${runId} scheduled for ${targetInvoice.providerName}`, 'success');
+    return true;
+  };
+
+  const addInspectionTemplate = ({ regime, name, controls, scope = 'company' }) => {
+    const templateName = String(name || '').trim();
+    if (!templateName) {
+      addToast('Template name is required', 'info');
+      return false;
+    }
+    const visibility = String(scope || '').toLowerCase() === 'global' ? 'global' : 'company';
+    const ownerCompanyId = visibility === 'company' ? activeCompanyContext.id : '';
+    const ownerCompanyName = visibility === 'company' ? activeCompanyContext.name : '';
+
+    const cleanedControls = String(controls || '')
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    setInspectionTemplates((previousTemplates) => [
+      {
+        id: getNextTemplateId(previousTemplates),
+        regime: regime || 'PUWER',
+        name: templateName,
+        version: '1.0',
+        active: true,
+        controls: cleanedControls.length > 0 ? cleanedControls : ['Control checkpoint pending'],
+        visibility,
+        ownerCompanyId,
+        ownerCompanyName,
+      },
+      ...previousTemplates,
+    ]);
+    addToast(
+      `Template created: ${templateName} (${visibility === 'company' ? `${activeCompanyContext.name} bespoke` : 'global'})`,
+      'success'
+    );
+    return true;
+  };
+
+  const toggleInspectionTemplate = (templateId) => {
+    setInspectionTemplates((previousTemplates) =>
+      previousTemplates.map((template) =>
+        template.id === templateId
+          ? {
+              ...template,
+              active: !template.active,
+            }
+          : template
+      )
+    );
+  };
+
+  const connectIntegration = (integrationId, endpoint) => {
+    const sanitizedEndpoint = String(endpoint || '').trim();
+    if (!sanitizedEndpoint) {
+      addToast('Integration endpoint is required', 'info');
+      return false;
+    }
+
+    let didConnect = false;
+    const updatedAt = new Date().toISOString();
+    setIntegrationConnections((previousIntegrations) =>
+      previousIntegrations.map((integration) => {
+        if (integration.id !== integrationId) {
+          return integration;
+        }
+        didConnect = true;
+        return {
+          ...integration,
+          status: 'connected',
+          endpoint: sanitizedEndpoint,
+          lastSyncAt: updatedAt,
+        };
+      })
+    );
+
+    if (!didConnect) {
+      addToast('Integration not found', 'info');
+      return false;
+    }
+
+    addToast('Integration connected and sync channel activated', 'success');
+    return true;
+  };
+
+  const createTemplateBlueprint = ({ name, category, scoringModel, licenceModel, blockTypes, mandatoryEvidenceBlocks }) => {
+    const templateName = String(name || '').trim();
+    if (!templateName) {
+      addToast('Template blueprint name is required', 'info');
+      return false;
+    }
+
+    const normalizedBlockTypes = String(blockTypes || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const requiredEvidenceCount = Math.max(0, Number(mandatoryEvidenceBlocks || 0));
+    const nowIso = new Date().toISOString();
+    const templateId = getNextEntityId(templateBlueprints, 'TPLX');
+
+    setTemplateBlueprints((previousTemplates) => [
+      {
+        id: templateId,
+        ownerOrgId: 'certex',
+        name: templateName,
+        category: String(category || 'HS'),
+        schemaVersion: '1.0',
+        scoringModel: String(scoringModel || 'pass_fail'),
+        licenceModel: String(licenceModel || 'single_use'),
+        status: 'draft',
+        currentVersion: '1.0',
+        blockTypes: normalizedBlockTypes.length > 0 ? normalizedBlockTypes : ['section', 'yes_no_na', 'photo'],
+        mandatoryEvidenceBlocks: requiredEvidenceCount,
+        signatures: { auditorRequired: true, operatorRequired: false },
+        publishedAt: '',
+        versions: [
+          {
+            version: '1.0',
+            changelog: 'Initial draft',
+            publishedAt: nowIso,
+            hash: createPseudoHash(JSON.stringify({ templateId, nowIso })),
+          },
+        ],
+      },
+      ...previousTemplates,
+    ]);
+
+    addToast(`Template blueprint created: ${templateName}`, 'success');
+    return true;
+  };
+
+  const publishTemplateBlueprint = (templateId, changelog = 'Published update') => {
+    let didPublish = false;
+    let publishedVersion = '';
+    const nowIso = new Date().toISOString();
+
+    setTemplateBlueprints((previousTemplates) =>
+      previousTemplates.map((template) => {
+        if (template.id !== templateId) {
+          return template;
+        }
+        didPublish = true;
+        const nextVersion = incrementTemplateVersion(template.currentVersion || '1.0');
+        publishedVersion = nextVersion;
+        const versionEntry = {
+          version: nextVersion,
+          changelog: String(changelog || 'Published update'),
+          publishedAt: nowIso,
+          hash: createPseudoHash(JSON.stringify({ templateId, version: nextVersion, nowIso })),
+        };
+        return {
+          ...template,
+          status: 'published',
+          currentVersion: nextVersion,
+          publishedAt: nowIso,
+          versions: [...(Array.isArray(template.versions) ? template.versions : []), versionEntry],
+        };
+      })
+    );
+
+    if (!didPublish) {
+      addToast('Template blueprint not found', 'info');
+      return false;
+    }
+
+    addToast(`Template ${templateId} published as v${publishedVersion}`, 'success');
+    return true;
+  };
+
+  const createTemplateListing = ({ templateId, priceModel, price, tags, vettingTier }) => {
+    const targetTemplate = templateBlueprints.find((template) => template.id === templateId);
+    if (!targetTemplate) {
+      addToast('Select a valid template blueprint before listing', 'info');
+      return false;
+    }
+
+    const listingPrice = Number(price || 0);
+    if (!Number.isFinite(listingPrice) || listingPrice <= 0) {
+      addToast('Listing price must be greater than 0', 'info');
+      return false;
+    }
+
+    const listingTags = String(tags || '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+    const listingId = getNextEntityId(templateListings, 'LST');
+
+    setTemplateListings((previousListings) => [
+      {
+        id: listingId,
+        templateId: targetTemplate.id,
+        priceModel: String(priceModel || 'single_use'),
+        price: Math.round(listingPrice),
+        currency: 'GBP',
+        tags: listingTags,
+        previewAssets: 0,
+        qualityRating: 4.7,
+        vettingTier: String(vettingTier || 'community'),
+        status: 'active',
+      },
+      ...previousListings,
+    ]);
+
+    addToast(`Marketplace listing created for ${targetTemplate.name}`, 'success');
+    return true;
+  };
+
+  const grantTemplateLicence = ({ listingId, buyerOrgId, licenceType, seats, uses, allowedExports, watermarkRules, canFork }) => {
+    const targetListing = templateListings.find((listing) => listing.id === listingId);
+    if (!targetListing) {
+      addToast('Select a valid marketplace listing before granting a licence', 'info');
+      return false;
+    }
+
+    const normalizedBuyerOrgId = String(buyerOrgId || '').trim();
+    if (!normalizedBuyerOrgId) {
+      addToast('Buyer org is required', 'info');
+      return false;
+    }
+
+    const startAt = new Date();
+    const endAt = new Date(startAt.getTime());
+    endAt.setFullYear(endAt.getFullYear() + 1);
+    const exportsList = String(allowedExports || 'pdf,json')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+
+    setLicenceGrants((previousGrants) => [
+      {
+        id: getNextEntityId(previousGrants, 'LIC'),
+        listingId,
+        buyerOrgId: normalizedBuyerOrgId,
+        licenceType: String(licenceType || 'multi_use'),
+        seats: Math.max(1, Number(seats || 1)),
+        usesRemaining: licenceType === 'single_use' ? Math.max(1, Number(uses || 1)) : null,
+        allowedExports: exportsList.length > 0 ? exportsList : ['pdf', 'json'],
+        watermarkRules: String(watermarkRules || 'none'),
+        canFork: Boolean(canFork),
+        startAt: startAt.toISOString(),
+        endAt: endAt.toISOString(),
+      },
+      ...previousGrants,
+    ]);
+
+    addToast(`Licence granted to ${normalizedBuyerOrgId}`, 'success');
+    return true;
+  };
+
+  const startAuditRun = ({ auditJobId, templateId, offlineSyncState, gpsPolicy }) => {
+    const targetJob = marketplaceJobs.find((job) => job.id === auditJobId);
+    if (!targetJob) {
+      addToast('Select a valid job before starting an audit run', 'info');
+      return null;
+    }
+    const targetTemplate = templateBlueprints.find((template) => template.id === templateId);
+    if (!targetTemplate) {
+      addToast('Select a valid template before starting an audit run', 'info');
+      return null;
+    }
+
+    const existingInProgressRun = auditRuns.find((run) => run.auditJobId === auditJobId && run.status === 'in_progress');
+    if (existingInProgressRun) {
+      return existingInProgressRun.id;
+    }
+
+    const runId = getNextEntityId(auditRuns, 'RUN');
+    const nowIso = new Date().toISOString();
+    setAuditRuns((previousRuns) => [
+      {
+        id: runId,
+        auditJobId,
+        templateId,
+        templateVersion: targetTemplate.currentVersion || '1.0',
+        startedAt: nowIso,
+        completedAt: '',
+        status: 'in_progress',
+        offlineSyncState: String(offlineSyncState || 'queued'),
+        gpsPolicy: String(gpsPolicy || 'optional'),
+        requiredEvidenceRemaining: Math.max(0, Number(targetTemplate.mandatoryEvidenceBlocks || 0)),
+        requiredSignaturesRemaining: targetTemplate.signatures?.operatorRequired ? 2 : 1,
+      },
+      ...previousRuns,
+    ]);
+    addToast(`Audit run ${runId} started for ${targetJob.id}`, 'success');
+    return runId;
+  };
+
+  const createReportArtifactForRun = (auditRunId) => {
+    const targetRun = auditRuns.find((run) => run.id === auditRunId);
+    if (!targetRun) {
+      addToast('Audit run not found for report generation', 'info');
+      return null;
+    }
+
+    let artifactId = '';
+    setReportArtifacts((previousArtifacts) => {
+      const runArtifacts = previousArtifacts.filter((artifact) => artifact.auditRunId === auditRunId);
+      const nextVersion =
+        runArtifacts.reduce((max, artifact) => Math.max(max, Number(artifact.version || 0)), 0) + 1;
+      const replacedArtifacts = previousArtifacts.map((artifact) =>
+        artifact.auditRunId === auditRunId && artifact.status === 'valid'
+          ? {
+              ...artifact,
+              status: 'replaced',
+            }
+          : artifact
+      );
+      const createdAt = new Date().toISOString();
+      artifactId = getNextEntityId(previousArtifacts, 'RPT');
+      const basePath = `storage://certex-reports/${auditRunId}/v${nextVersion}`;
+      const artifact = {
+        id: artifactId,
+        auditRunId,
+        version: nextVersion,
+        pdfUri: `${basePath}/report.pdf`,
+        htmlUri: `${basePath}/report.html`,
+        hash: createPseudoHash(JSON.stringify({ auditRunId, nextVersion, createdAt })),
+        signature: `sig:certex:${auditRunId}:v${nextVersion}`,
+        status: 'valid',
+        signedPdfUrl: `https://signed.certex.example/reports/${auditRunId}/v${nextVersion}.pdf`,
+        signedHtmlUrl: `https://signed.certex.example/reports/${auditRunId}/v${nextVersion}.html`,
+        createdAt,
+      };
+      return [artifact, ...replacedArtifacts];
+    });
+    addToast(`Report artifact ${artifactId} generated`, 'success');
+    return artifactId;
+  };
+
+  const completeAuditRun = (auditRunId) => {
+    const targetRun = auditRuns.find((run) => run.id === auditRunId);
+    if (!targetRun) {
+      addToast('Audit run not found', 'info');
+      return false;
+    }
+
+    if (targetRun.status === 'completed') {
+      addToast('Audit run is already completed', 'info');
+      return false;
+    }
+
+    const completedAt = new Date().toISOString();
+    setAuditRuns((previousRuns) =>
+      previousRuns.map((run) =>
+        run.id === auditRunId
+          ? {
+              ...run,
+              completedAt,
+              status: 'completed',
+              offlineSyncState: 'synced',
+              requiredEvidenceRemaining: 0,
+              requiredSignaturesRemaining: 0,
+            }
+          : run
+      )
+    );
+    createReportArtifactForRun(auditRunId);
+    return true;
+  };
+
+  const addAuditFinding = ({ auditRunId, severity, taxonomyCode, description }) => {
+    const normalizedDescription = String(description || '').trim();
+    if (!normalizedDescription) {
+      addToast('Finding description is required', 'info');
+      return false;
+    }
+
+    const targetRun = auditRuns.find((run) => run.id === auditRunId);
+    if (!targetRun) {
+      addToast('Select a valid audit run before adding a finding', 'info');
+      return false;
+    }
+
+    const severityValue = String(severity || 'medium').toLowerCase();
+    let createdFindingId = '';
+    setAuditFindings((previousFindings) => {
+      createdFindingId = getNextEntityId(previousFindings, 'FND');
+      return [
+        {
+          id: createdFindingId,
+          auditRunId,
+          severity: severityValue,
+          taxonomyCode: String(taxonomyCode || 'GENERAL'),
+          description: normalizedDescription,
+          linkedBlockId: '',
+          photos: severityValue === 'low' ? 0 : 1,
+          riskScore: getSeverityRiskScore(severityValue),
+          status: 'open',
+        },
+        ...previousFindings,
+      ];
+    });
+
+    if (severityValue === 'high' || severityValue === 'critical') {
+      setAuditActions((previousActions) => [
+        {
+          id: getNextEntityId(previousActions, 'ACT'),
+          findingId: createdFindingId,
+          assignee: 'Site Manager',
+          dueDate: getDefaultActionDueDate(severityValue),
+          status: 'open',
+          evidenceRequired: true,
+          closureSignoff: 'auditor',
+          closureEvidenceCount: 0,
+        },
+        ...previousActions,
+      ]);
+      addToast(`Finding ${createdFindingId} logged and high-risk action auto-created`, 'success');
+      return true;
+    }
+
+    addToast(`Finding ${createdFindingId} logged`, 'success');
+    return true;
+  };
+
+  const createAuditAction = ({ findingId, assignee, dueDate, evidenceRequired, closureSignoff }) => {
+    const targetFinding = auditFindings.find((finding) => finding.id === findingId);
+    if (!targetFinding) {
+      addToast('Select a valid finding before creating an action', 'info');
+      return false;
+    }
+
+    setAuditActions((previousActions) => [
+      {
+        id: getNextEntityId(previousActions, 'ACT'),
+        findingId,
+        assignee: String(assignee || 'Site Manager'),
+        dueDate: dueDate || getDefaultActionDueDate(targetFinding.severity),
+        status: 'open',
+        evidenceRequired: Boolean(evidenceRequired),
+        closureSignoff: String(closureSignoff || 'auditor'),
+        closureEvidenceCount: 0,
+      },
+      ...previousActions,
+    ]);
+    addToast(`Action created for finding ${findingId}`, 'success');
+    return true;
+  };
+
+  const advanceAuditActionStatus = (actionId) => {
+    let previousStatus = '';
+    let nextStatus = '';
+
+    setAuditActions((previousActions) =>
+      previousActions.map((action) => {
+        if (action.id !== actionId) {
+          return action;
+        }
+
+        previousStatus = action.status;
+        if (action.status === 'open') {
+          nextStatus = 'pending_approval';
+        } else if (action.status === 'pending_approval') {
+          nextStatus = 'closed';
+        } else {
+          nextStatus = 'closed';
+        }
+
+        return {
+          ...action,
+          status: nextStatus,
+          closureEvidenceCount: nextStatus === 'closed' ? Math.max(1, Number(action.closureEvidenceCount || 0)) : action.closureEvidenceCount,
+        };
+      })
+    );
+
+    if (!previousStatus) {
+      addToast('Action not found', 'info');
+      return false;
+    }
+
+    addToast(`Action ${actionId} moved to ${nextStatus.replace('_', ' ')}`, 'success');
+    return true;
+  };
+
+  const createShareLinkForArtifact = (reportArtifactId) => {
+    const targetArtifact = reportArtifacts.find((artifact) => artifact.id === reportArtifactId);
+    if (!targetArtifact) {
+      addToast('Report artifact not found', 'info');
+      return false;
+    }
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 14);
+    const shareId = getNextEntityId(shareLinks, 'SHR');
+
+    setShareLinks((previousLinks) => [
+      {
+        id: shareId,
+        reportArtifactId,
+        scopeJson: '{}',
+        expiresAt: expiresAt.toISOString(),
+        accessPolicy: 'read_only',
+        auditLogEnabled: true,
+        url: `https://portal.certex.example/share/${shareId}`,
+      },
+      ...previousLinks,
+    ]);
+    addToast(`Share link ${shareId} generated`, 'success');
+    return true;
+  };
+
+  const startAuditRunForMarketplaceJob = (jobId) => {
+    const targetJob = marketplaceJobs.find((job) => job.id === jobId);
+    if (!targetJob) {
+      return null;
+    }
+
+    const existingRun = auditRuns.find((run) => run.auditJobId === jobId && run.status === 'in_progress');
+    if (existingRun) {
+      return existingRun.id;
+    }
+
+    const preferredTemplate =
+      templateBlueprints.find((template) => template.status === 'published' && template.category === 'HS') ||
+      templateBlueprints.find((template) => template.status === 'published') ||
+      templateBlueprints[0];
+
+    if (!preferredTemplate) {
+      addToast('No template blueprint is available for this audit run', 'info');
+      return null;
+    }
+
+    return startAuditRun({
+      auditJobId: jobId,
+      templateId: preferredTemplate.id,
+      offlineSyncState: isOnline ? 'synced' : 'queued',
+      gpsPolicy: 'optional',
+    });
+  };
+
+  const recordMarketplaceFinding = (jobId, auditorId, findingPayload) => {
+    const targetJob = marketplaceJobs.find((job) => job.id === jobId);
+    const targetAuditor = auditors.find((auditor) => auditor.id === auditorId);
+
+    if (!targetJob || !targetAuditor) {
+      return false;
+    }
+
+    const control = String(findingPayload?.control || 'Checklist finding').trim();
+    const notes = String(findingPayload?.notes || '').trim();
+    const severity = String(findingPayload?.severity || 'medium').toLowerCase();
+    const timelineAt = getTimelineStamp(new Date());
+    const findingSummary = notes ? `${control} - ${notes}` : control;
+
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              timeline: [
+                ...job.timeline,
+                {
+                  label: `Finding logged (${severity}): ${findingSummary}`,
+                  at: timelineAt,
+                  actor: targetAuditor.name,
+                },
+              ],
+            }
+          : job
+      )
+    );
+
+    const linkedRun =
+      auditRuns.find((run) => run.auditJobId === jobId && run.status === 'in_progress') ||
+      auditRuns.find((run) => run.auditJobId === jobId);
+
+    if (!linkedRun) {
+      return true;
+    }
+
+    const taxonomyCode = `${targetJob.regime}-${control}`
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 28);
+
+    addAuditFinding({
+      auditRunId: linkedRun.id,
+      severity,
+      taxonomyCode: taxonomyCode || 'GENERAL',
+      description: findingSummary,
+    });
+
+    return true;
+  };
+
+  const handleCommandAction = (actionId) => {
+    if (actionId === 'go-dashboard') {
+      openTab('dashboard');
+      return;
+    }
+    if (actionId === 'go-landing') {
+      openTab('landing');
+      return;
+    }
+    if (actionId === 'go-onboarding') {
+      openTab('onboarding');
+      return;
+    }
+    if (actionId === 'go-assets') {
+      openTab('assets');
+      return;
+    }
+    if (actionId === 'go-vault') {
+      openTab('vault');
+      return;
+    }
+    if (actionId === 'go-providers') {
+      openTab('providers');
+      return;
+    }
+    if (actionId === 'go-marketplace') {
+      openTab('marketplace');
+      return;
+    }
+    if (actionId === 'go-help') {
+      openTab('help');
+      return;
+    }
+    if (actionId === 'new-asset') {
+      setShowCommandPalette(false);
+      setShowAddAssetModal(true);
+      return;
+    }
+    if (actionId === 'request-inspection') {
+      setShowCommandPalette(false);
+      setShowRequestModal(true);
+      return;
+    }
+    if (actionId === 'new-programme') {
+      setShowCommandPalette(false);
+      setShowProgrammeModal(true);
+      return;
+    }
+    if (actionId === 'scan-lookup') {
+      setShowCommandPalette(false);
+      setShowScanModal(true);
+      return;
+    }
+    if (actionId === 'export-audit') {
+      setShowCommandPalette(false);
+      exportAuditPack();
+      return;
+    }
+    if (actionId === 'copy-audit-link') {
+      setShowCommandPalette(false);
+      addToast('Secure read-only link copied to clipboard!', 'success');
+      return;
+    }
+    if (actionId === 'post-audit-job') {
+      setShowCommandPalette(false);
+      openTab('marketplace');
+      addToast('Open the marketplace composer to advertise an audit job', 'info');
+    }
+  };
+
+  const selectedAssetCertificates = selectedAssetForDetails
+    ? certificatesByAsset.get(selectedAssetForDetails.id) || []
+    : [];
+
+  if (!authSession.isAuthenticated) {
+    return (
+      <div className={isDarkMode ? 'dark' : ''}>
+        <PublicMarketingLanding
+          isDarkMode={isDarkMode}
+          onToggleTheme={toggleTheme}
+          onAuthenticate={authenticateUser}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={isDarkMode ? 'dark' : ''}>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slideUpFade { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes orbFloat { 0%, 100% { transform: translateY(0px) translateX(0px); } 50% { transform: translateY(-16px) translateX(10px); } }
+        @keyframes pulseSoft { 0%, 100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.24); } 70% { box-shadow: 0 0 0 12px rgba(6, 182, 212, 0); } }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes floatIn { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0px); opacity: 1; } }
+
+        .toast-enter { animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .glass-panel { backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+        .float-in { animation: floatIn 0.45s ease-out forwards; }
+        .ambient-orb { animation: orbFloat 10s ease-in-out infinite; }
+        .pulse-soft { animation: pulseSoft 2.4s ease-out infinite; }
+        .shimmer-line {
+          background-image: linear-gradient(90deg, rgba(15, 23, 42, 0), rgba(15, 23, 42, 0.1), rgba(15, 23, 42, 0));
+          background-size: 200% 100%;
+          animation: shimmer 2s linear infinite;
+        }
+        .dark .shimmer-line {
+          background-image: linear-gradient(90deg, rgba(226, 232, 240, 0), rgba(226, 232, 240, 0.12), rgba(226, 232, 240, 0));
+        }
+        .hover-lift {
+          transition: transform 200ms ease, box-shadow 200ms ease;
+        }
+        .hover-lift:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+        }
+
+        .stagger-item { opacity: 0; animation: slideUpFade 0.4s ease-out forwards; }
+        .stagger-item:nth-child(1) { animation-delay: 0.05s; }
+        .stagger-item:nth-child(2) { animation-delay: 0.1s; }
+        .stagger-item:nth-child(3) { animation-delay: 0.15s; }
+        .stagger-item:nth-child(4) { animation-delay: 0.2s; }
+        .stagger-item:nth-child(5) { animation-delay: 0.25s; }
+        .stagger-item:nth-child(6) { animation-delay: 0.3s; }
+        .stagger-item:nth-child(n+7) { animation-delay: 0.35s; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(107, 114, 128, 0.8); }
+        .dark ::-webkit-scrollbar-thumb { background: rgba(75, 85, 99, 0.5); }
+        .dark ::-webkit-scrollbar-thumb:hover { background: rgba(107, 114, 128, 0.8); }
+      `,
+        }}
+      />
+
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/60 to-emerald-50/60 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 text-slate-900 dark:text-slate-200 overflow-hidden flex flex-col md:flex-row relative transition-colors duration-300">
+        {/* Background Elements */}
+        <div className="ambient-orb absolute top-0 -left-10 w-96 h-96 bg-cyan-100 dark:bg-cyan-900/20 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-[100px] opacity-60 pointer-events-none transition-colors duration-500" />
+        <div className="ambient-orb absolute -bottom-10 right-10 w-96 h-96 bg-emerald-100 dark:bg-emerald-900/20 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-[100px] opacity-60 pointer-events-none transition-colors duration-500" />
+        <div className="ambient-orb absolute top-1/3 right-1/4 w-72 h-72 bg-amber-100/70 dark:bg-amber-900/10 rounded-full mix-blend-multiply dark:mix-blend-screen filter blur-[100px] opacity-40 pointer-events-none transition-colors duration-500" />
+
+        {/* --- MOBILE HEADER --- */}
+        <header className="md:hidden glass-panel h-16 bg-white/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-4 fixed inset-x-0 top-0 z-50 w-full transition-colors duration-300">
+          <div className="flex items-center space-x-2">
+            <ShieldCheck className="h-7 w-7 text-cyan-600 dark:text-cyan-400" />
+            <div className="flex flex-col leading-none">
+              <span className="font-bold text-lg tracking-tight text-slate-800 dark:text-white">CertEx</span>
+              <span className="text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">by InCommand</span>
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setShowCommandPalette(true)}
+              aria-label="Open command palette"
+              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
+            >
+              <Command className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => setShowScanModal(true)}
+              aria-label="Scan QR code"
+              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
+            >
+              <ScanLine className="h-5 w-5" />
+            </button>
+            <button
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
+            >
+              {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            </button>
+            <button
+              onClick={signOutUser}
+              aria-label="Sign out"
+              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => setShowMobileQuickPanel((previous) => !previous)}
+              aria-label="Open quick actions"
+              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
+            >
+              <Zap className="h-5 w-5" />
+            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications((previous) => !previous)}
+                aria-label="Open notifications"
+                className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
+              >
+                <Bell className="h-5 w-5" />
+                <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full border-2 border-white dark:border-slate-800" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* --- DESKTOP SIDEBAR --- */}
+        <aside className="hidden md:flex w-64 glass-panel bg-white/80 dark:bg-slate-800/80 border-r border-slate-200 dark:border-slate-700 flex-col z-30 h-screen transition-colors duration-300">
+          <div className="p-6 flex items-center space-x-3">
+            <ShieldCheck className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
+            <div className="flex flex-col leading-none">
+              <span className="font-bold text-xl tracking-tight text-slate-800 dark:text-white">CertEx</span>
+              <span className="text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">by InCommand</span>
+            </div>
+          </div>
+
+          <nav className="flex-1 px-4 space-y-2 mt-4">
+            {allowedTabsForRole.includes('dashboard') && (
+              <DesktopNavItem
+                icon={<LayoutDashboard />}
+                label="Dashboard"
+                isActive={activeTab === 'dashboard'}
+                onClick={() => openTab('dashboard')}
+              />
+            )}
+            {allowedTabsForRole.includes('landing') && (
+              <DesktopNavItem
+                icon={<MapIcon />}
+                label="Landing"
+                isActive={activeTab === 'landing'}
+                onClick={() => openTab('landing')}
+              />
+            )}
+            {allowedTabsForRole.includes('onboarding') && (
+              <DesktopNavItem
+                icon={<Building2 />}
+                label="Onboarding"
+                isActive={activeTab === 'onboarding'}
+                onClick={() => openTab('onboarding')}
+              />
+            )}
+            {allowedTabsForRole.includes('assets') && (
+              <DesktopNavItem
+                icon={<Box />}
+                label="Asset Register"
+                isActive={activeTab === 'assets'}
+                onClick={() => openTab('assets')}
+              />
+            )}
+            {allowedTabsForRole.includes('vault') && (
+              <DesktopNavItem
+                icon={<Lock />}
+                label="Evidence Vault"
+                isActive={activeTab === 'vault'}
+                onClick={() => openTab('vault')}
+              />
+            )}
+            {allowedTabsForRole.includes('providers') && (
+              <DesktopNavItem
+                icon={<Users />}
+                label="Provider Network"
+                isActive={activeTab === 'providers'}
+                onClick={() => openTab('providers')}
+              />
+            )}
+            {allowedTabsForRole.includes('marketplace') && (
+              <DesktopNavItem
+                icon={<ClipboardList />}
+                label="Audit Marketplace"
+                isActive={activeTab === 'marketplace'}
+                onClick={() => openTab('marketplace')}
+              />
+            )}
+            {allowedTabsForRole.includes('help') && (
+              <DesktopNavItem
+                icon={<FileText />}
+                label="Help"
+                isActive={activeTab === 'help'}
+                onClick={() => openTab('help')}
+              />
+            )}
+          </nav>
+
+          <div className="p-4 mx-4 mb-4 rounded-xl bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 relative overflow-hidden transition-colors duration-300">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 relative z-10">Current Estate</p>
+            <div className="flex items-center space-x-2 text-sm text-slate-800 dark:text-white font-medium relative z-10">
+              <div className="w-8 h-8 rounded-full bg-cyan-600 text-white flex items-center justify-center text-xs shadow-sm">
+                {activeCompanyInitials}
+              </div>
+              <span>{activeCompanyContext.name}</span>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 relative z-10 truncate">
+              Signed in as {authSession.fullName || authSession.email}
+            </p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 relative z-10">
+              Debug role: {effectiveRoleLabel}
+            </p>
+          </div>
+        </aside>
+
+        {/* --- MAIN CONTENT AREA --- */}
+        <main className="flex-1 flex flex-col h-screen md:h-screen pt-16 md:pt-0 overflow-hidden relative z-20">
+          {/* Desktop Header */}
+          <header className="hidden md:flex h-20 glass-panel bg-white/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 items-center justify-between px-8 sticky top-0 z-30 transition-colors duration-300">
+            <h1 className="text-2xl font-bold text-slate-800 dark:text-white capitalize tracking-wide flex items-center space-x-3">
+              <span>{activeTab.replace(/([A-Z])/g, ' $1').trim()}</span>
+            </h1>
+            <div className="flex items-center space-x-4">
+              <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500 group-focus-within:text-cyan-500 transition-colors" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={`Search ${activeTab}...`}
+                  className="pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:bg-white dark:focus:bg-slate-800 focus:border-cyan-500 dark:focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all w-72 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 shadow-sm"
+                />
+              </div>
+
+              <button
+                onClick={() => setShowCommandPalette(true)}
+                className="px-3 py-2.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm flex items-center gap-2 text-xs font-bold"
+              >
+                <Command className="h-4 w-4" />
+                <span>Quick Actions</span>
+                <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-[10px] font-mono">⌘K</span>
+              </button>
+
+              <button
+                onClick={() => setShowScanModal(true)}
+                aria-label="Scan QR code"
+                className="p-2.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm"
+              >
+                <ScanLine className="h-5 w-5" />
+              </button>
+
+              <button
+                onClick={toggleTheme}
+                aria-label="Toggle theme"
+                className="p-2.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm"
+              >
+                {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
+
+              <button
+                onClick={signOutUser}
+                aria-label="Sign out"
+                className="px-3 py-2.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm flex items-center gap-2 text-xs font-bold"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Sign out</span>
+              </button>
+
+              <div className="relative">
+                <button
+                  onClick={() => setShowNotifications((previous) => !previous)}
+                  aria-label="Open notifications"
+                  className="p-2.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm"
+                >
+                  <Bell className="h-5 w-5" />
+                  <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white dark:border-slate-800" />
+                </button>
+                {/* Notifications Dropdown */}
+                {showNotifications && (
+                  <div className="absolute right-0 mt-3 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+                    <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                      <h3 className="font-bold text-slate-800 dark:text-white text-sm">Notifications</h3>
+                    </div>
+                    <div className="divide-y divide-slate-100 dark:divide-slate-700 max-h-80 overflow-y-auto">
+                      <div className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer">
+                        <div className="flex space-x-3">
+                          <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+                          <div>
+                            <p className="text-sm font-medium text-slate-800 dark:text-white leading-tight">
+                              Pallet Stacker Due
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                              Inspection required within 14 days (PUWER).
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer">
+                        <div className="flex space-x-3">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                          <div>
+                            <p className="text-sm font-medium text-slate-800 dark:text-white leading-tight">
+                              New Certificate Verified
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                              Air Compressor PSSR certificate uploaded.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </header>
+
+          <div className="border-b border-amber-200/80 dark:border-amber-800/50 bg-amber-50/80 dark:bg-amber-900/15 px-4 md:px-8 py-2.5">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                  Debug View
+                </span>
+                <div className="inline-flex rounded-lg border border-amber-200 dark:border-amber-800/40 overflow-hidden">
+                  {USER_ROLE_OPTIONS.map((roleOption) => (
+                    <button
+                      key={roleOption.id}
+                      type="button"
+                      onClick={() => switchDebugRole(roleOption.id)}
+                      className={`px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                        effectiveUserRole === roleOption.id
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-white dark:bg-slate-900/40 text-amber-700 dark:text-amber-300'
+                      }`}
+                    >
+                      {roleOption.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="text-[11px] text-amber-700/90 dark:text-amber-200/90">
+                Role-based UI simulation before Supabase auth is enabled.
+              </p>
+            </div>
+          </div>
+
+          {/* Dynamic Content Scroll Area */}
+          <div
+            className="flex-1 overflow-y-auto p-4 md:p-8 pb-28 md:pb-10 scroll-smooth"
+            onClick={() => showNotifications && setShowNotifications(false)}
+          >
+            <div
+              className={`transition-all duration-700 ease-out space-y-8 ${
+                isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+              }`}
+            >
+              <ConnectivityBanner isOnline={isOnline} queuedCount={queuedInspectionCount} />
+
+              {(activeTab === 'dashboard' || activeTab === 'assets') && (
+                <OfflineInspectionPanel
+                  assets={enrichedAssets}
+                  logs={inspectionLogs}
+                  isOnline={isOnline}
+                  pendingCount={queuedInspectionCount}
+                  onSubmit={handleLogInspection}
+                />
+              )}
+
+              {activeTab === 'landing' && (
+                <PublicLandingView
+                  onNotify={addToast}
+                  publicSiteConfig={publicSiteConfig}
+                  onOpenOnboarding={() => openTab('onboarding')}
+                  onOpenHelp={() => openTab('help')}
+                />
+              )}
+
+              {activeTab === 'onboarding' && (
+                <OnboardingPortalView
+                  onNotify={addToast}
+                  onboardingTasks={onboardingTasks}
+                  onToggleOnboardingTask={toggleOnboardingTask}
+                  onOpenMarketplace={() => openTab('marketplace')}
+                />
+              )}
+
+              {activeTab === 'dashboard' && (
+                <DashboardView
+                  assets={enrichedAssets}
+                  urgentAssets={urgentAssets}
+                  upcomingAssets={upcomingAssets}
+                  complianceTrend={complianceTrend}
+                  programmeCount={recurringProgrammes.length}
+                  onAction={(action) => {
+                    if (action === 'request') {
+                      setShowRequestModal(true);
+                    }
+                    if (action === 'programme') {
+                      setShowProgrammeModal(true);
+                    }
+                    if (action === 'export') {
+                      exportAuditPack();
+                    }
+                  }}
+                />
+              )}
+
+              {activeTab === 'assets' && (
+                <AssetRegisterView
+                  assets={enrichedAssets}
+                  searchQuery={searchQuery}
+                  onAdd={() => setShowAddAssetModal(true)}
+                  onViewAsset={setSelectedAssetForDetails}
+                />
+              )}
+
+              {activeTab === 'vault' && (
+                <EvidenceVaultView
+                  certificates={enrichedCertificates}
+                  searchQuery={searchQuery}
+                  onLinkGen={() => addToast('Secure read-only link copied to clipboard!', 'success')}
+                  onUploadComplete={(filename) => addToast(`Uploaded ${filename} to evidence intake`, 'success')}
+                  focusCertificateId={vaultFocusCertificateId}
+                  onFocusHandled={() => setVaultFocusCertificateId('')}
+                />
+              )}
+
+              {activeTab === 'providers' && (
+                <ProviderNetworkView
+                  providers={auditors}
+                  searchQuery={searchQuery}
+                  onDispatch={openDispatch}
+                />
+              )}
+
+              {activeTab === 'marketplace' && (
+                <MarketplaceExchangeView
+                  assets={enrichedAssets}
+                  auditors={auditors}
+                  jobs={marketplaceJobs}
+                  inspectionTemplates={inspectionTemplates}
+                  companyContext={activeCompanyContext}
+                  debugRole={effectiveUserRole}
+                  searchQuery={searchQuery}
+                  onCreateJob={createMarketplaceJob}
+                  onDispatchJob={dispatchMarketplaceJob}
+                  onAcceptOffer={acceptMarketplaceOffer}
+                  onStartJob={startMarketplaceAudit}
+                  onUploadDocuments={uploadMarketplaceDocuments}
+                  onCompleteJob={completeMarketplaceAudit}
+                  onSubmitExternalForReview={submitMarketplaceExternalAuditForReview}
+                  onReviewExternalAudit={reviewMarketplaceExternalAudit}
+                  onApplyAdjustment={applyMarketplaceAdjustment}
+                  onStartAuditRunForJob={startAuditRunForMarketplaceJob}
+                  onRecordFinding={recordMarketplaceFinding}
+                />
+              )}
+
+              {activeTab === 'help' && (
+                <HelpCenterView
+                  onNotify={addToast}
+                  jobs={marketplaceJobs}
+                  certificates={enrichedCertificates}
+                  publicSiteConfig={publicSiteConfig}
+                  onboardingTasks={onboardingTasks}
+                  financeInvoices={financeInvoices}
+                  payoutRuns={payoutRuns}
+                  inspectionTemplates={inspectionTemplates}
+                  companyContext={activeCompanyContext}
+                  integrationConnections={integrationConnections}
+                  templateBlueprints={templateBlueprints}
+                  templateListings={templateListings}
+                  licenceGrants={licenceGrants}
+                  auditRuns={auditRuns}
+                  auditFindings={auditFindings}
+                  auditActions={auditActions}
+                  reportArtifacts={reportArtifacts}
+                  shareLinks={shareLinks}
+                  onUpdatePublicSiteConfig={updatePublicSiteConfig}
+                  onToggleOnboardingTask={toggleOnboardingTask}
+                  onRunPilotFulfilmentLoop={runPilotFulfilmentLoop}
+                  onSignCertificate={signCertificateFromTrustLayer}
+                  onGenerateInvoices={generateMissingInvoices}
+                  onApproveInvoice={approveInvoice}
+                  onSchedulePayout={schedulePayoutForInvoice}
+                  onAddTemplate={addInspectionTemplate}
+                  onToggleTemplate={toggleInspectionTemplate}
+                  onConnectIntegration={connectIntegration}
+                  onCreateTemplateBlueprint={createTemplateBlueprint}
+                  onPublishTemplateBlueprint={publishTemplateBlueprint}
+                  onCreateTemplateListing={createTemplateListing}
+                  onGrantTemplateLicence={grantTemplateLicence}
+                  onStartAuditRun={startAuditRun}
+                  onCompleteAuditRun={completeAuditRun}
+                  onAddAuditFinding={addAuditFinding}
+                  onCreateAuditAction={createAuditAction}
+                  onAdvanceAuditActionStatus={advanceAuditActionStatus}
+                  onCreateShareLink={createShareLinkForArtifact}
+                />
+              )}
+
+              <AppFooter
+                onOpenHelp={() => openTab('help')}
+                onPrivacy={() => addToast('Privacy policy placeholder', 'info')}
+                onTerms={() => addToast('Terms placeholder', 'info')}
+              />
+            </div>
+          </div>
+        </main>
+
+        {showMobileQuickPanel && (
+          <div className="md:hidden fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-sm" onClick={() => setShowMobileQuickPanel(false)}>
+            <div
+              className="absolute left-3 right-3 bottom-24 p-4 bg-white/95 dark:bg-slate-800/95 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-soft float-in"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-500" />
+                Quick Actions
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setShowMobileQuickPanel(false);
+                    setShowAddAssetModal(true);
+                  }}
+                  className="rounded-xl bg-cyan-600 text-white px-3 py-2.5 text-sm font-bold"
+                >
+                  Add Asset
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMobileQuickPanel(false);
+                    setShowRequestModal(true);
+                  }}
+                  className="rounded-xl bg-emerald-600 text-white px-3 py-2.5 text-sm font-bold"
+                >
+                  Dispatch
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMobileQuickPanel(false);
+                    setShowCommandPalette(true);
+                  }}
+                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
+                >
+                  Search
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMobileQuickPanel(false);
+                    openTab('landing');
+                  }}
+                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
+                >
+                  Landing
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMobileQuickPanel(false);
+                    openTab('onboarding');
+                  }}
+                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
+                >
+                  Onboard
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMobileQuickPanel(false);
+                    exportAuditPack();
+                  }}
+                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
+                >
+                  Export
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMobileQuickPanel(false);
+                    setShowScanModal(true);
+                  }}
+                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
+                >
+                  Scan QR
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- MOBILE BOTTOM NAVIGATION --- */}
+        <nav
+          className="md:hidden glass-panel bg-white/90 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-700 fixed bottom-0 w-full z-50 px-2 py-3 grid items-center pb-safe transition-colors duration-300"
+          style={{
+            gridTemplateColumns: `repeat(${Math.max(
+              2,
+              ['dashboard', 'assets', 'vault', 'providers', 'marketplace', 'help'].filter((tab) =>
+                allowedTabsForRole.includes(tab)
+              ).length
+            )}, minmax(0, 1fr))`,
+          }}
+        >
+          {allowedTabsForRole.includes('dashboard') && (
+            <MobileNavItem
+              icon={<LayoutDashboard />}
+              label="Dash"
+              isActive={activeTab === 'dashboard'}
+              onClick={() => openTab('dashboard')}
+            />
+          )}
+          {allowedTabsForRole.includes('assets') && (
+            <MobileNavItem
+              icon={<Box />}
+              label="Assets"
+              isActive={activeTab === 'assets'}
+              onClick={() => openTab('assets')}
+            />
+          )}
+          {allowedTabsForRole.includes('vault') && (
+            <MobileNavItem
+              icon={<Lock />}
+              label="Vault"
+              isActive={activeTab === 'vault'}
+              onClick={() => openTab('vault')}
+            />
+          )}
+          {allowedTabsForRole.includes('providers') && (
+            <MobileNavItem
+              icon={<Users />}
+              label="Network"
+              isActive={activeTab === 'providers'}
+              onClick={() => openTab('providers')}
+            />
+          )}
+          {allowedTabsForRole.includes('marketplace') && (
+            <MobileNavItem
+              icon={<ClipboardList />}
+              label="Market"
+              isActive={activeTab === 'marketplace'}
+              onClick={() => openTab('marketplace')}
+            />
+          )}
+          {allowedTabsForRole.includes('help') && (
+            <MobileNavItem
+              icon={<FileText />}
+              label="Help"
+              isActive={activeTab === 'help'}
+              onClick={() => openTab('help')}
+            />
+          )}
+        </nav>
+
+        {/* --- GLOBAL COMPONENTS (MODALS, DRAWERS & TOASTS) --- */}
+
+        {/* Toast Container */}
+        <div className="fixed bottom-20 md:bottom-8 right-4 md:right-8 z-[150] flex flex-col space-y-3 pointer-events-none">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className="toast-enter pointer-events-auto flex items-center space-x-3 bg-slate-900 dark:bg-slate-800 text-white p-4 rounded-xl shadow-2xl border border-slate-700 w-80"
+            >
+              {toast.type === 'success' ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              ) : (
+                <Info className="w-5 h-5 text-blue-400 shrink-0" />
+              )}
+              <p className="text-sm font-medium">{toast.message}</p>
+            </div>
+          ))}
+        </div>
+
+        <CommandPalette
+          isOpen={showCommandPalette}
+          onClose={() => setShowCommandPalette(false)}
+          onAction={handleCommandAction}
+        />
+
+        <ScanLookupModal
+          isOpen={showScanModal}
+          onClose={() => setShowScanModal(false)}
+          onResolve={handleScanLookup}
+        />
+
+        {assetForQrLabel && (
+          <AssetQrLabelModal
+            asset={assetForQrLabel}
+            latestCertificate={certificatesByAsset.get(assetForQrLabel.id)?.[0] || null}
+            certificateCount={(certificatesByAsset.get(assetForQrLabel.id) || []).length}
+            onClose={() => setAssetForQrLabel(null)}
+            onNotify={(message, type) => addToast(message, type)}
+          />
+        )}
+
+        {/* Asset Details Drawer (Slide-out from Right) */}
+        {selectedAssetForDetails && (
+          <div className="fixed inset-0 z-[100] flex justify-end bg-slate-900/40 dark:bg-slate-900/60 backdrop-blur-sm transition-opacity">
+            <div className="absolute inset-0" onClick={() => setSelectedAssetForDetails(null)} />
+            <div className="w-full md:w-96 h-full bg-white dark:bg-slate-800 shadow-2xl flex flex-col relative z-10 animate-in slide-in-from-right duration-300 border-l border-slate-200 dark:border-slate-700">
+              {/* Drawer Header */}
+              <div className="p-6 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-start">
+                <div>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Box className="w-5 h-5 text-cyan-500" />
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 font-mono tracking-wider">
+                      {selectedAssetForDetails.id}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800 dark:text-white leading-tight">
+                    {selectedAssetForDetails.name}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedAssetForDetails(null)}
+                  aria-label="Close asset details"
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 bg-white dark:bg-slate-700 rounded-full border border-slate-200 dark:border-slate-600 shadow-sm"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Drawer Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                {/* Status Card */}
+                <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-2xl p-5">
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Current Status
+                    </span>
+                    <StatusPill status={selectedAssetForDetails.status} />
+                  </div>
+                  <div className="flex items-center space-x-3 text-slate-800 dark:text-white mb-2">
+                    <Calendar className="w-5 h-5 text-cyan-500 opacity-70" />
+                    <span className="font-bold text-lg">
+                      Next Due: {formatDateLabel(selectedAssetForDetails.nextDue)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Properties */}
+                <div>
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center">
+                    <Settings className="w-4 h-4 mr-1" /> Asset Properties
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                        Site Location
+                      </span>
+                      <span className="font-medium text-slate-800 dark:text-white text-sm">
+                        {selectedAssetForDetails.site}
+                      </span>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                        Statutory Regime
+                      </span>
+                      <span className="font-medium text-cyan-600 dark:text-cyan-400 text-sm">
+                        {selectedAssetForDetails.regime}
+                      </span>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm col-span-2">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                        Equipment Class
+                      </span>
+                      <span className="font-medium text-slate-800 dark:text-white text-sm">
+                        {selectedAssetForDetails.class}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* History Timeline */}
+                <div>
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4 flex items-center">
+                    <History className="w-4 h-4 mr-1" /> Inspection History
+                  </h4>
+                  <div className="relative pl-4 border-l-2 border-slate-200 dark:border-slate-700 space-y-6">
+                    <div className="relative">
+                      <div className="absolute -left-[21px] top-1 w-3 h-3 bg-emerald-500 rounded-full ring-4 ring-white dark:ring-slate-800" />
+                      <p className="text-sm font-bold text-slate-800 dark:text-white">Passed Inspection</p>
+                      <p className="text-xs text-slate-500 mt-1">Provider: Bureau Veritas UK</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Aug 10, 2024</p>
+                    </div>
+                    <div className="relative">
+                      <div className="absolute -left-[21px] top-1 w-3 h-3 bg-cyan-500 rounded-full ring-4 ring-white dark:ring-slate-800" />
+                      <p className="text-sm font-bold text-slate-800 dark:text-white">Added to Register</p>
+                      <p className="text-xs text-slate-500 mt-1">System Import</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Jan 15, 2024</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center">
+                    <FileSignature className="w-4 h-4 mr-1" /> Previous Certificates
+                  </h4>
+                  {selectedAssetCertificates.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/30 p-4">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        No certificate in vault yet for this asset. Once an auditor completes a job, the certificate
+                        appears here automatically.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedAssetCertificates.slice(0, 3).map((certificate) => (
+                        <button
+                          key={certificate.id}
+                          onClick={() => {
+                            setSelectedAssetForDetails(null);
+                            setAssetForQrLabel(null);
+                            openCertificateRecordById(certificate.id, false);
+                          }}
+                          className="w-full text-left rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors"
+                        >
+                          <p className="text-xs font-bold text-slate-800 dark:text-white font-mono">{certificate.id}</p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                            Issued {formatDateLabel(certificate.issueDate)} • Expires {formatDateLabel(certificate.expiryDate)}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-cyan-100 dark:border-cyan-800/30 bg-cyan-50/70 dark:bg-cyan-900/10 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">
+                    Asset QR Label
+                  </p>
+                  <p className="text-xs text-cyan-700/80 dark:text-cyan-200/80 mt-2 leading-relaxed">
+                    Print and attach a QR label so auditors can scan this asset and jump straight to prior audits and
+                    certificates in CertEx.
+                  </p>
+                </div>
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="p-6 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 space-y-2">
+                <button
+                  onClick={() => setAssetForQrLabel(selectedAssetForDetails)}
+                  className="w-full py-3 bg-white hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-100 rounded-xl font-bold shadow-sm transition-colors flex justify-center items-center border border-slate-200 dark:border-slate-600"
+                >
+                  <QrCode className="w-4 h-4 mr-2" /> Create QR Label
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedAssetForDetails(null);
+                    openDispatch();
+                  }}
+                  className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl font-bold shadow-sm transition-colors flex justify-center items-center"
+                >
+                  <Calendar className="w-4 h-4 mr-2" /> Schedule Inspection
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Add Asset Modal */}
+        {showAddAssetModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 dark:bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col transform transition-all">
+              <div className="flex justify-between items-center p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center">
+                  <Plus className="w-5 h-5 text-cyan-500 mr-2" /> Add New Asset
+                </h3>
+                <button
+                  onClick={() => setShowAddAssetModal(false)}
+                  aria-label="Close add asset modal"
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = new FormData(event.currentTarget);
+                  handleAddAsset({
+                    name: String(form.get('name') || '').trim(),
+                    site: String(form.get('site') || '').trim(),
+                    class: String(form.get('class') || '').trim(),
+                    regime: String(form.get('regime') || '').trim(),
+                    nextDue: String(form.get('nextDue') || '').trim(),
+                  });
+                }}
+              >
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                      Asset Name
+                    </label>
+                    <input
+                      required
+                      name="name"
+                      type="text"
+                      className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
+                      placeholder="e.g. Service Lift 3"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                        Site/Location
+                      </label>
+                      <input
+                        required
+                        name="site"
+                        type="text"
+                        className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
+                        placeholder="London HQ"
+                        defaultValue="London HQ"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                        Asset Class
+                      </label>
+                      <input
+                        required
+                        name="class"
+                        type="text"
+                        className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
+                        placeholder="Lift"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                        Regime
+                      </label>
+                      <select
+                        required
+                        name="regime"
+                        className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
+                      >
+                        <option>LOLER</option>
+                        <option>PUWER</option>
+                        <option>PSSR</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                        Next Inspection Due
+                      </label>
+                      <input
+                        required
+                        name="nextDue"
+                        type="date"
+                        className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white dark:[color-scheme:dark]"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAssetModal(false)}
+                    className="px-5 py-2.5 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl shadow-sm transition-colors"
+                  >
+                    Save Asset
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        <BookingRequestModal
+          isOpen={showRequestModal}
+          assets={enrichedAssets}
+          auditors={auditors}
+          initialAuditorId={selectedProviderForRequest}
+          onClose={() => {
+            setShowRequestModal(false);
+            setSelectedProviderForRequest('');
+          }}
+          onSubmit={handleRequestInspection}
+        />
+
+        <RecurringProgrammeModal
+          isOpen={showProgrammeModal}
+          auditors={auditors}
+          onClose={() => setShowProgrammeModal(false)}
+          onSubmit={handleCreateRecurringProgramme}
+        />
+      </div>
+    </div>
+  );
+}
+
+function BookingRequestModal({ isOpen, assets, auditors, initialAuditorId, onClose, onSubmit }) {
+  const defaultAssetId = assets[0]?.id || '';
+  const defaultRegime = assets[0]?.regime || 'LOLER';
+  const defaultDueDate = useMemo(() => {
+    const target = new Date();
+    target.setDate(target.getDate() + 7);
+    return target.toISOString().slice(0, 10);
+  }, []);
+
+  const [step, setStep] = useState(0);
+  const [workType, setWorkType] = useState('inspection');
+  const [selectedSite, setSelectedSite] = useState('all');
+  const [scopeTarget, setScopeTarget] = useState('due');
+  const [selectedAssetId, setSelectedAssetId] = useState(defaultAssetId);
+  const [selectedRegimes, setSelectedRegimes] = useState([defaultRegime]);
+  const [schedulingMode, setSchedulingMode] = useState('asap');
+  const [windowStart, setWindowStart] = useState(defaultDueDate);
+  const [windowEnd, setWindowEnd] = useState(defaultDueDate);
+  const [sameAuditorAcrossSites, setSameAuditorAcrossSites] = useState(false);
+  const [preferredAuditorId, setPreferredAuditorId] = useState(initialAuditorId || '');
+  const [complexity, setComplexity] = useState('standard');
+  const [equipment, setEquipment] = useState('none');
+  const [travelKm, setTravelKm] = useState(12);
+  const [weekendAccess, setWeekendAccess] = useState(false);
+  const [poNumber, setPoNumber] = useState('');
+  const [costCentre, setCostCentre] = useState('');
+  const [approver, setApprover] = useState('');
+  const [includeCertificate, setIncludeCertificate] = useState(true);
+  const [includeAuditPack, setIncludeAuditPack] = useState(true);
+  const [specialRequirements, setSpecialRequirements] = useState('');
+  const [accessNotes, setAccessNotes] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    setStep(0);
+    setWorkType('inspection');
+    setSelectedSite('all');
+    setScopeTarget('due');
+    setSelectedAssetId(defaultAssetId);
+    setSelectedRegimes([defaultRegime]);
+    setSchedulingMode('asap');
+    setWindowStart(defaultDueDate);
+    setWindowEnd(defaultDueDate);
+    setSameAuditorAcrossSites(false);
+    setPreferredAuditorId(initialAuditorId || '');
+    setComplexity('standard');
+    setEquipment('none');
+    setTravelKm(12);
+    setWeekendAccess(false);
+    setPoNumber('');
+    setCostCentre('');
+    setApprover('');
+    setIncludeCertificate(true);
+    setIncludeAuditPack(true);
+    setSpecialRequirements('');
+    setAccessNotes('');
+  }, [isOpen, initialAuditorId, defaultAssetId, defaultRegime, defaultDueDate]);
+
+  const steps = [
+    'Work Type',
+    'Scope Builder',
+    'Scheduling',
+    'Instant Pricing',
+    'Procurement',
+    'Confirm',
+  ];
+
+  const siteOptions = useMemo(() => Array.from(new Set(assets.map((asset) => asset.site))), [assets]);
+
+  const scopedAssets = useMemo(
+    () =>
+      assets.filter((asset) => {
+        const matchesSite = selectedSite === 'all' || asset.site === selectedSite;
+        const matchesRegime = selectedRegimes.length === 0 || selectedRegimes.includes(asset.regime);
+        return matchesSite && matchesRegime;
+      }),
+    [assets, selectedSite, selectedRegimes]
+  );
+
+  const dueAssets = useMemo(
+    () => scopedAssets.filter((asset) => asset.status !== 'compliant'),
+    [scopedAssets]
+  );
+
+  const selectedScopeAssets = useMemo(() => {
+    if (scopeTarget === 'selected') {
+      return scopedAssets.filter((asset) => asset.id === selectedAssetId);
+    }
+    if (scopeTarget === 'due') {
+      return dueAssets.length > 0 ? dueAssets : scopedAssets;
+    }
+    return scopedAssets;
+  }, [scopeTarget, scopedAssets, dueAssets, selectedAssetId]);
+
+  const targetAssets = selectedScopeAssets.length > 0 ? selectedScopeAssets : assets.slice(0, 1);
+  const primaryAsset = targetAssets[0] || null;
+
+  const scopeTemplate = useMemo(() => {
+    if (workType === 'audit') {
+      return targetAssets.length > 1 ? 'portfolio_sweep' : 'insurer_verification';
+    }
+    if (selectedRegimes.includes('PSSR')) {
+      return 'written_scheme_review';
+    }
+    if (schedulingMode === 'asap') {
+      return 'urgent_defect_followup';
+    }
+    return 'portfolio_sweep';
+  }, [workType, targetAssets.length, selectedRegimes, schedulingMode]);
+
+  const normalizedScope = useMemo(() => {
+    const assetCount = Math.max(1, targetAssets.length);
+    const estimatedHours = estimateScopeHours(scopeTemplate, assetCount, weekendAccess);
+    return normalizeMarketplaceScope({
+      template: scopeTemplate,
+      assetCount,
+      estimatedHours,
+      complexity,
+      equipment,
+      travelKm,
+      weekendAccess,
+      expedite: schedulingMode === 'asap',
+    });
+  }, [scopeTemplate, targetAssets.length, weekendAccess, complexity, equipment, travelKm, schedulingMode]);
+
+  const quote = useMemo(
+    () =>
+      calculateMarketplaceQuote({
+        scope: normalizedScope,
+        regime: primaryAsset?.regime,
+        site: primaryAsset?.site,
+      }),
+    [normalizedScope, primaryAsset]
+  );
+
+  const dispatchSlaMins = useMemo(() => resolveDispatchSlaMinutes(normalizedScope), [normalizedScope]);
+
+  const dueDate = schedulingMode === 'scheduled' ? windowEnd || windowStart || defaultDueDate : defaultDueDate;
+  const preferredAuditor = auditors.find((auditor) => auditor.id === preferredAuditorId) || null;
+  const deliverables = [includeCertificate ? 'Certificate PDF/JSON' : null, includeAuditPack ? 'Audit pack export' : null]
+    .filter(Boolean)
+    .join(', ');
+
+  const canContinue = useMemo(() => {
+    if (step === 1) {
+      return targetAssets.length > 0 && selectedRegimes.length > 0;
+    }
+    if (step === 2 && schedulingMode === 'scheduled') {
+      return Boolean(windowStart && windowEnd);
+    }
+    return true;
+  }, [step, targetAssets.length, selectedRegimes.length, schedulingMode, windowStart, windowEnd]);
+
+  const toggleRegime = (regime) => {
+    setSelectedRegimes((previousRegimes) => {
+      if (previousRegimes.includes(regime)) {
+        if (previousRegimes.length === 1) {
+          return previousRegimes;
+        }
+        return previousRegimes.filter((item) => item !== regime);
+      }
+      return [...previousRegimes, regime];
+    });
+  };
+
+  const handleSubmit = () => {
+    if (!primaryAsset) {
+      return;
+    }
+
+    const summaryLines = [
+      `Work type: ${workType === 'audit' ? 'Independent audit' : 'Statutory inspection'}`,
+      `Scope assets: ${targetAssets.length} (${scopeTarget === 'selected' ? 'selected asset' : scopeTarget === 'due' ? 'due/overdue set' : 'all assets in scope'})`,
+      `Regimes: ${selectedRegimes.join(', ')}`,
+      `Scheduling: ${schedulingMode === 'asap' ? 'ASAP dispatch' : `${windowStart} to ${windowEnd}`}`,
+      `Preferred provider: ${preferredAuditor?.name || 'Auto-match network'}`,
+      `Same auditor across sites: ${sameAuditorAcrossSites ? 'Yes' : 'No'}`,
+      `Deliverables: ${deliverables || 'none selected'}`,
+      `PO: ${poNumber || 'Not provided'}`,
+      `Cost centre: ${costCentre || 'Not provided'}`,
+      `Approver: ${approver || 'Not provided'}`,
+      `Special requirements: ${specialRequirements || 'None'}`,
+      `Quote estimate: ${formatCurrencyGBP(quote.total)} inc VAT (VAT ${formatCurrencyGBP(quote.vatAmount)})`,
+      `Pricing model: ${quote.pricingModelVersion} (${quote.rateCardVersionId})`,
+    ];
+
+    const notesBlock = [
+      accessNotes || 'No additional access notes provided.',
+      '',
+      ...summaryLines,
+    ].join('\n');
+
+    const wasCreated = onSubmit({
+      assetId: primaryAsset.id,
+      dueDate,
+      scope: normalizedScope,
+      pricing: quote,
+      dispatchSlaMins,
+      preferredAuditorId: preferredAuditorId || '',
+      notes: notesBlock,
+    });
+
+    if (wasCreated) {
+      onClose();
+    }
+  };
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/45 dark:bg-slate-950/65 backdrop-blur-sm">
+      <div className="w-full max-w-3xl rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
+        <div className="px-5 md:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg md:text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-cyan-500" />
+                Request Audit or Inspection
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Research-aligned booking flow: scope, scheduling, pricing, procurement, and dispatch.
+              </p>
+            </div>
+            <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="mt-4 grid grid-cols-6 gap-1.5">
+            {steps.map((stepLabel, index) => (
+              <div key={stepLabel} className="min-w-0">
+                <div
+                  className={`h-1.5 rounded-full ${
+                    index <= step ? 'bg-cyan-500' : 'bg-slate-200 dark:bg-slate-700'
+                  }`}
+                />
+                <p className="mt-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">{stepLabel}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="p-5 md:p-6 max-h-[72vh] overflow-y-auto space-y-4">
+          {step === 0 && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Choose the primary job type for this request.
+              </p>
+              <div className="grid md:grid-cols-2 gap-3">
+                <button
+                  onClick={() => setWorkType('inspection')}
+                  className={`rounded-xl border px-4 py-4 text-left transition-colors ${
+                    workType === 'inspection'
+                      ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">Statutory inspection</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Best for due-date driven asset checks and certification.
+                  </p>
+                </button>
+                <button
+                  onClick={() => setWorkType('audit')}
+                  className={`rounded-xl border px-4 py-4 text-left transition-colors ${
+                    workType === 'audit'
+                      ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">Independent audit</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Best for evidence review across one or more sites.
+                  </p>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Define regimes, sites, and asset target scope.
+              </p>
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    Sites
+                  </label>
+                  <select
+                    value={selectedSite}
+                    onChange={(event) => setSelectedSite(event.target.value)}
+                    className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                  >
+                    <option value="all">All selected sites</option>
+                    {siteOptions.map((site) => (
+                      <option key={site} value={site}>
+                        {site}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    Target assets
+                  </label>
+                  <select
+                    value={scopeTarget}
+                    onChange={(event) => setScopeTarget(event.target.value)}
+                    className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                  >
+                    <option value="due">Due + overdue assets</option>
+                    <option value="all">All assets in site scope</option>
+                    <option value="selected">Single selected asset</option>
+                  </select>
+                </div>
+              </div>
+
+              {scopeTarget === 'selected' && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    Selected asset
+                  </label>
+                  <select
+                    value={selectedAssetId}
+                    onChange={(event) => setSelectedAssetId(event.target.value)}
+                    className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                  >
+                    {scopedAssets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.id} - {asset.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                  Regimes
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['LOLER', 'PUWER', 'PSSR'].map((regime) => (
+                    <button
+                      key={regime}
+                      type="button"
+                      onClick={() => toggleRegime(regime)}
+                      className={`rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+                        selectedRegimes.includes(regime)
+                          ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {regime}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Assets in scope: {targetAssets.length} {primaryAsset ? `• Primary record: ${primaryAsset.id}` : ''}
+              </p>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Configure scheduling mode and dispatch constraints.
+              </p>
+              <div className="grid md:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSchedulingMode('asap')}
+                  className={`rounded-xl border px-4 py-3 text-left ${
+                    schedulingMode === 'asap'
+                      ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">ASAP dispatch</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Launches immediate offer waves.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSchedulingMode('scheduled')}
+                  className={`rounded-xl border px-4 py-3 text-left ${
+                    schedulingMode === 'scheduled'
+                      ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/20'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">Scheduled window</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Set start and end dates per plan.</p>
+                </button>
+              </div>
+
+              {schedulingMode === 'scheduled' && (
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                      Window start
+                    </label>
+                    <input
+                      type="date"
+                      value={windowStart}
+                      onChange={(event) => setWindowStart(event.target.value)}
+                      className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm dark:[color-scheme:dark]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                      Window end
+                    </label>
+                    <input
+                      type="date"
+                      value={windowEnd}
+                      onChange={(event) => setWindowEnd(event.target.value)}
+                      className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm dark:[color-scheme:dark]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid md:grid-cols-2 gap-3">
+                <label className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={sameAuditorAcrossSites}
+                    onChange={(event) => setSameAuditorAcrossSites(event.target.checked)}
+                  />
+                  Same auditor across selected sites
+                </label>
+                <label className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={weekendAccess}
+                    onChange={(event) => setWeekendAccess(event.target.checked)}
+                  />
+                  Weekend / out-of-hours access
+                </label>
+              </div>
+
+              <div className="grid md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    Access complexity
+                  </label>
+                  <select
+                    value={complexity}
+                    onChange={(event) => setComplexity(event.target.value)}
+                    className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="restricted">Restricted</option>
+                    <option value="out_of_hours">Out of hours</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    Equipment
+                  </label>
+                  <select
+                    value={equipment}
+                    onChange={(event) => setEquipment(event.target.value)}
+                    className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                  >
+                    <option value="none">None</option>
+                    <option value="specialist_instruments">Specialist instruments</option>
+                    <option value="rope_access">Rope access</option>
+                    <option value="confined_space">Confined space</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    Travel (km)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="300"
+                    value={travelKm}
+                    onChange={(event) => setTravelKm(Number(event.target.value || 0))}
+                    className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Preferred provider (optional)
+                </label>
+                <select
+                  value={preferredAuditorId}
+                  onChange={(event) => setPreferredAuditorId(event.target.value)}
+                  className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                >
+                  <option value="">Auto-match network</option>
+                  {auditors.map((auditor) => (
+                    <option key={auditor.id} value={auditor.id}>
+                      {auditor.name} ({auditor.tier})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Fixed-price estimate based on selected scope and dispatch mode.
+              </p>
+              <div className="rounded-2xl border border-cyan-200 dark:border-cyan-800/30 bg-cyan-50/70 dark:bg-cyan-900/10 p-4">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="text-cyan-700/80 dark:text-cyan-300/80">VAT</p>
+                    <p className="font-bold text-cyan-700 dark:text-cyan-300">{formatCurrencyGBP(quote.vatAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-cyan-700/80 dark:text-cyan-300/80">Total inc VAT</p>
+                    <p className="font-black text-cyan-700 dark:text-cyan-300">{formatCurrencyGBP(quote.total)}</p>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-cyan-700/90 dark:text-cyan-300/90">
+                  Dispatch SLA target: {dispatchSlaMins} minutes. Scope template: {scopeTemplate.replaceAll('_', ' ')}. Model {quote.pricingModelVersion}.
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3">
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  Assumptions: {targetAssets.length} asset(s), {schedulingMode === 'asap' ? 'ASAP dispatch' : 'scheduled window'},{' '}
+                  {weekendAccess ? 'weekend-capable visit' : 'weekday access'}.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Capture PO and approval details for finance reconciliation.
+              </p>
+              <div className="grid md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    PO Number
+                  </label>
+                  <input
+                    value={poNumber}
+                    onChange={(event) => setPoNumber(event.target.value)}
+                    placeholder="PO-2026-..."
+                    className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    Cost Centre
+                  </label>
+                  <input
+                    value={costCentre}
+                    onChange={(event) => setCostCentre(event.target.value)}
+                    placeholder="Ops-North"
+                    className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                    Approver
+                  </label>
+                  <input
+                    value={approver}
+                    onChange={(event) => setApprover(event.target.value)}
+                    placeholder="finance@..."
+                    className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="grid md:grid-cols-2 gap-3">
+                <label className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={includeCertificate}
+                    onChange={(event) => setIncludeCertificate(event.target.checked)}
+                  />
+                  Certificate output required
+                </label>
+                <label className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={includeAuditPack}
+                    onChange={(event) => setIncludeAuditPack(event.target.checked)}
+                  />
+                  Audit pack export required
+                </label>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Special requirements
+                </label>
+                <input
+                  value={specialRequirements}
+                  onChange={(event) => setSpecialRequirements(event.target.value)}
+                  placeholder="e.g. insurer witness, pressure relief validation, sampling ratio..."
+                  className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Access notes
+                </label>
+                <textarea
+                  value={accessNotes}
+                  onChange={(event) => setAccessNotes(event.target.value)}
+                  rows={3}
+                  placeholder="Site induction, permits, escort constraints, keys, and contact instructions..."
+                  className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm resize-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {step === 5 && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Review and submit this request to the CertEx network.
+              </p>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 space-y-2 text-sm">
+                <p className="text-slate-700 dark:text-slate-200">
+                  <span className="font-bold">Primary asset:</span> {primaryAsset ? `${primaryAsset.id} - ${primaryAsset.name}` : 'n/a'}
+                </p>
+                <p className="text-slate-700 dark:text-slate-200">
+                  <span className="font-bold">Type:</span> {workType === 'audit' ? 'Independent audit' : 'Statutory inspection'}
+                </p>
+                <p className="text-slate-700 dark:text-slate-200">
+                  <span className="font-bold">Scope assets:</span> {targetAssets.length}
+                </p>
+                <p className="text-slate-700 dark:text-slate-200">
+                  <span className="font-bold">Regimes:</span> {selectedRegimes.join(', ')}
+                </p>
+                <p className="text-slate-700 dark:text-slate-200">
+                  <span className="font-bold">Scheduling:</span>{' '}
+                  {schedulingMode === 'asap' ? 'ASAP dispatch' : `${windowStart} to ${windowEnd}`}
+                </p>
+                <p className="text-slate-700 dark:text-slate-200">
+                  <span className="font-bold">Preferred provider:</span> {preferredAuditor?.name || 'Auto-match'}
+                </p>
+                <p className="text-slate-700 dark:text-slate-200">
+                  <span className="font-bold">Total estimate:</span> {formatCurrencyGBP(quote.total)} inc VAT
+                </p>
+                <p className="text-slate-700 dark:text-slate-200">
+                  <span className="font-bold">Quote metadata:</span> {quote.pricingModelVersion} • {quote.rateCardVersionId}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 md:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => {
+              if (step === 0) {
+                onClose();
+                return;
+              }
+              setStep((previousStep) => Math.max(0, previousStep - 1));
+            }}
+            className="px-4 py-2 rounded-lg text-sm font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+          >
+            {step === 0 ? 'Cancel' : 'Back'}
+          </button>
+          {step < steps.length - 1 ? (
+            <button
+              type="button"
+              disabled={!canContinue}
+              onClick={() => setStep((previousStep) => Math.min(steps.length - 1, previousStep + 1))}
+              className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
+            >
+              Next
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white transition-colors"
+            >
+              Send Request
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecurringProgrammeModal({ isOpen, auditors, onClose, onSubmit }) {
+  const [name, setName] = useState('');
+  const [cadence, setCadence] = useState('quarterly');
+  const [leadDays, setLeadDays] = useState(30);
+  const [preferredAuditorId, setPreferredAuditorId] = useState('');
+  const [budgetCap, setBudgetCap] = useState(2500);
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [approvalChain, setApprovalChain] = useState('Site Manager > Finance');
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    setName('');
+    setCadence('quarterly');
+    setLeadDays(30);
+    setPreferredAuditorId('');
+    setBudgetCap(2500);
+    setStartDate(new Date().toISOString().slice(0, 10));
+    setApprovalChain('Site Manager > Finance');
+  }, [isOpen]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/45 dark:bg-slate-950/65 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/70 flex items-center justify-between">
+          <h3 className="text-lg font-black text-slate-900 dark:text-white">Create Recurring Programme</h3>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const wasCreated = onSubmit({
+              name,
+              cadence,
+              leadDays,
+              preferredAuditorId,
+              budgetCap,
+              startDate,
+              approvalChain,
+            });
+            if (wasCreated) {
+              onClose();
+            }
+          }}
+          className="p-5 space-y-4"
+        >
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+              Programme name
+            </label>
+            <input
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Q2 LOLER Multi-site Sweep"
+              className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+            />
+          </div>
+          <div className="grid md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Cadence
+              </label>
+              <select
+                value={cadence}
+                onChange={(event) => setCadence(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+              >
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="biannual">Biannual</option>
+                <option value="annual">Annual</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Lead days
+              </label>
+              <input
+                type="number"
+                min="7"
+                max="180"
+                value={leadDays}
+                onChange={(event) => setLeadDays(Number(event.target.value || 30))}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Start date
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm dark:[color-scheme:dark]"
+              />
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Preferred provider
+              </label>
+              <select
+                value={preferredAuditorId}
+                onChange={(event) => setPreferredAuditorId(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+              >
+                <option value="">Auto-match network</option>
+                {auditors.map((auditor) => (
+                  <option key={auditor.id} value={auditor.id}>
+                    {auditor.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Budget cap (GBP)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="50"
+                value={budgetCap}
+                onChange={(event) => setBudgetCap(Number(event.target.value || 0))}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+              Approval chain
+            </label>
+            <input
+              value={approvalChain}
+              onChange={(event) => setApprovalChain(event.target.value)}
+              className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-sm"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button type="submit" className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white">
+              Save Programme
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// --- NAVIGATION COMPONENTS ---
+
+function DesktopNavItem({ icon, label, isActive, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 border ${
+        isActive
+          ? 'bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800/50 shadow-sm'
+          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 border-transparent'
+      }`}
+    >
+      <div className={`${isActive ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400 dark:text-slate-500'}`}>
+        {React.cloneElement(icon, { className: 'w-5 h-5' })}
+      </div>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function MobileNavItem({ icon, label, isActive, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full min-w-0 flex flex-col items-center justify-center space-y-1 transition-colors duration-200 ${
+        isActive
+          ? 'text-cyan-600 dark:text-cyan-400'
+          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+      }`}
+    >
+      <div
+        className={`p-1.5 rounded-lg transition-colors duration-200 ${
+          isActive ? 'bg-cyan-50 dark:bg-cyan-900/30' : 'bg-transparent'
+        }`}
+      >
+        {React.cloneElement(icon, { className: 'w-5 h-5' })}
+      </div>
+      <span className="text-[10px] font-bold text-center leading-tight">{label}</span>
+    </button>
+  );
+}
+
+function AppFooter({ onOpenHelp, onPrivacy, onTerms }) {
+  return (
+    <footer className="border-t border-slate-200 dark:border-slate-700 pt-5">
+      <div className="flex flex-col items-center gap-3 text-center md:flex-row md:justify-between md:text-left">
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          CertEx by InCommand &copy; {new Date().getFullYear()}
+        </p>
+        <div className="flex items-center justify-center gap-5">
+          <button
+            onClick={onOpenHelp}
+            className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
+          >
+            Help
+          </button>
+          <button
+            onClick={onPrivacy}
+            className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
+          >
+            Privacy
+          </button>
+          <button
+            onClick={onTerms}
+            className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
+          >
+            Terms
+          </button>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function AnimatedNetworkSvg() {
+  return (
+    <svg viewBox="0 0 560 260" className="w-full h-56" role="img" aria-label="Animated network map">
+      <defs>
+        <linearGradient id="networkStroke" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#06b6d4" />
+          <stop offset="100%" stopColor="#0ea5e9" />
+        </linearGradient>
+      </defs>
+      <rect x="10" y="10" width="540" height="240" rx="20" fill="rgba(148, 163, 184, 0.06)" />
+      <path d="M90 180 C170 70, 270 70, 350 170 S500 230, 520 120" fill="none" stroke="url(#networkStroke)" strokeWidth="3" strokeDasharray="9 9">
+        <animate attributeName="stroke-dashoffset" values="36;0" dur="2.6s" repeatCount="indefinite" />
+      </path>
+      <path d="M80 80 C180 180, 260 170, 380 70 S500 60, 510 190" fill="none" stroke="#14b8a6" strokeWidth="2.5" strokeDasharray="7 9" opacity="0.8">
+        <animate attributeName="stroke-dashoffset" values="0;32" dur="3.1s" repeatCount="indefinite" />
+      </path>
+      {[
+        { x: 80, y: 80, label: 'Company' },
+        { x: 170, y: 170, label: 'Site' },
+        { x: 280, y: 130, label: 'Certex' },
+        { x: 390, y: 70, label: 'Auditor' },
+        { x: 510, y: 180, label: 'Insurer' },
+      ].map((node) => (
+        <g key={node.label}>
+          <circle cx={node.x} cy={node.y} r="8" fill="#0ea5e9">
+            <animate attributeName="r" values="8;10;8" dur="2s" repeatCount="indefinite" />
+          </circle>
+          <text x={node.x + 12} y={node.y + 4} fill="#334155" fontSize="11" fontWeight="700">
+            {node.label}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function AnimatedWorkflowSvg() {
+  return (
+    <svg viewBox="0 0 560 220" className="w-full h-52" role="img" aria-label="Animated workflow timeline">
+      <rect x="16" y="26" width="528" height="168" rx="18" fill="rgba(148, 163, 184, 0.06)" />
+      <line x1="66" y1="110" x2="494" y2="110" stroke="#0ea5e9" strokeWidth="3" strokeDasharray="8 8">
+        <animate attributeName="stroke-dashoffset" values="32;0" dur="2.2s" repeatCount="indefinite" />
+      </line>
+      {[
+        { x: 66, label: 'Scope' },
+        { x: 172, label: 'Price' },
+        { x: 280, label: 'Dispatch' },
+        { x: 388, label: 'Inspect' },
+        { x: 494, label: 'Verify' },
+      ].map((step, index) => (
+        <g key={step.label}>
+          <circle cx={step.x} cy="110" r="16" fill="#06b6d4" opacity="0.92">
+            <animate attributeName="opacity" values="0.35;1;0.35" dur="2.8s" begin={`${index * 0.25}s`} repeatCount="indefinite" />
+          </circle>
+          <text x={step.x} y="154" textAnchor="middle" fill="#334155" fontSize="11" fontWeight="700">
+            {step.label}
+          </text>
+        </g>
+      ))}
+      <rect x="48" y="48" width="36" height="22" rx="6" fill="#0ea5e9">
+        <animate attributeName="x" values="48;462;48" dur="4s" repeatCount="indefinite" />
+      </rect>
+    </svg>
+  );
+}
+
+function AnimatedTrustSvg() {
+  return (
+    <svg viewBox="0 0 380 220" className="w-full h-52" role="img" aria-label="Animated trust badge">
+      <defs>
+        <linearGradient id="shieldFill" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#06b6d4" />
+          <stop offset="100%" stopColor="#14b8a6" />
+        </linearGradient>
+      </defs>
+      <rect x="16" y="16" width="348" height="188" rx="20" fill="rgba(148, 163, 184, 0.06)" />
+      <path d="M190 46 L272 76 V122 C272 156 239 183 190 196 C141 183 108 156 108 122 V76 Z" fill="url(#shieldFill)" opacity="0.92">
+        <animate attributeName="opacity" values="0.75;1;0.75" dur="2.6s" repeatCount="indefinite" />
+      </path>
+      <path d="M151 117 L181 145 L233 92" fill="none" stroke="#f8fafc" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="120">
+        <animate attributeName="stroke-dashoffset" values="120;0;0;120" dur="3.8s" repeatCount="indefinite" />
+      </path>
+      <circle cx="126" cy="62" r="9" fill="#38bdf8">
+        <animate attributeName="r" values="9;12;9" dur="2.2s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="254" cy="62" r="9" fill="#38bdf8">
+        <animate attributeName="r" values="9;12;9" dur="2.2s" begin="0.4s" repeatCount="indefinite" />
+      </circle>
+    </svg>
+  );
+}
+
+function AnimatedLogoShield({ className = 'h-7 w-7' }) {
+  return (
+    <svg viewBox="0 0 28 28" className={className} role="img" aria-label="CertEx">
+      <defs>
+        <linearGradient id="logoShieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#06b6d4" />
+          <stop offset="100%" stopColor="#0d9488" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M14 2L24 6v8c0 6-10 12-10 12S4 20 4 14V6l10-4z"
+        fill="url(#logoShieldGrad)"
+        opacity="0.95"
+      >
+        <animate attributeName="opacity" values="0.9;1;0.9" dur="2.5s" repeatCount="indefinite" />
+      </path>
+      <path
+        d="M8 12l4 4 8-8"
+        fill="none"
+        stroke="white"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray="24"
+      >
+        <animate attributeName="stroke-dashoffset" values="24;0" dur="0.6s" fill="freeze" />
+      </path>
+    </svg>
+  );
+}
+
+function AnimatedCheckIcon({ className = 'h-5 w-5' }) {
+  return (
+    <svg viewBox="0 0 20 20" className={className} role="img" aria-hidden="true">
+      <circle cx="10" cy="10" r="9" fill="#0d9488" opacity="0.2">
+        <animate attributeName="r" values="9;10;9" dur="2s" repeatCount="indefinite" />
+      </circle>
+      <path d="M6 10l3 3 5-6" fill="none" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="20">
+        <animate attributeName="stroke-dashoffset" values="20;0" dur="0.4s" repeatCount="indefinite" />
+      </path>
+    </svg>
+  );
+}
+
+function AnimatedPortalIcon({ type, className = 'h-10 w-10' }) {
+  const icons = {
+    company: (
+      <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5" width="14" height="12" rx="1.5" />
+        <path d="M7 5V3a1.5 1.5 0 013 0v2M3 9h18" />
+        <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" repeatCount="indefinite" />
+      </g>
+    ),
+    auditor: (
+      <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="10" cy="6" r="3.5" />
+        <path d="M4 18c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+        <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" begin="0.2s" repeatCount="indefinite" />
+      </g>
+    ),
+    admin: (
+      <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 14v4M10 10v8M16 6v12" />
+        <path d="M2 18h4M8 18h4M14 18h4" />
+        <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" begin="0.4s" repeatCount="indefinite" />
+      </g>
+    ),
+    insurer: (
+      <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="8" width="12" height="8" rx="1" />
+        <path d="M8 8V6a2 2 0 014 0v2M10 12h4" />
+        <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" begin="0.6s" repeatCount="indefinite" />
+      </g>
+    ),
+  };
+  return (
+    <svg viewBox="0 0 20 20" className={className}>
+      {icons[type] || icons.company}
+    </svg>
+  );
+}
+
+function AnimatedStepIcon({ step, className = 'h-12 w-12' }) {
+  return (
+    <svg viewBox="0 0 48 48" className={className} role="img" aria-hidden="true">
+      <defs>
+        <linearGradient id={`stepGrad-${step}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#06b6d4" />
+          <stop offset="100%" stopColor="#0ea5e9" />
+        </linearGradient>
+      </defs>
+      <circle cx="24" cy="24" r="20" fill={`url(#stepGrad-${step})`} opacity="0.9">
+        <animate attributeName="r" values="20;22;20" dur="2s" begin={`${step * 0.15}s`} repeatCount="indefinite" />
+      </circle>
+      <text x="24" y="28" textAnchor="middle" fill="white" fontSize="16" fontWeight="bold">
+        {step}
+      </text>
+    </svg>
+  );
+}
+
+function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
+  const [authMode, setAuthMode] = useState('signin');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [accountType, setAccountType] = useState('company');
+  const heroPage = PUBLIC_SITE_PAGE_BLUEPRINTS.find((page) => page.id === 'home') || PUBLIC_SITE_PAGE_BLUEPRINTS[0];
+
+  const submitLabel = authMode === 'signup' ? 'Create account' : 'Sign in';
+  const canSubmit = Boolean(email.trim()) && Boolean(password.trim()) && (authMode === 'signin' || Boolean(fullName.trim()));
+
+  const sectionId = (value) => `public-${value}`;
+
+  const scrollToSection = (value, options = {}) => {
+    if (options.authMode) {
+      setAuthMode(options.authMode);
+    }
+    if (options.accountType) {
+      setAccountType(options.accountType);
+    }
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const target = document.getElementById(sectionId(value));
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const footerTargetByLabel = {
+    Security: 'security',
+    Legal: 'legal',
+    Privacy: 'privacy',
+    Status: 'status',
+    Contact: 'contact',
+    Careers: 'careers',
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const didAuth = onAuthenticate?.({
+      mode: authMode,
+      email,
+      fullName,
+      accountType,
+    });
+    if (didAuth) {
+      setPassword('');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/60 to-emerald-50/60 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 text-slate-900 dark:text-slate-200 transition-colors duration-300">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 pb-12">
+        <header className="h-20 flex items-center justify-between sticky top-0 z-30 backdrop-blur-md bg-slate-50/80 dark:bg-slate-950/70 border-b border-slate-200/80 dark:border-slate-800/80">
+          <button onClick={() => scrollToSection('home')} className="flex items-center gap-2.5">
+            <span className="text-cyan-600 dark:text-cyan-400"><AnimatedLogoShield className="h-7 w-7" /></span>
+            <div className="flex flex-col leading-none text-left">
+              <span className="font-bold text-xl tracking-tight text-slate-800 dark:text-white">CertEx</span>
+              <span className="text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">by InCommand</span>
+            </div>
+          </button>
+          <nav className="hidden lg:flex items-center gap-2">
+            {PUBLIC_SITE_PAGE_BLUEPRINTS.map((page) => (
+              <button
+                key={page.id}
+                onClick={() => scrollToSection(page.id)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                {page.label}
+              </button>
+            ))}
+            <button
+              onClick={() => scrollToSection('signin', { authMode: 'signin' })}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-cyan-600 text-white hover:bg-cyan-700"
+            >
+              Sign in
+            </button>
+          </nav>
+          <button
+            onClick={onToggleTheme}
+            aria-label="Toggle theme"
+            className="p-2.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+          >
+            {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </button>
+        </header>
+
+        <div className="lg:hidden mt-3 mb-1">
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {PUBLIC_SITE_PAGE_BLUEPRINTS.map((page) => (
+              <button
+                key={`mobile-${page.id}`}
+                onClick={() => scrollToSection(page.id)}
+                className="shrink-0 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/45 text-[11px] font-semibold"
+              >
+                {page.label}
+              </button>
+            ))}
+            <button
+              onClick={() => scrollToSection('signin', { authMode: 'signin' })}
+              className="shrink-0 px-3 py-1.5 rounded-full bg-cyan-600 text-white text-[11px] font-bold"
+            >
+              Sign in
+            </button>
+          </div>
+        </div>
+
+        <main className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] items-start mt-4">
+          <section className="space-y-5">
+            <section id={sectionId('home')} className="scroll-mt-24 glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-7 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Compliance Exchange Platform</p>
+              <h1 className="text-3xl md:text-4xl font-black text-slate-900 dark:text-white mt-2 max-w-3xl">
+                {heroPage.headline}
+              </h1>
+              <p className="text-sm md:text-base text-slate-600 dark:text-slate-300 mt-3 max-w-3xl">
+                One platform for booking statutory work, dispatching vetted auditors, issuing signed certificates, and sharing
+                audit-ready evidence.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {heroPage.trustCues.map((cue) => (
+                  <span
+                    key={`hero-${cue}`}
+                    className="px-2.5 py-1 rounded-full border border-cyan-200 dark:border-cyan-800/40 bg-cyan-50 dark:bg-cyan-900/20 text-[11px] font-semibold text-cyan-700 dark:text-cyan-300"
+                  >
+                    {cue}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={() => scrollToSection('signin', { authMode: 'signup', accountType: 'company' })}
+                  className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+                >
+                  Request a pilot
+                </button>
+                <button
+                  onClick={() => scrollToSection('signin', { authMode: 'signup', accountType: 'auditor' })}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200"
+                >
+                  Join as an auditor
+                </button>
+              </div>
+              <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/35 p-3">
+                <AnimatedNetworkSvg />
+              </div>
+            </section>
+
+            <section id={sectionId('how-it-works')} className="scroll-mt-24 glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+              <h2 className="text-lg md:text-xl font-black text-slate-900 dark:text-white">How the system works</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
+                Scope once, price instantly, dispatch in waves, and deliver signed evidence packs without manual PDF chasing.
+              </p>
+              <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/35 p-3">
+                <AnimatedWorkflowSvg />
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { step: 1, title: 'Define scope', copy: 'Select regime, sites, assets, and delivery requirements.' },
+                  { step: 2, title: 'Instant price', copy: 'Get fixed quote with VAT-ready totals and assumptions.' },
+                  { step: 3, title: 'Dispatch + complete', copy: 'Match vetted auditors/providers and run SLA-driven delivery.' },
+                  { step: 4, title: 'Verify evidence', copy: 'Access signed certificates and audit packs with traceability.' },
+                ].map((item) => (
+                  <article key={item.step} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3 flex flex-col items-center text-center">
+                    <AnimatedStepIcon step={item.step} className="h-12 w-12 mb-2" />
+                    <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Step {item.step}</p>
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1">{item.title}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{item.copy}</p>
+                  </article>
+                ))}
+              </div>
+              <button type="button" onClick={() => scrollToSection('portals')} className="mt-3 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
+                See Portals included ↓
+              </button>
+            </section>
+
+            <section id={sectionId('portals')} className="scroll-mt-24 glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+              <h2 className="text-lg md:text-xl font-black text-slate-900 dark:text-white">Portals included</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
+                One platform, four roles: company, auditor, admin, and insurer. Each portal is tailored to its workflow.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { type: 'company', title: 'Company portal', copy: 'Book inspections, control approvals, and access vault exports.' },
+                  { type: 'auditor', title: 'Auditor portal', copy: 'Accept jobs, submit findings, and track payout status.' },
+                  { type: 'admin', title: 'Certex admin portal', copy: 'See customer totals, auditor payouts, and platform gross.' },
+                  { type: 'insurer', title: 'Insurer read-only portal', copy: 'Review completed jobs and evidence timeline only.' },
+                ].map((portal) => (
+                  <article key={portal.type} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+                    <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400">
+                      <AnimatedPortalIcon type={portal.type} className="h-6 w-6" />
+                    </span>
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-2">{portal.title}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{portal.copy}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section id={sectionId('facilities')} className="scroll-mt-24 glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+              <h2 className="text-lg md:text-xl font-black text-slate-900 dark:text-white">For Facilities teams</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
+                Stop chasing PDFs. Run a controlled compliance program with site-level visibility and procurement-grade finance outputs.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {[
+                  'Upload asset registers and auto-build due-date calendars',
+                  'Set lead times, evidence requirements, and retention policy profiles',
+                  'Use PO and VAT-ready invoicing with approver workflows',
+                  'Export audit packs by site, regime, and status in minutes',
+                ].map((item) => (
+                  <div key={item} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+                    <p className="text-xs text-slate-700 dark:text-slate-200">{item}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => scrollToSection('signin', { authMode: 'signup', accountType: 'company' })}
+                  className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+                >
+                  Upload your asset register
+                </button>
+                <button
+                  onClick={() => scrollToSection('resources')}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200"
+                >
+                  Download procurement pack
+                </button>
+              </div>
+            </section>
+
+            <section id={sectionId('auditors')} className="scroll-mt-24 glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+              <h2 className="text-lg md:text-xl font-black text-slate-900 dark:text-white">For Auditors</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
+                Find work that fits your coverage, rates, and availability. Keep evidence handling tight and payouts predictable.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {[
+                  'Create a profile with regimes, coverage regions, and payout expectations',
+                  'Upload credentials and pass vetting with expiry tracking',
+                  'Accept offers with clear payout, travel estimate, and SLA windows',
+                  'Submit findings linked to assets and certificates for traceability',
+                ].map((item) => (
+                  <div key={item} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+                    <p className="text-xs text-slate-700 dark:text-slate-200">{item}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => scrollToSection('signin', { authMode: 'signup', accountType: 'auditor' })}
+                  className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+                >
+                  Create auditor profile
+                </button>
+                <button
+                  onClick={() => scrollToSection('how-it-works')}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200"
+                >
+                  See example workflow
+                </button>
+              </div>
+            </section>
+
+            <section id={sectionId('pricing')} className="scroll-mt-24 glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+              <h2 className="text-lg md:text-xl font-black text-slate-900 dark:text-white">Pricing</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
+                Transparent commercial model for operators and audit firms, with VAT-ready outputs and no lock-in.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <article className="rounded-xl border border-cyan-200 dark:border-cyan-800/30 bg-cyan-50/70 dark:bg-cyan-900/10 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Per booking</p>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 mt-1">For operators starting pilots</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">Pay per completed job with line-item visibility.</p>
+                </article>
+                <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Programme</p>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 mt-1">For recurring multi-site operations</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">Budget caps, approval chains, and recurring schedules.</p>
+                </article>
+                <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Enterprise</p>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 mt-1">Custom procurement and integrations</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">ERP handoff, SSO, and governance controls.</p>
+                </article>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => scrollToSection('signin', { authMode: 'signup', accountType: 'company' })}
+                  className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+                >
+                  Start pilot pricing
+                </button>
+                <button
+                  onClick={() => scrollToSection('contact')}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200"
+                >
+                  Enterprise consultation
+                </button>
+              </div>
+            </section>
+
+            <section id={sectionId('trust')} className="scroll-mt-24 glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+              <h2 className="text-lg md:text-xl font-black text-slate-900 dark:text-white">Trust & Compliance</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
+                Evidence integrity and access controls are built into every workflow step.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_0.9fr]">
+                <div className="space-y-2">
+                  {PUBLIC_TRUST_MODULES.map((module) => (
+                    <div key={module.id} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3 flex items-start gap-2">
+                      <span className="shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400">
+                        <AnimatedCheckIcon className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{module.title}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{module.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/35 p-3">
+                  <AnimatedTrustSvg />
+                </div>
+              </div>
+            </section>
+
+            <section id={sectionId('resources')} className="scroll-mt-24 glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+              <h2 className="text-lg md:text-xl font-black text-slate-900 dark:text-white">Resources</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
+                Templates, implementation guides, and compliance checklists for operators, auditors, and procurement teams.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                {[
+                  { title: 'Audit scope template', copy: 'Download a starter scope for LOLER, PUWER, and PSSR workflows.' },
+                  { title: 'Onboarding checklist', copy: 'Company, auditor, provider, and finance onboarding steps.' },
+                  { title: 'Evidence sharing guide', copy: 'Best practices for secure links, retention, and audit exports.' },
+                ].map((resource) => (
+                  <article key={resource.title} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{resource.title}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{resource.copy}</p>
+                  </article>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => scrollToSection('signin', { authMode: 'signup', accountType: 'company' })}
+                  className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+                >
+                  Get the audit scope template
+                </button>
+                <button
+                  onClick={() => scrollToSection('contact')}
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200"
+                >
+                  Subscribe to updates
+                </button>
+              </div>
+            </section>
+          </section>
+
+          <aside id={sectionId('signin')} className="scroll-mt-24 glass-panel sticky top-24 bg-white/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Account access</p>
+            <h2 className="text-xl font-black text-slate-900 dark:text-white mt-1">
+              {authMode === 'signup' ? 'Create your account' : 'Sign in to your portal'}
+            </h2>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+              Start with a company or auditor account, then invite teams and configure workflows.
+            </p>
+
+            <div className="mt-4 grid grid-cols-2 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <button
+                onClick={() => setAuthMode('signin')}
+                className={`px-3 py-2 text-xs font-bold ${authMode === 'signin' ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-900/45 text-slate-600 dark:text-slate-300'}`}
+              >
+                Sign in
+              </button>
+              <button
+                onClick={() => setAuthMode('signup')}
+                className={`px-3 py-2 text-xs font-bold border-l border-slate-200 dark:border-slate-700 ${
+                  authMode === 'signup' ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-900/45 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                Sign up
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+              {authMode === 'signup' && (
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Full name
+                  <input
+                    required={authMode === 'signup'}
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    placeholder="Alex Operator"
+                    className="mt-1 w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 text-sm"
+                  />
+                </label>
+              )}
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Work email
+                <input
+                  required
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="name@company.com"
+                  className="mt-1 w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 text-sm"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Password
+                <input
+                  required
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Enter password"
+                  className="mt-1 w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 text-sm"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Primary portal
+                <select
+                  value={accountType}
+                  onChange={(event) => setAccountType(event.target.value)}
+                  className="mt-1 w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 text-sm"
+                >
+                  <option value="company">Company</option>
+                  <option value="auditor">Auditor</option>
+                  <option value="certex">Certex Admin</option>
+                  <option value="insurer">Insurer (read-only)</option>
+                </select>
+              </label>
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className="w-full px-4 py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-bold transition-colors"
+              >
+                {submitLabel}
+              </button>
+
+              {import.meta.env.DEV && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onAuthenticate?.({
+                      mode: 'signin',
+                      email: 'debug@certex.local',
+                      fullName: 'Debug User',
+                      accountType,
+                    })
+                  }
+                  className="w-full px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors"
+                >
+                  Debug: Enter App
+                </button>
+              )}
+            </form>
+            <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Trust controls</p>
+              <ul className="mt-2 space-y-2">
+                {[
+                  { title: 'Evidence integrity', desc: 'Signed certificates and immutable history.' },
+                  { title: 'Secure electronic records', desc: 'Access trails and exportable audit packs.' },
+                  { title: 'Credentialled network', desc: 'Vetted auditors and expiry tracking.' },
+                ].map((item) => (
+                  <li key={item.title} className="flex items-start gap-2">
+                    <span className="shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400">
+                      <AnimatedCheckIcon className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{item.title}</p>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-400">{item.desc}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                onClick={() => scrollToSection('trust')}
+                className="mt-3 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
+              >
+                View Trust & Compliance →
+              </button>
+            </div>
+          </aside>
+        </main>
+
+        <section className="mt-8 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <article id={sectionId('security')} className="scroll-mt-24 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-4">
+            <h3 className="text-sm font-black text-slate-900 dark:text-white">Security</h3>
+            <p className="text-sm text-slate-700 dark:text-slate-200 mt-2">
+              Encryption in transit and at rest, role-based access, MFA-ready controls, and access/event logs. All evidence is signed and tamper-evident.
+            </p>
+            <button type="button" onClick={() => scrollToSection('trust')} className="mt-2 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
+              View security overview →
+            </button>
+          </article>
+          <article id={sectionId('legal')} className="scroll-mt-24 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-4">
+            <h3 className="text-sm font-black text-slate-900 dark:text-white">Legal</h3>
+            <p className="text-sm text-slate-700 dark:text-slate-200 mt-2">
+              Contract-ready terms of service, SLAs, cancellation rules, and audit traceability. Designed for procurement and legal review.
+            </p>
+            <button type="button" onClick={() => scrollToSection('contact')} className="mt-2 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
+              Request terms pack →
+            </button>
+          </article>
+          <article id={sectionId('privacy')} className="scroll-mt-24 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-4">
+            <h3 className="text-sm font-black text-slate-900 dark:text-white">Privacy</h3>
+            <p className="text-sm text-slate-700 dark:text-slate-200 mt-2">
+              Controlled data sharing, retention policies, and read-only evidence links with expiry. GDPR-aligned for UK and EU operations.
+            </p>
+            <button type="button" onClick={() => scrollToSection('contact')} className="mt-2 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
+              Privacy & DPA info →
+            </button>
+          </article>
+          <article id={sectionId('status')} className="scroll-mt-24 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-4">
+            <h3 className="text-sm font-black text-slate-900 dark:text-white">Status</h3>
+            <p className="text-sm text-slate-700 dark:text-slate-200 mt-2">
+              Live operational status, planned maintenance windows, and incident updates. Subscribe for notifications so you stay informed.
+            </p>
+            <button type="button" onClick={() => scrollToSection('contact')} className="mt-2 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
+              Open status page →
+            </button>
+          </article>
+          <article id={sectionId('contact')} className="scroll-mt-24 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-4">
+            <h3 className="text-sm font-black text-slate-900 dark:text-white">Contact</h3>
+            <p className="text-sm text-slate-700 dark:text-slate-200 mt-2">
+              <strong>Sales & onboarding:</strong> sales@certex.example · <strong>Support & compliance:</strong> support@certex.example. We typically respond within one business day.
+            </p>
+            <button type="button" onClick={() => scrollToSection('signin', { authMode: 'signup' })} className="mt-2 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
+              Create account to get started →
+            </button>
+          </article>
+          <article id={sectionId('careers')} className="scroll-mt-24 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-4">
+            <h3 className="text-sm font-black text-slate-900 dark:text-white">Careers</h3>
+            <p className="text-sm text-slate-700 dark:text-slate-200 mt-2">
+              We’re hiring for product, compliance operations, and network growth across the UK and EU. Join us to shape the future of compliance exchange.
+            </p>
+            <button type="button" onClick={() => scrollToSection('contact')} className="mt-2 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
+              See open roles →
+            </button>
+          </article>
+        </section>
+
+        <footer className="mt-8 border-t border-slate-200 dark:border-slate-700 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              CertEx by InCommand &copy; {new Date().getFullYear()}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {PUBLIC_FOOTER_LINKS.map((link) => (
+                <button
+                  key={`public-${link}`}
+                  onClick={() => scrollToSection(footerTargetByLabel[link] || 'home')}
+                  className="px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/45 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+                >
+                  {link}
+                </button>
+              ))}
+            </div>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function PublicLandingView({ onNotify, publicSiteConfig = defaultPublicSiteConfig, onOpenOnboarding, onOpenHelp }) {
+  const [activePageId, setActivePageId] = useState(PUBLIC_SITE_PAGE_BLUEPRINTS[0]?.id || 'home');
+
+  const activePage = PUBLIC_SITE_PAGE_BLUEPRINTS.find((page) => page.id === activePageId) || PUBLIC_SITE_PAGE_BLUEPRINTS[0];
+
+  const pageIcons = {
+    home: LayoutDashboard,
+    'how-it-works': Activity,
+    facilities: Building2,
+    auditors: Users,
+    pricing: BarChart3,
+    trust: Lock,
+    resources: FileText,
+  };
+
+  return (
+    <div className="space-y-5 animate-in fade-in duration-300">
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Public Website</p>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mt-2">
+              {publicSiteConfig.siteTitle || 'CertEx Public Site'}
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-3xl">
+              Build-ready page architecture for acquisition, trust, and onboarding. Includes all public pages from the research
+              sitemap and messaging model.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => onNotify?.('Pilot request placeholder', 'info')}
+              className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+            >
+              Request a pilot
+            </button>
+            <button
+              onClick={() => onOpenOnboarding?.()}
+              className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200"
+            >
+              Start onboarding
+            </button>
+            <button
+              onClick={() => onNotify?.('Sign in placeholder', 'info')}
+              className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200"
+            >
+              Sign in
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Top navigation pages</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {PUBLIC_SITE_PAGE_BLUEPRINTS.map((page) => {
+            const Icon = pageIcons[page.id] || FileText;
+            const isActive = page.id === activePage.id;
+            return (
+              <button
+                key={page.id}
+                onClick={() => setActivePageId(page.id)}
+                className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                  isActive
+                    ? 'border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-900/25'
+                    : 'border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/35 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                  <p className={`text-xs font-bold ${isActive ? 'text-cyan-700 dark:text-cyan-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                    {page.label}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{activePage.label}</p>
+            <h3 className="text-xl font-black text-slate-900 dark:text-white mt-1">{activePage.headline}</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-3xl">{activePage.purpose}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => onNotify?.(`${activePage.primaryCta} placeholder`, 'info')}
+              className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+            >
+              {activePage.primaryCta}
+            </button>
+            <button
+              onClick={() => onNotify?.(`${activePage.secondaryCta} placeholder`, 'info')}
+              className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200"
+            >
+              {activePage.secondaryCta}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {activePage.trustCues.map((cue) => (
+            <article
+              key={`${activePage.id}-${cue}`}
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 px-3 py-2.5"
+            >
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{cue}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">Reusable Trust Modules</h3>
+          <button
+            onClick={() => onOpenHelp?.()}
+            className="text-xs font-bold text-cyan-700 dark:text-cyan-300 hover:underline"
+          >
+            Open Help Center
+          </button>
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {PUBLIC_TRUST_MODULES.map((module) => (
+            <article
+              key={module.id}
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 px-3 py-3"
+            >
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{module.title}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{module.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+        <h3 className="text-base font-bold text-slate-900 dark:text-white">Public Footer</h3>
+        <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+          Security, legal, and support links expected on every public page.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {PUBLIC_FOOTER_LINKS.map((link) => (
+            <button
+              key={link}
+              onClick={() => onNotify?.(`${link} page placeholder`, 'info')}
+              className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/45 text-xs font-semibold text-slate-700 dark:text-slate-200"
+            >
+              {link}
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OnboardingPortalView({ onNotify, onboardingTasks = [], onToggleOnboardingTask, onOpenMarketplace }) {
+  const [activePersonaId, setActivePersonaId] = useState(ONBOARDING_PERSONA_FLOWS[0]?.id || 'operator-admin');
+  const activePersona = ONBOARDING_PERSONA_FLOWS.find((persona) => persona.id === activePersonaId) || ONBOARDING_PERSONA_FLOWS[0];
+  const completedChecklist = onboardingTasks.filter((task) => task.completed).length;
+  const checklistProgress = onboardingTasks.length > 0 ? Math.round((completedChecklist / onboardingTasks.length) * 100) : 0;
+
+  const personaIcons = {
+    'operator-admin': Building2,
+    'site-manager': MapPin,
+    auditor: Users,
+    'auditor-admin': ShieldCheck,
+    'provider-admin': Settings,
+    'finance-purchasing': BarChart3,
+  };
+
+  return (
+    <div className="space-y-5 animate-in fade-in duration-300">
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Onboarding Portal</p>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mt-2">
+              Companies, auditors, providers, and finance flows
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-3xl">
+              Persona-by-persona onboarding screens from the research journey maps, including vetting, SLA setup, and launch
+              readiness controls.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => onOpenMarketplace?.()}
+              className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+            >
+              Open marketplace
+            </button>
+            <button
+              onClick={() => onNotify?.('Onboarding invite flow placeholder', 'info')}
+              className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200"
+            >
+              Send onboarding invites
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Persona flows</p>
+            <p className="text-lg font-black text-slate-900 dark:text-white mt-1">{ONBOARDING_PERSONA_FLOWS.length}</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Checklist progress</p>
+            <p className="text-lg font-black text-slate-900 dark:text-white mt-1">{checklistProgress}%</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Vetting tracks</p>
+            <p className="text-lg font-black text-slate-900 dark:text-white mt-1">{ONBOARDING_TRACKS.length}</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Persona journeys</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {ONBOARDING_PERSONA_FLOWS.map((persona) => {
+            const Icon = personaIcons[persona.id] || Users;
+            const isActive = persona.id === activePersona.id;
+            return (
+              <button
+                key={persona.id}
+                onClick={() => setActivePersonaId(persona.id)}
+                className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                  isActive
+                    ? 'border-cyan-300 dark:border-cyan-700 bg-cyan-50 dark:bg-cyan-900/25'
+                    : 'border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/35 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-cyan-600 dark:text-cyan-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                  <p className={`text-xs font-bold ${isActive ? 'text-cyan-700 dark:text-cyan-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                    {persona.label}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{activePersona.label}</p>
+        <h3 className="text-xl font-black text-slate-900 dark:text-white mt-1">{activePersona.goal}</h3>
+        <div className="mt-4 space-y-3">
+          {activePersona.steps.map((step, index) => (
+            <article
+              key={`${activePersona.id}-${step.title}`}
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Step {index + 1}</p>
+                  <h4 className="text-sm md:text-base font-bold text-slate-900 dark:text-white mt-1">{step.title}</h4>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{step.microcopy}</p>
+                </div>
+                <button
+                  onClick={() => onNotify?.(`${step.cta} placeholder`, 'info')}
+                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200"
+                >
+                  {step.cta}
+                </button>
+              </div>
+              <ul className="mt-3 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                {step.details.map((detail) => (
+                  <li key={`${step.title}-${detail}`}>• {detail}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+        <h3 className="text-base font-bold text-slate-900 dark:text-white">Onboarding + Vetting Tracks</h3>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          {ONBOARDING_TRACKS.map((track) => (
+            <article
+              key={track.id}
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4"
+            >
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{track.title}</p>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{track.summary}</p>
+              <ul className="mt-3 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                {track.checks.map((check) => (
+                  <li key={`${track.id}-${check}`}>• {check}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">Launch Checklist</h3>
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{completedChecklist}/{onboardingTasks.length} complete</p>
+        </div>
+        <div className="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+          <div
+            className="h-full bg-cyan-500 transition-all"
+            style={{ width: `${checklistProgress}%` }}
+          />
+        </div>
+        <div className="mt-3 space-y-2">
+          {onboardingTasks.map((task) => (
+            <div
+              key={task.id}
+              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5 flex items-center justify-between gap-3"
+            >
+              <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{task.label}</p>
+              <button
+                onClick={() => onToggleOnboardingTask?.(task.id)}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                  task.completed
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                    : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                }`}
+              >
+                {task.completed ? 'Completed' : 'Mark complete'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function HelpCenterView({
+  onNotify,
+  jobs = [],
+  certificates = [],
+  companyContext = { id: '', name: 'Acme Logistics' },
+  publicSiteConfig = defaultPublicSiteConfig,
+  onboardingTasks = [],
+  financeInvoices = [],
+  payoutRuns = [],
+  inspectionTemplates = [],
+  integrationConnections = [],
+  templateBlueprints = [],
+  templateListings = [],
+  licenceGrants = [],
+  auditRuns = [],
+  auditFindings = [],
+  auditActions = [],
+  reportArtifacts = [],
+  shareLinks = [],
+  onUpdatePublicSiteConfig,
+  onToggleOnboardingTask,
+  onRunPilotFulfilmentLoop,
+  onSignCertificate,
+  onGenerateInvoices,
+  onApproveInvoice,
+  onSchedulePayout,
+  onAddTemplate,
+  onToggleTemplate,
+  onConnectIntegration,
+  onCreateTemplateBlueprint,
+  onPublishTemplateBlueprint,
+  onCreateTemplateListing,
+  onGrantTemplateLicence,
+  onStartAuditRun,
+  onCompleteAuditRun,
+  onAddAuditFinding,
+  onCreateAuditAction,
+  onAdvanceAuditActionStatus,
+  onCreateShareLink,
+}) {
+  const [siteForm, setSiteForm] = useState(() => ({
+    siteTitle: publicSiteConfig.siteTitle || '',
+    siteSlug: publicSiteConfig.siteSlug || '',
+    supportEmail: publicSiteConfig.supportEmail || '',
+    verificationPath: publicSiteConfig.verificationPath || '/verify',
+    launchStatus: publicSiteConfig.launchStatus || 'draft',
+    launchDate: publicSiteConfig.launchDate || '',
+  }));
+  const [templateForm, setTemplateForm] = useState({
+    regime: 'PUWER',
+    scope: 'company',
+    name: '',
+    controls: '',
+  });
+  const [integrationForm, setIntegrationForm] = useState(() =>
+    integrationConnections.reduce((accumulator, integration) => {
+      accumulator[integration.id] = integration.endpoint || '';
+      return accumulator;
+    }, {})
+  );
+  const [blueprintForm, setBlueprintForm] = useState({
+    name: '',
+    category: 'HS',
+    scoringModel: 'weighted_sections',
+    licenceModel: 'multi_use',
+    blockTypes: 'section,yes_no_na,photo,signature',
+    mandatoryEvidenceBlocks: 2,
+  });
+  const [listingForm, setListingForm] = useState(() => ({
+    templateId: templateBlueprints[0]?.id || '',
+    priceModel: 'single_use',
+    price: 99,
+    tags: 'hs,operations',
+    vettingTier: 'community',
+  }));
+  const [licenceForm, setLicenceForm] = useState(() => ({
+    listingId: templateListings[0]?.id || '',
+    buyerOrgId: '',
+    licenceType: 'multi_use',
+    seats: 10,
+    uses: 1,
+    allowedExports: 'pdf,json',
+    watermarkRules: 'none',
+    canFork: false,
+  }));
+  const [runForm, setRunForm] = useState(() => ({
+    auditJobId: jobs[0]?.id || '',
+    templateId: templateBlueprints[0]?.id || '',
+    offlineSyncState: 'queued',
+    gpsPolicy: 'optional',
+  }));
+  const [findingForm, setFindingForm] = useState(() => ({
+    auditRunId: auditRuns[0]?.id || '',
+    severity: 'medium',
+    taxonomyCode: 'GENERAL',
+    description: '',
+  }));
+  const [actionForm, setActionForm] = useState(() => ({
+    findingId: auditFindings[0]?.id || '',
+    assignee: 'Site Manager',
+    dueDate: '',
+    evidenceRequired: true,
+    closureSignoff: 'auditor',
+  }));
+
+  useEffect(() => {
+    setSiteForm({
+      siteTitle: publicSiteConfig.siteTitle || '',
+      siteSlug: publicSiteConfig.siteSlug || '',
+      supportEmail: publicSiteConfig.supportEmail || '',
+      verificationPath: publicSiteConfig.verificationPath || '/verify',
+      launchStatus: publicSiteConfig.launchStatus || 'draft',
+      launchDate: publicSiteConfig.launchDate || '',
+    });
+  }, [publicSiteConfig]);
+
+  useEffect(() => {
+    setIntegrationForm((previous) =>
+      integrationConnections.reduce((accumulator, integration) => {
+        accumulator[integration.id] = previous[integration.id] ?? integration.endpoint ?? '';
+        return accumulator;
+      }, {})
+    );
+  }, [integrationConnections]);
+
+  useEffect(() => {
+    setListingForm((previous) => ({
+      ...previous,
+      templateId:
+        templateBlueprints.some((template) => template.id === previous.templateId)
+          ? previous.templateId
+          : templateBlueprints[0]?.id || '',
+    }));
+    setRunForm((previous) => ({
+      ...previous,
+      templateId:
+        templateBlueprints.some((template) => template.id === previous.templateId)
+          ? previous.templateId
+          : templateBlueprints[0]?.id || '',
+    }));
+  }, [templateBlueprints]);
+
+  useEffect(() => {
+    setLicenceForm((previous) => ({
+      ...previous,
+      listingId:
+        templateListings.some((listing) => listing.id === previous.listingId)
+          ? previous.listingId
+          : templateListings[0]?.id || '',
+    }));
+  }, [templateListings]);
+
+  useEffect(() => {
+    setRunForm((previous) => ({
+      ...previous,
+      auditJobId: jobs.some((job) => job.id === previous.auditJobId) ? previous.auditJobId : jobs[0]?.id || '',
+    }));
+  }, [jobs]);
+
+  useEffect(() => {
+    setFindingForm((previous) => ({
+      ...previous,
+      auditRunId: auditRuns.some((run) => run.id === previous.auditRunId) ? previous.auditRunId : auditRuns[0]?.id || '',
+    }));
+  }, [auditRuns]);
+
+  useEffect(() => {
+    setActionForm((previous) => ({
+      ...previous,
+      findingId:
+        auditFindings.some((finding) => finding.id === previous.findingId)
+          ? previous.findingId
+          : auditFindings[0]?.id || '',
+    }));
+  }, [auditFindings]);
+
+  const onboardingCompleted = onboardingTasks.filter((task) => task.completed).length;
+  const onboardingProgress = onboardingTasks.length > 0 ? Math.round((onboardingCompleted / onboardingTasks.length) * 100) : 0;
+  const openJobs = jobs.filter((job) => job.status === 'open');
+  const dispatchedJobs = jobs.filter((job) => job.status === 'dispatched');
+  const completedJobs = jobs.filter((job) => job.status === 'completed');
+  const unsignedCertificates = certificates.filter((certificate) => !certificate.signedAt);
+  const pendingInvoices = financeInvoices.filter((invoice) => invoice.status === 'pending_approval');
+  const approvedInvoices = financeInvoices.filter((invoice) => invoice.status === 'approved');
+  const scheduledPayouts = payoutRuns.filter((run) => run.status === 'scheduled');
+  const connectedIntegrations = integrationConnections.filter((integration) => integration.status === 'connected');
+  const recentInvoices = financeInvoices.slice(0, 6);
+  const recentPayoutRuns = payoutRuns.slice(0, 5);
+  const publishedBlueprints = templateBlueprints.filter((template) => template.status === 'published');
+  const activeListings = templateListings.filter((listing) => listing.status === 'active');
+  const liveLicenceGrants = licenceGrants.filter((grant) => {
+    if (!grant.endAt) {
+      return true;
+    }
+    const expiry = new Date(grant.endAt).getTime();
+    return !Number.isNaN(expiry) && expiry >= Date.now();
+  });
+  const inProgressRuns = auditRuns.filter((run) => run.status === 'in_progress');
+  const completedRuns = auditRuns.filter((run) => run.status === 'completed');
+  const openFindings = auditFindings.filter((finding) => finding.status !== 'closed');
+  const openActionCount = auditActions.filter((action) => action.status !== 'closed').length;
+  const validArtifacts = reportArtifacts.filter((artifact) => artifact.status === 'valid');
+  const prioritizedInspectionTemplates = useMemo(() => {
+    const resolvedContext = resolveCompanyTemplateContext(companyContext);
+    const getTemplatePriority = (template) => {
+      const visibility = getTemplateVisibility(template);
+      if (visibility === 'company' && isTemplateVisibleForCompany(template, resolvedContext)) {
+        return 0;
+      }
+      if (visibility === 'global' && String(template?.id || '').startsWith('TPL-CUSTOM-')) {
+        return 1;
+      }
+      if (visibility === 'global') {
+        return 2;
+      }
+      return 3;
+    };
+
+    return [...inspectionTemplates]
+      .sort((first, second) => {
+        const priorityDelta = getTemplatePriority(first) - getTemplatePriority(second);
+        if (priorityDelta !== 0) {
+          return priorityDelta;
+        }
+        const firstName = String(first?.name || '').toLowerCase();
+        const secondName = String(second?.name || '').toLowerCase();
+        return firstName.localeCompare(secondName);
+      })
+      .slice(0, 6);
+  }, [inspectionTemplates, companyContext]);
+  const findingsByRunId = useMemo(() => {
+    const grouped = new Map();
+    auditFindings.forEach((finding) => {
+      if (!grouped.has(finding.auditRunId)) {
+        grouped.set(finding.auditRunId, []);
+      }
+      grouped.get(finding.auditRunId).push(finding);
+    });
+    return grouped;
+  }, [auditFindings]);
+  const actionsByFindingId = useMemo(() => {
+    const grouped = new Map();
+    auditActions.forEach((action) => {
+      if (!grouped.has(action.findingId)) {
+        grouped.set(action.findingId, []);
+      }
+      grouped.get(action.findingId).push(action);
+    });
+    return grouped;
+  }, [auditActions]);
+
+  const executionPhases = [
+    {
+      phase: 'Foundation',
+      summary: 'Public site, onboarding, and operator portal baseline.',
+      metric: `${onboardingCompleted}/${onboardingTasks.length || 0} onboarding tasks complete`,
+      status: onboardingProgress === 100 ? 'complete' : onboardingProgress > 0 ? 'active' : 'attention',
+    },
+    {
+      phase: 'Liquidity',
+      summary: 'Pricing engine, dispatch SLAs, and pilot fulfilment loops.',
+      metric: `${openJobs.length} open jobs, ${dispatchedJobs.length} dispatched`,
+      status: openJobs.length > 0 || dispatchedJobs.length > 0 ? 'active' : 'attention',
+    },
+    {
+      phase: 'Trust Layer',
+      summary: 'Certificate signing, verification links, and evidence API.',
+      metric: `${unsignedCertificates.length} unsigned certificates`,
+      status: unsignedCertificates.length === 0 ? 'complete' : 'active',
+    },
+    {
+      phase: 'Money Movement',
+      summary: 'PO workflow, invoicing, and payout orchestration.',
+      metric: `${financeInvoices.length} invoices, ${scheduledPayouts.length} scheduled payouts`,
+      status: financeInvoices.length > 0 ? 'active' : 'attention',
+    },
+    {
+      phase: 'Expansion',
+      summary: 'Deeper PUWER/PSSR templates and enterprise integrations.',
+      metric: `${publishedBlueprints.length} published templates, ${activeListings.length} listings, ${openActionCount} open actions`,
+      status: publishedBlueprints.length > 0 || connectedIntegrations.length > 0 ? 'active' : 'attention',
+    },
+  ];
+
+  const phaseStatusClasses = {
+    complete: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+    active: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
+    attention: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  };
+
+  const formatDateCell = (value) => {
+    if (!value) {
+      return '-';
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return String(value);
+    }
+
+    return new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(parsed);
+  };
+
+  const handleSaveFoundation = (event) => {
+    event.preventDefault();
+    onUpdatePublicSiteConfig?.(siteForm);
+    onNotify?.('Foundation configuration saved', 'success');
+  };
+
+  const handleTemplateSubmit = (event) => {
+    event.preventDefault();
+    const wasCreated = onAddTemplate?.(templateForm);
+    if (wasCreated) {
+      setTemplateForm({
+        regime: templateForm.regime,
+        scope: templateForm.scope,
+        name: '',
+        controls: '',
+      });
+    }
+  };
+
+  const handleBlueprintSubmit = (event) => {
+    event.preventDefault();
+    const wasCreated = onCreateTemplateBlueprint?.(blueprintForm);
+    if (wasCreated) {
+      setBlueprintForm((previous) => ({
+        ...previous,
+        name: '',
+      }));
+    }
+  };
+
+  const handleListingSubmit = (event) => {
+    event.preventDefault();
+    onCreateTemplateListing?.(listingForm);
+  };
+
+  const handleLicenceSubmit = (event) => {
+    event.preventDefault();
+    const wasGranted = onGrantTemplateLicence?.(licenceForm);
+    if (wasGranted) {
+      setLicenceForm((previous) => ({
+        ...previous,
+        buyerOrgId: '',
+      }));
+    }
+  };
+
+  const handleRunSubmit = (event) => {
+    event.preventDefault();
+    onStartAuditRun?.(runForm);
+  };
+
+  const handleFindingSubmit = (event) => {
+    event.preventDefault();
+    const wasCreated = onAddAuditFinding?.(findingForm);
+    if (wasCreated) {
+      setFindingForm((previous) => ({
+        ...previous,
+        description: '',
+      }));
+    }
+  };
+
+  const handleActionSubmit = (event) => {
+    event.preventDefault();
+    onCreateAuditAction?.(actionForm);
+  };
+
+  return (
+    <div className="space-y-5 animate-in fade-in duration-300">
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm transition-colors duration-300">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Execution mode</p>
+            <h2 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white mt-1">Delivery Execution Console</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-3xl">
+              Roadmap items now run as live workflows. Configure each phase and execute actions directly from this tab.
+            </p>
+          </div>
+          <button
+            onClick={() => onNotify?.('Support contact placeholder', 'info')}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-bold transition-colors shadow-sm"
+          >
+            <Info className="w-4 h-4" />
+            Contact Support
+          </button>
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+        <h3 className="text-base font-bold text-slate-900 dark:text-white">Phase Status</h3>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {executionPhases.map((phase) => (
+            <article
+              key={phase.phase}
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">{phase.phase}</h4>
+                <span className={`text-[11px] font-bold rounded-full px-2.5 py-1 ${phaseStatusClasses[phase.status]}`}>
+                  {phase.status === 'complete' ? 'Complete' : phase.status === 'active' ? 'Active' : 'Needs input'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-2">{phase.summary}</p>
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 mt-3">{phase.metric}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">Foundation</h3>
+          <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
+            Months 1-3
+          </span>
+        </div>
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+          <form onSubmit={handleSaveFoundation} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Public site configuration</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Site title
+                <input
+                  required
+                  value={siteForm.siteTitle}
+                  onChange={(event) => setSiteForm((previous) => ({ ...previous, siteTitle: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Site slug
+                <input
+                  required
+                  value={siteForm.siteSlug}
+                  onChange={(event) => setSiteForm((previous) => ({ ...previous, siteSlug: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Support email
+                <input
+                  required
+                  type="email"
+                  value={siteForm.supportEmail}
+                  onChange={(event) => setSiteForm((previous) => ({ ...previous, supportEmail: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Verification path
+                <input
+                  required
+                  value={siteForm.verificationPath}
+                  onChange={(event) => setSiteForm((previous) => ({ ...previous, verificationPath: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Launch status
+                <select
+                  value={siteForm.launchStatus}
+                  onChange={(event) => setSiteForm((previous) => ({ ...previous, launchStatus: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="live">Live</option>
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Launch date
+                <input
+                  type="date"
+                  value={siteForm.launchDate}
+                  onChange={(event) => setSiteForm((previous) => ({ ...previous, launchDate: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:[color-scheme:dark]"
+                />
+              </label>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Last update: {publicSiteConfig.updatedAt ? formatDateCell(publicSiteConfig.updatedAt) : 'none yet'}
+              </p>
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Save Foundation
+              </button>
+            </div>
+          </form>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Onboarding checklist</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{onboardingProgress}% complete</p>
+            <div className="mt-3 space-y-2">
+              {onboardingTasks.map((task) => (
+                <div
+                  key={task.id}
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{task.label}</p>
+                  </div>
+                  <button
+                    onClick={() => onToggleOnboardingTask?.(task.id)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                      task.completed
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    {task.completed ? 'Completed' : 'Mark complete'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Liquidity</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+              Pricing engine and dispatch loops are live. Run pilot fulfilment to auto-dispatch open jobs.
+            </p>
+          </div>
+          <button
+            onClick={() => onRunPilotFulfilmentLoop?.()}
+            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            Run Pilot Fulfilment
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Open jobs</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{openJobs.length}</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Dispatched jobs</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{dispatchedJobs.length}</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Completed jobs</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{completedJobs.length}</p>
+          </article>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+          <div className="bg-slate-100/80 dark:bg-slate-900/45 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Open job queue
+          </div>
+          {openJobs.length === 0 ? (
+            <p className="px-3 py-4 text-xs text-slate-600 dark:text-slate-300">No open jobs waiting for dispatch.</p>
+          ) : (
+            openJobs.slice(0, 5).map((job) => {
+              const pricing = getMarketplaceJobPricing(job);
+              return (
+                <div key={job.id} className="px-3 py-2.5 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                      {job.id} - {job.assetName}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Due {formatDateLabel(job.dueDate)} | {job.regime}
+                    </p>
+                  </div>
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatCurrencyGBP(pricing.total)}</p>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Trust Layer</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+              Sign certificates and publish verification links from the evidence trust controls.
+            </p>
+          </div>
+          <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
+            Months 5-8
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Pending signatures</p>
+            <div className="mt-3 space-y-2">
+              {unsignedCertificates.length === 0 ? (
+                <p className="text-xs text-slate-600 dark:text-slate-300">All certificates are signed.</p>
+              ) : (
+                unsignedCertificates.slice(0, 5).map((certificate) => (
+                  <div
+                    key={certificate.id}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{certificate.id}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{certificate.assetName}</p>
+                    </div>
+                    <button
+                      onClick={() => onSignCertificate?.(certificate.id)}
+                      className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+                    >
+                      Sign now
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Recently signed</p>
+            <div className="mt-3 space-y-2">
+              {certificates
+                .filter((certificate) => certificate.signedAt)
+                .slice(0, 5)
+                .map((certificate) => (
+                  <div
+                    key={certificate.id}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{certificate.id}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">Signed {formatDateCell(certificate.signedAt)}</p>
+                      </div>
+                      <a
+                        href={buildCertificateDeepLink(certificate.id)}
+                        className="text-[11px] font-bold text-cyan-700 dark:text-cyan-300 hover:underline"
+                      >
+                        Verification link
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              {certificates.filter((certificate) => certificate.signedAt).length === 0 && (
+                <p className="text-xs text-slate-600 dark:text-slate-300">No signed certificates yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Money Movement</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+              Generate VAT-ready invoices, approve them, and schedule provider payouts.
+            </p>
+          </div>
+          <button
+            onClick={() => onGenerateInvoices?.()}
+            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Generate Missing Invoices
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Pending approval</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{pendingInvoices.length}</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Approved invoices</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{approvedInvoices.length}</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Scheduled payouts</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{scheduledPayouts.length}</p>
+          </article>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+          <div className="bg-slate-100/80 dark:bg-slate-900/45 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Invoice operations
+          </div>
+          {recentInvoices.length === 0 ? (
+            <p className="px-3 py-4 text-xs text-slate-600 dark:text-slate-300">No invoices generated yet.</p>
+          ) : (
+            recentInvoices.map((invoice) => (
+              <div key={invoice.id} className="px-3 py-2.5 border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{invoice.id}</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {invoice.providerName} | {invoice.poNumber} | {formatCurrencyGBP(invoice.totalIncVat)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                    {invoice.status}
+                  </span>
+                  {invoice.status === 'pending_approval' && (
+                    <button
+                      onClick={() => onApproveInvoice?.(invoice.id)}
+                      className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+                    >
+                      Approve
+                    </button>
+                  )}
+                  {invoice.status === 'approved' && (
+                    <button
+                      onClick={() => onSchedulePayout?.(invoice.id)}
+                      className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[11px] font-bold"
+                    >
+                      Schedule payout
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+          <div className="bg-slate-100/80 dark:bg-slate-900/45 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Payout schedule
+          </div>
+          {recentPayoutRuns.length === 0 ? (
+            <p className="px-3 py-4 text-xs text-slate-600 dark:text-slate-300">No payout runs scheduled yet.</p>
+          ) : (
+            recentPayoutRuns.map((run) => (
+              <div key={run.id} className="px-3 py-2.5 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{run.id}</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {run.providerName} | Scheduled {formatDateCell(run.scheduledPayoutDate)}
+                  </p>
+                </div>
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatCurrencyGBP(run.payoutAmount)}</p>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Expansion</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+              Template builder, marketplace licensing, audit runs, findings, actions, and evidence link generation.
+            </p>
+          </div>
+          <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
+            Months 10-12
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <form onSubmit={handleTemplateSubmit} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Inspection templates</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Regime
+                <select
+                  value={templateForm.regime}
+                  onChange={(event) => setTemplateForm((previous) => ({ ...previous, regime: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  {templateRegimeOptions.map((regimeOption) => (
+                    <option key={regimeOption} value={regimeOption}>
+                      {regimeOption}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Scope
+                <select
+                  value={templateForm.scope}
+                  onChange={(event) => setTemplateForm((previous) => ({ ...previous, scope: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="company">{companyContext?.name || 'Current company'} bespoke</option>
+                  <option value="global">Global baseline</option>
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Template name
+                <input
+                  required
+                  value={templateForm.name}
+                  onChange={(event) => setTemplateForm((previous) => ({ ...previous, name: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+            </div>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Controls (one per line)
+              <textarea
+                value={templateForm.controls}
+                onChange={(event) => setTemplateForm((previous) => ({ ...previous, controls: event.target.value }))}
+                rows={4}
+                className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+              />
+            </label>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Bespoke templates are saved locally per company now and can be synced to Supabase later.
+            </p>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Template
+            </button>
+
+            <div className="space-y-2">
+              {prioritizedInspectionTemplates.map((template) => (
+                <div
+                  key={template.id}
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5 flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{template.name}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {template.regime} | v{template.version} | {template.controls.length} controls
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {getTemplateVisibility(template) === 'company'
+                        ? `${template.ownerCompanyName || companyContext?.name || 'Company'} bespoke`
+                        : 'Global baseline'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onToggleTemplate?.(template.id)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                      template.active
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    {template.active ? 'Active' : 'Enable'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </form>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Enterprise integrations</p>
+            {integrationConnections.map((integration) => (
+              <div
+                key={integration.id}
+                className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-3 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{integration.name}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">{integration.category}</p>
+                  </div>
+                  <span
+                    className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                      integration.status === 'connected'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    {integration.status === 'connected' ? 'Connected' : 'Not connected'}
+                  </span>
+                </div>
+                <input
+                  value={integrationForm[integration.id] ?? ''}
+                  onChange={(event) =>
+                    setIntegrationForm((previous) => ({
+                      ...previous,
+                      [integration.id]: event.target.value,
+                    }))
+                  }
+                  placeholder="https://integration-endpoint.example"
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Last sync: {integration.lastSyncAt ? formatDateCell(integration.lastSyncAt) : 'never'}
+                  </p>
+                  <button
+                    onClick={() => onConnectIntegration?.(integration.id, integrationForm[integration.id] ?? '')}
+                    className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+                  >
+                    Connect
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Published templates</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{publishedBlueprints.length}</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Marketplace listings</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{activeListings.length}</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Live licences</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{liveLicenceGrants.length}</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Audit runs</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">
+              {inProgressRuns.length} active / {completedRuns.length} complete
+            </p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Open findings</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{openFindings.length}</p>
+          </article>
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Valid report artifacts</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white mt-1">{validArtifacts.length}</p>
+          </article>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <form onSubmit={handleBlueprintSubmit} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Template builder (v1)</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Template name
+                <input
+                  required
+                  value={blueprintForm.name}
+                  onChange={(event) => setBlueprintForm((previous) => ({ ...previous, name: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Category
+                <select
+                  value={blueprintForm.category}
+                  onChange={(event) => setBlueprintForm((previous) => ({ ...previous, category: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  {templateCategoryOptions.map((categoryOption) => (
+                    <option key={categoryOption.value} value={categoryOption.value}>
+                      {categoryOption.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Scoring model
+                <select
+                  value={blueprintForm.scoringModel}
+                  onChange={(event) => setBlueprintForm((previous) => ({ ...previous, scoringModel: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="pass_fail">Pass/Fail</option>
+                  <option value="weighted_sections">Weighted sections</option>
+                  <option value="risk_aggregate">Risk aggregate</option>
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Licence model
+                <select
+                  value={blueprintForm.licenceModel}
+                  onChange={(event) => setBlueprintForm((previous) => ({ ...previous, licenceModel: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="single_use">Single-use</option>
+                  <option value="multi_use">Multi-use</option>
+                  <option value="subscription">Subscription</option>
+                </select>
+              </label>
+            </div>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Builder blocks (comma separated)
+              <input
+                value={blueprintForm.blockTypes}
+                onChange={(event) => setBlueprintForm((previous) => ({ ...previous, blockTypes: event.target.value }))}
+                className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+              />
+            </label>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Mandatory evidence blocks
+              <input
+                type="number"
+                min={0}
+                value={blueprintForm.mandatoryEvidenceBlocks}
+                onChange={(event) =>
+                  setBlueprintForm((previous) => ({ ...previous, mandatoryEvidenceBlocks: Number(event.target.value || 0) }))
+                }
+                className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Create Blueprint
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {templateBlueprints.slice(0, 6).map((template) => (
+                <div
+                  key={template.id}
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5 flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                      {template.name} <span className="text-slate-400">({template.category})</span>
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {template.id} | v{template.currentVersion} | {template.scoringModel.replace('_', ' ')} | {template.blockTypes?.length || 0} block types
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onPublishTemplateBlueprint?.(template.id, 'Published from expansion console')}
+                    className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+                  >
+                    Publish +
+                  </button>
+                </div>
+              ))}
+            </div>
+          </form>
+
+          <form onSubmit={handleListingSubmit} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Template marketplace</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Blueprint
+                <select
+                  value={listingForm.templateId}
+                  onChange={(event) => setListingForm((previous) => ({ ...previous, templateId: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  {templateBlueprints.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.id} - {template.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Price model
+                <select
+                  value={listingForm.priceModel}
+                  onChange={(event) => setListingForm((previous) => ({ ...previous, priceModel: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="single_use">Single-use</option>
+                  <option value="multi_use">Multi-use</option>
+                  <option value="subscription">Subscription</option>
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Price (GBP)
+                <input
+                  type="number"
+                  min={1}
+                  value={listingForm.price}
+                  onChange={(event) => setListingForm((previous) => ({ ...previous, price: Number(event.target.value || 0) }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Vetting tier
+                <select
+                  value={listingForm.vettingTier}
+                  onChange={(event) => setListingForm((previous) => ({ ...previous, vettingTier: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="community">Community</option>
+                  <option value="reviewed">Reviewed</option>
+                  <option value="verified">Verified</option>
+                </select>
+              </label>
+            </div>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Tags (comma separated)
+              <input
+                value={listingForm.tags}
+                onChange={(event) => setListingForm((previous) => ({ ...previous, tags: event.target.value }))}
+                className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Create Listing
+            </button>
+
+            <div className="space-y-2">
+              {templateListings.slice(0, 6).map((listing) => {
+                const template = templateBlueprints.find((item) => item.id === listing.templateId);
+                const grantCount = licenceGrants.filter((grant) => grant.listingId === listing.id).length;
+                return (
+                  <div
+                    key={listing.id}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5"
+                  >
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                      {listing.id} - {template?.name || listing.templateId}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                      {listing.priceModel.replace('_', ' ')} | {formatCurrencyGBP(listing.price)} | {listing.vettingTier} | {grantCount} grants
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </form>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <form onSubmit={handleLicenceSubmit} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Licence grants</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Listing
+                <select
+                  value={licenceForm.listingId}
+                  onChange={(event) => setLicenceForm((previous) => ({ ...previous, listingId: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  {templateListings.map((listing) => (
+                    <option key={listing.id} value={listing.id}>
+                      {listing.id} - {listing.priceModel.replace('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Buyer org
+                <input
+                  required
+                  value={licenceForm.buyerOrgId}
+                  onChange={(event) => setLicenceForm((previous) => ({ ...previous, buyerOrgId: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Licence type
+                <select
+                  value={licenceForm.licenceType}
+                  onChange={(event) => setLicenceForm((previous) => ({ ...previous, licenceType: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="single_use">Single-use</option>
+                  <option value="multi_use">Multi-use</option>
+                  <option value="subscription">Subscription</option>
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Seats
+                <input
+                  type="number"
+                  min={1}
+                  value={licenceForm.seats}
+                  onChange={(event) => setLicenceForm((previous) => ({ ...previous, seats: Number(event.target.value || 1) }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Allowed exports
+                <input
+                  value={licenceForm.allowedExports}
+                  onChange={(event) => setLicenceForm((previous) => ({ ...previous, allowedExports: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Watermark rules
+                <input
+                  value={licenceForm.watermarkRules}
+                  onChange={(event) => setLicenceForm((previous) => ({ ...previous, watermarkRules: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+            </div>
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={licenceForm.canFork}
+                onChange={(event) => setLicenceForm((previous) => ({ ...previous, canFork: event.target.checked }))}
+              />
+              Allow buyer to fork template
+            </label>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Grant Licence
+            </button>
+
+            <div className="space-y-2">
+              {licenceGrants.slice(0, 6).map((grant) => (
+                <div key={grant.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                    {grant.id} - {grant.buyerOrgId}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    {grant.licenceType.replace('_', ' ')} | Seats {grant.seats} | Ends {formatDateCell(grant.endAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </form>
+
+          <form onSubmit={handleRunSubmit} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Audit run execution</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Job
+                <select
+                  value={runForm.auditJobId}
+                  onChange={(event) => setRunForm((previous) => ({ ...previous, auditJobId: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  {jobs.map((job) => (
+                    <option key={job.id} value={job.id}>
+                      {job.id} - {job.assetName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Template
+                <select
+                  value={runForm.templateId}
+                  onChange={(event) => setRunForm((previous) => ({ ...previous, templateId: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  {templateBlueprints.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.id} - v{template.currentVersion}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Sync state
+                <select
+                  value={runForm.offlineSyncState}
+                  onChange={(event) => setRunForm((previous) => ({ ...previous, offlineSyncState: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="queued">Queued (offline)</option>
+                  <option value="synced">Synced</option>
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                GPS policy
+                <select
+                  value={runForm.gpsPolicy}
+                  onChange={(event) => setRunForm((previous) => ({ ...previous, gpsPolicy: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="optional">Optional</option>
+                  <option value="required">Required</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </label>
+            </div>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Start Audit Run
+            </button>
+            <div className="space-y-2">
+              {auditRuns.slice(0, 6).map((run) => (
+                <div key={run.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                        {run.id} - {run.auditJobId}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {run.status} | Sync {run.offlineSyncState} | Findings {(findingsByRunId.get(run.id) || []).length}
+                      </p>
+                    </div>
+                    {run.status !== 'completed' && (
+                      <button
+                        type="button"
+                        onClick={() => onCompleteAuditRun?.(run.id)}
+                        className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[11px] font-bold"
+                      >
+                        Complete + Artifact
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </form>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <form onSubmit={handleFindingSubmit} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Findings engine</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Audit run
+                <select
+                  value={findingForm.auditRunId}
+                  onChange={(event) => setFindingForm((previous) => ({ ...previous, auditRunId: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  {auditRuns.map((run) => (
+                    <option key={run.id} value={run.id}>
+                      {run.id} - {run.auditJobId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Severity
+                <select
+                  value={findingForm.severity}
+                  onChange={(event) => setFindingForm((previous) => ({ ...previous, severity: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </label>
+            </div>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Taxonomy code
+              <input
+                value={findingForm.taxonomyCode}
+                onChange={(event) => setFindingForm((previous) => ({ ...previous, taxonomyCode: event.target.value }))}
+                className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+              />
+            </label>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Description
+              <textarea
+                required
+                rows={3}
+                value={findingForm.description}
+                onChange={(event) => setFindingForm((previous) => ({ ...previous, description: event.target.value }))}
+                className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+              />
+            </label>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Log Finding
+            </button>
+
+            <div className="space-y-2">
+              {auditFindings.slice(0, 6).map((finding) => (
+                <div key={finding.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                    {finding.id} - {finding.taxonomyCode}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    {finding.severity} | Risk {finding.riskScore} | Actions {(actionsByFindingId.get(finding.id) || []).length}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </form>
+
+          <form onSubmit={handleActionSubmit} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Action tracking</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Finding
+                <select
+                  value={actionForm.findingId}
+                  onChange={(event) => setActionForm((previous) => ({ ...previous, findingId: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  {auditFindings.map((finding) => (
+                    <option key={finding.id} value={finding.id}>
+                      {finding.id} - {finding.severity}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Assignee
+                <input
+                  value={actionForm.assignee}
+                  onChange={(event) => setActionForm((previous) => ({ ...previous, assignee: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Due date
+                <input
+                  type="date"
+                  value={actionForm.dueDate}
+                  onChange={(event) => setActionForm((previous) => ({ ...previous, dueDate: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:[color-scheme:dark]"
+                />
+              </label>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Closure sign-off
+                <select
+                  value={actionForm.closureSignoff}
+                  onChange={(event) => setActionForm((previous) => ({ ...previous, closureSignoff: event.target.value }))}
+                  className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+                >
+                  <option value="auditor">Auditor</option>
+                  <option value="operator">Operator</option>
+                </select>
+              </label>
+            </div>
+            <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={actionForm.evidenceRequired}
+                onChange={(event) => setActionForm((previous) => ({ ...previous, evidenceRequired: event.target.checked }))}
+              />
+              Evidence required on closure
+            </label>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Create Action
+            </button>
+
+            <div className="space-y-2">
+              {auditActions.slice(0, 6).map((action) => (
+                <div key={action.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                        {action.id} - {action.assignee}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        {action.status.replace('_', ' ')} | Due {formatDateCell(action.dueDate)} | {action.evidenceRequired ? 'Evidence required' : 'Evidence optional'}
+                      </p>
+                    </div>
+                    {action.status !== 'closed' && (
+                      <button
+                        type="button"
+                        onClick={() => onAdvanceAuditActionStatus?.(action.id)}
+                        className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+                      >
+                        Advance
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </form>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Report artifacts</p>
+            {reportArtifacts.length === 0 ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">No report artifacts generated yet.</p>
+            ) : (
+              reportArtifacts.slice(0, 6).map((artifact) => (
+                <div
+                  key={artifact.id}
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                        {artifact.id} - run {artifact.auditRunId}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        v{artifact.version} | {artifact.status} | {formatDateCell(artifact.createdAt)}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 break-all">PDF: {artifact.signedPdfUrl}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 break-all">HTML: {artifact.signedHtmlUrl}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onCreateShareLink?.(artifact.id)}
+                      className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+                    >
+                      Create share link
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Share link access</p>
+            {shareLinks.length === 0 ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">No share links created yet.</p>
+            ) : (
+              shareLinks.slice(0, 8).map((link) => (
+                <div key={link.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2.5">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{link.id}</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Artifact {link.reportArtifactId} | Expires {formatDateCell(link.expiresAt)}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 break-all">{link.url}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ConnectivityBanner({ isOnline, queuedCount }) {
+  const hasQueuedLogs = queuedCount > 0;
+  const toneClass = isOnline
+    ? 'border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/80 dark:bg-emerald-900/15'
+    : 'border-amber-200 dark:border-amber-900/40 bg-amber-50/80 dark:bg-amber-900/15';
+  const iconClass = isOnline ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400';
+
+  return (
+    <section className={`glass-panel rounded-2xl border px-4 py-3 md:px-5 md:py-4 shadow-sm transition-colors duration-300 ${toneClass}`}>
+      <div className="flex items-start gap-3">
+        <div className={`mt-0.5 ${iconClass}`}>
+          {isOnline ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+        </div>
+        <div className="space-y-0.5">
+          <p className="text-sm font-bold text-slate-800 dark:text-white">{isOnline ? 'Online sync active' : 'Offline mode enabled'}</p>
+          <p className="text-xs text-slate-600 dark:text-slate-300">
+            {isOnline
+              ? hasQueuedLogs
+                ? `${queuedCount} inspection ${queuedCount === 1 ? 'log is' : 'logs are'} queued and will sync now.`
+                : 'Asset and inspection data is cached for low-signal environments.'
+              : 'You can continue viewing assets and logging inspections. New logs will auto-sync when connected.'}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OfflineInspectionPanel({ assets, logs, isOnline, pendingCount, onSubmit }) {
+  const [assetId, setAssetId] = useState(assets[0]?.id || '');
+  const [performedAt, setPerformedAt] = useState(() => getLocalDateTimeInputValue());
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (!assets.length) {
+      if (assetId) {
+        setAssetId('');
+      }
+      return;
+    }
+
+    if (!assetId || !assets.some((asset) => asset.id === assetId)) {
+      setAssetId(assets[0].id);
+    }
+  }, [assets, assetId]);
+
+  const recentLogs = logs.slice(0, 4);
+
+  const formatLogDate = (value) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return parsed.toLocaleString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (!assetId) {
+      return;
+    }
+
+    const wasSaved = onSubmit({ assetId, performedAt, notes });
+    if (!wasSaved) {
+      return;
+    }
+
+    setNotes('');
+    setPerformedAt(getLocalDateTimeInputValue());
+  };
+
+  return (
+    <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+      <div className="flex flex-col gap-5 md:gap-6 xl:grid xl:grid-cols-[1.3fr_1fr]">
+        <div>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">Inspection Logging (Offline Ready)</h2>
+            <span
+              className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                isOnline
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+              }`}
+            >
+              {isOnline ? 'Online' : 'Offline'}
+            </span>
+          </div>
+          <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
+            Inspectors can save evidence notes with no signal. Logs are stored locally and sync automatically on reconnect.
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Asset
+              </label>
+              <select
+                required
+                value={assetId}
+                onChange={(event) => setAssetId(event.target.value)}
+                disabled={assets.length === 0}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-cyan-500 outline-none"
+              >
+                {assets.length === 0 ? (
+                  <option value="">No assets available</option>
+                ) : (
+                  assets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.id} - {asset.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Inspection Time
+              </label>
+              <input
+                required
+                type="datetime-local"
+                value={performedAt}
+                onChange={(event) => setPerformedAt(event.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-cyan-500 outline-none dark:[color-scheme:dark]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Notes
+              </label>
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Observed condition, isolation actions, defects, or pass/fail context..."
+                className="w-full px-3 py-2 h-24 resize-none bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-cyan-500 outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className={`inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-bold transition-colors ${
+                isOnline
+                  ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                  : 'bg-amber-600 hover:bg-amber-700 text-white'
+              }`}
+            >
+              {isOnline ? 'Save & Sync Inspection' : 'Queue Inspection Log'}
+            </button>
+          </form>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Recent Logs</h3>
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Pending sync: {pendingCount}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {recentLogs.length === 0 ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400">No inspection logs captured yet.</p>
+            ) : (
+              recentLogs.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800/60 px-3 py-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{entry.assetName}</p>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        entry.syncStatus === 'queued'
+                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                          : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                      }`}
+                    >
+                      {entry.syncStatus === 'queued' ? 'Queued' : 'Synced'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">{formatLogDate(entry.performedAt)}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// --- VIEWS ---
+
+function DashboardView({ assets, urgentAssets, upcomingAssets, complianceTrend, programmeCount = 0, onAction }) {
+  const totalAssets = assets.length;
+  const compliantAssets = assets.filter((asset) => asset.status === 'compliant').length;
+  const overdueAssets = assets.filter((asset) => asset.status === 'overdue').length;
+  const warningAssets = assets.filter((asset) => asset.status === 'warning').length;
+
+  const compliancePercentage = totalAssets > 0 ? Math.round((compliantAssets / totalAssets) * 100) : 0;
+  const trendDelta = complianceTrend.length > 1 ? complianceTrend[complianceTrend.length - 1] - complianceTrend[0] : 0;
+
+  const getRegimeStats = (regime) => {
+    const regimeAssets = assets.filter((asset) => asset.regime === regime);
+    const compliant = regimeAssets.filter((asset) => asset.status === 'compliant').length;
+    return { compliant, total: regimeAssets.length };
+  };
+
+  const loler = getRegimeStats('LOLER');
+  const puwer = getRegimeStats('PUWER');
+  const pssr = getRegimeStats('PSSR');
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative overflow-hidden shadow-sm transition-colors duration-300 hover-lift">
+        <div className="absolute inset-x-0 top-0 h-1 shimmer-line" />
+        <div className="absolute -right-10 -top-12 opacity-25 dark:opacity-40 pointer-events-none">
+          <svg width="220" height="220" viewBox="0 0 100 100" className="animate-[spin_14s_linear_infinite]">
+            <circle
+              cx="50"
+              cy="50"
+              r="45"
+              fill="none"
+              stroke="currentColor"
+              className="text-cyan-500"
+              strokeWidth="0.4"
+              strokeDasharray="4 4"
+            />
+            <circle
+              cx="50"
+              cy="50"
+              r="31"
+              fill="none"
+              stroke="currentColor"
+              className="text-emerald-400"
+              strokeWidth="1"
+            />
+            <path d="M50 50 L85 15" stroke="currentColor" className="text-cyan-500" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </div>
+        <div className="relative z-10">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <div className="pulse-soft rounded-full">
+              <Activity className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+            </div>
+            <span className="text-sm font-bold text-cyan-600 dark:text-cyan-400 tracking-wider uppercase">
+              Live Compliance Status
+            </span>
+            <span className="text-xs px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold">
+              {trendDelta >= 0 ? '+' : ''}
+              {trendDelta}% vs prior cycle
+            </span>
+          </div>
+          <h2 className="text-2xl md:text-3xl font-black text-slate-800 dark:text-white mb-2 tracking-tight">
+            Estate is{' '}
+            <span className={compliancePercentage < 100 ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400'}>
+              {compliancePercentage}% Compliant
+            </span>
+          </h2>
+          <p className="text-slate-600 dark:text-slate-400 text-sm md:text-base max-w-xl leading-relaxed">
+            {warningAssets} assets require action within 30 days.{' '}
+            {overdueAssets > 0 ? (
+              <span className="text-rose-500 font-bold">{overdueAssets} overdue alerts need immediate follow-up.</span>
+            ) : (
+              'No critical overdue alerts right now.'
+            )}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="stagger-item">
+          <GlassStatCard
+            title="Total Assets"
+            value={totalAssets}
+            icon={<Box />}
+            color="text-cyan-600 dark:text-cyan-400"
+            bgClass="bg-cyan-50 dark:bg-cyan-900/20"
+          />
+        </div>
+        <div className="stagger-item">
+          <GlassStatCard
+            title="Compliant"
+            value={compliantAssets}
+            icon={<CheckCircle2 />}
+            color="text-emerald-600 dark:text-emerald-400"
+            bgClass="bg-emerald-50 dark:bg-emerald-900/20"
+          />
+        </div>
+        <div className="stagger-item">
+          <GlassStatCard
+            title="Due < 30 Days"
+            value={warningAssets}
+            icon={<Clock />}
+            color={warningAssets > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}
+            bgClass={warningAssets > 0 ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-slate-100 dark:bg-slate-800'}
+          />
+        </div>
+        <div className="stagger-item">
+          <GlassStatCard
+            title="Overdue"
+            value={overdueAssets}
+            icon={<AlertTriangle />}
+            color={overdueAssets > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}
+            bgClass={
+              overdueAssets > 0
+                ? 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-500/30'
+                : 'bg-slate-100 dark:bg-slate-800'
+            }
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 xl:col-span-2 shadow-sm transition-colors duration-300 hover-lift">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center">
+              <BarChart3 className="w-5 h-5 mr-2 text-cyan-500" /> Compliance Momentum
+            </h3>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Last 12 reporting periods
+            </span>
+          </div>
+          <div className="mb-6">
+            <SparklineChart points={complianceTrend} />
+          </div>
+          <div className="space-y-5">
+            <AnimatedProgressBar name="LOLER (Lifting Eq.)" compliant={loler.compliant} total={loler.total} color="bg-cyan-500" />
+            <AnimatedProgressBar name="PUWER (Work Eq.)" compliant={puwer.compliant} total={puwer.total} color="bg-emerald-500" />
+            <AnimatedProgressBar name="PSSR (Pressure)" compliant={pssr.compliant} total={pssr.total} color="bg-amber-500" />
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm transition-colors duration-300 hover-lift">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-5 flex items-center">
+              <ClipboardList className="w-5 h-5 mr-2 text-cyan-500" /> Quick Actions
+            </h3>
+            <div className="space-y-3">
+              <GlassActionButton icon={<Plus />} label="Request Inspection" primary onClick={() => onAction('request')} />
+              <GlassActionButton
+                icon={<Calendar />}
+                label="Create Programme"
+                badge={programmeCount > 0 ? String(programmeCount) : undefined}
+                onClick={() => onAction('programme')}
+              />
+              <GlassActionButton icon={<Download />} label="Export Audit Pack" onClick={() => onAction('export')} />
+              <GlassActionButton icon={<Users />} label="Review Quotes" badge="2" />
+            </div>
+          </div>
+
+          <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm transition-colors duration-300 hover-lift">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center">
+              <AlertTriangle className="w-5 h-5 mr-2 text-amber-500" /> Urgent Queue
+            </h3>
+            <div className="space-y-3">
+              {urgentAssets.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No urgent assets right now.</p>
+              ) : (
+                urgentAssets.map((asset) => (
+                  <UrgentAssetItem key={asset.id} asset={asset} />
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm transition-colors duration-300 hover-lift">
+        <div className="flex items-center justify-between mb-4 gap-3">
+          <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center">
+            <Calendar className="w-5 h-5 mr-2 text-emerald-500" /> Upcoming Site Inspections
+          </h3>
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Next 45 days</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {upcomingAssets.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No planned items in the next 45 days.</p>
+          ) : (
+            upcomingAssets.map((asset) => (
+              <div
+                key={asset.id}
+                className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/40 p-3 hover-lift"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-slate-800 dark:text-white">{asset.name}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{asset.site}</p>
+                  </div>
+                  <StatusPill status={asset.status} />
+                </div>
+                <div className="mt-3 text-xs text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                  <span>{formatDateLabel(asset.nextDue)}</span>
+                  <span className="font-semibold">{formatRelativeDueLabel(asset.nextDue)}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AssetRegisterView({ assets, searchQuery, onAdd, onViewAsset }) {
+  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [regimeFilter, setRegimeFilter] = useState('All');
+  const [viewMode, setViewMode] = useState('table');
+  const [page, setPage] = useState(1);
+  const pageSize = 8;
+
+  const filteredAssets = useMemo(() => {
+    return assets.filter((asset) => {
+      const term = searchQuery.toLowerCase();
+      const matchesSearch =
+        asset.name.toLowerCase().includes(term) ||
+        asset.id.toLowerCase().includes(term) ||
+        asset.site.toLowerCase().includes(term);
+      const matchesStatus = statusFilter === 'All' || asset.status === statusFilter.toLowerCase();
+      const matchesRegime = regimeFilter === 'All' || asset.regime === regimeFilter;
+      return matchesSearch && matchesStatus && matchesRegime;
+    });
+  }, [assets, searchQuery, statusFilter, regimeFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, statusFilter, regimeFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAssets.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedAssets = filteredAssets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const compliantCount = filteredAssets.filter((asset) => asset.status === 'compliant').length;
+  const warningCount = filteredAssets.filter((asset) => asset.status === 'warning').length;
+  const overdueCount = filteredAssets.filter((asset) => asset.status === 'overdue').length;
+
+  return (
+    <div className="space-y-4 md:space-y-6 animate-in fade-in duration-300 pb-10">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white">Asset Register</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Manage and track statutory inspection cadences at scale.
+          </p>
+        </div>
+        <div className="flex space-x-3">
+          <div className="relative flex-1 md:flex-none">
+            <button
+              onClick={() => setShowFilters((previous) => !previous)}
+              className={`w-full justify-center px-4 py-2.5 bg-white dark:bg-slate-800 border ${
+                showFilters || statusFilter !== 'All' || regimeFilter !== 'All'
+                  ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+              } hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl text-sm font-bold flex items-center space-x-2 transition-colors shadow-sm`}
+            >
+              <Filter className="w-4 h-4" />
+              <span>Filters</span>
+              {(statusFilter !== 'All' || regimeFilter !== 'All') && (
+                <span className="w-2 h-2 bg-cyan-500 rounded-full ml-1" />
+              )}
+              <ChevronDown className={`w-4 h-4 ml-1 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+            </button>
+            {showFilters && (
+              <div className="absolute top-full mt-2 right-0 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 p-4 animate-in fade-in slide-in-from-top-2">
+                <div className="mb-4">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Status</label>
+                  <select
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none"
+                  >
+                    <option>All</option>
+                    <option>Compliant</option>
+                    <option>Warning</option>
+                    <option>Overdue</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Regime</label>
+                  <select
+                    value={regimeFilter}
+                    onChange={(event) => setRegimeFilter(event.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none"
+                  >
+                    <option>All</option>
+                    <option>LOLER</option>
+                    <option>PUWER</option>
+                    <option>PSSR</option>
+                  </select>
+                </div>
+                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                  <button
+                    onClick={() => {
+                      setStatusFilter('All');
+                      setRegimeFilter('All');
+                    }}
+                    className="text-xs font-bold text-cyan-600 hover:text-cyan-800 w-full text-center"
+                  >
+                    Reset Filters
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={onAdd}
+            className="flex-1 md:flex-none justify-center px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-sm font-bold flex items-center space-x-2 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Asset</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            <div className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200">
+              Total {filteredAssets.length}
+            </div>
+            <div className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+              Compliant {compliantCount}
+            </div>
+            <div className="px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs font-bold text-amber-700 dark:text-amber-400">
+              Warning {warningCount}
+            </div>
+            <div className="px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20 text-xs font-bold text-rose-700 dark:text-rose-400">
+              Overdue {overdueCount}
+            </div>
+          </div>
+          <div className="hidden md:flex rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-1.5 text-xs font-bold ${viewMode === 'table' ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+            >
+              Table
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`px-3 py-1.5 text-xs font-bold border-l border-slate-200 dark:border-slate-700 ${viewMode === 'cards' ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+            >
+              Cards
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {filteredAssets.length === 0 ? (
+        <div className="p-12 text-center glass-panel bg-white/50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 animate-in fade-in">
+          <Box className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-500 dark:text-slate-400 font-medium">No assets found matching current criteria.</p>
+        </div>
+      ) : (
+        <>
+          {viewMode === 'table' ? (
+            <div className="hidden md:block glass-panel bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm transition-colors duration-300 stagger-item">
+              <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+                <thead className="bg-slate-50/50 dark:bg-slate-900/20">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Asset ID & Name
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Location
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Regime
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Next Due
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {paginatedAssets.map((asset, index) => (
+                    <tr
+                      key={asset.id}
+                      onClick={() => onViewAsset(asset)}
+                      className="stagger-item hover:bg-cyan-50/50 dark:hover:bg-slate-700/50 transition-colors group cursor-pointer"
+                      style={{ animationDelay: `${index * 0.05}s` }}
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-cyan-600 dark:text-cyan-400 group-hover:scale-105 transition-transform shadow-sm">
+                            <Box className="w-5 h-5" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-slate-800 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+                              {asset.name}
+                            </span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">{asset.id}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
+                        <MapPin className="inline w-3 h-3 mr-1 text-slate-400" />
+                        {asset.site}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/30">
+                          {asset.regime}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-200">
+                        <div>{formatDateLabel(asset.nextDue)}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">{formatRelativeDueLabel(asset.nextDue)}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <StatusPill status={asset.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="hidden md:grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {paginatedAssets.map((asset, index) => (
+                <div
+                  key={asset.id}
+                  onClick={() => onViewAsset(asset)}
+                  className="stagger-item glass-panel bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-4 flex flex-col relative overflow-hidden shadow-sm transition-transform cursor-pointer hover-lift"
+                  style={{ animationDelay: `${index * 0.05}s` }}
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-800 dark:text-white text-base">{asset.name}</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">{asset.id}</span>
+                    </div>
+                    <StatusPill status={asset.status} />
+                  </div>
+                  <div className="text-sm text-slate-600 dark:text-slate-300 flex justify-between">
+                    <span>{asset.site}</span>
+                    <span className="font-semibold">{asset.regime}</span>
+                  </div>
+                  <div className="mt-3 text-xs text-slate-500 dark:text-slate-400 flex justify-between">
+                    <span>{formatDateLabel(asset.nextDue)}</span>
+                    <span>{formatRelativeDueLabel(asset.nextDue)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="md:hidden space-y-3">
+            {paginatedAssets.map((asset, index) => (
+              <div
+                key={asset.id}
+                onClick={() => onViewAsset(asset)}
+                className="stagger-item glass-panel bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-4 flex flex-col relative overflow-hidden shadow-sm active:scale-[0.98] transition-transform cursor-pointer"
+                style={{ animationDelay: `${index * 0.05}s` }}
+              >
+                <div
+                  className={`absolute left-0 top-0 bottom-0 w-1 ${
+                    asset.status === 'compliant'
+                      ? 'bg-emerald-500'
+                      : asset.status === 'warning'
+                        ? 'bg-amber-500'
+                        : 'bg-rose-500'
+                  }`}
+                />
+                <div className="flex justify-between items-start mb-3 pl-2">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 dark:text-white text-base">{asset.name}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">{asset.id}</span>
+                  </div>
+                  <StatusPill status={asset.status} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-2 pt-3 border-t border-slate-100 dark:border-slate-700 pl-2">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Regime</span>
+                    <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400 mt-0.5">{asset.regime}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Next Due</span>
+                    <p className="text-sm font-medium text-slate-800 dark:text-white mt-0.5">
+                      {formatDateLabel(asset.nextDue)}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {formatRelativeDueLabel(asset.nextDue)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <PaginationControls
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPrevious={() => setPage((previous) => Math.max(1, previous - 1))}
+            onNext={() => setPage((previous) => Math.min(totalPages, previous + 1))}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function EvidenceVaultView({
+  certificates,
+  searchQuery,
+  onLinkGen,
+  onUploadComplete,
+  focusCertificateId,
+  onFocusHandled,
+}) {
+  const [selectedCert, setSelectedCert] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const pageSize = 6;
+
+  const handleViewCert = (certificate) => {
+    setSelectedCert(certificate);
+    setIsVerifying(false);
+    setIsVerified(false);
+  };
+
+  const handleCloseModal = () => setSelectedCert(null);
+
+  const runVerification = () => {
+    setIsVerifying(true);
+    setTimeout(() => {
+      setIsVerifying(false);
+      setIsVerified(true);
+    }, 1800);
+  };
+
+  const filteredCerts = useMemo(() => {
+    return certificates.filter((certificate) => {
+      const term = searchQuery.toLowerCase();
+      const matchesSearch =
+        certificate.assetName.toLowerCase().includes(term) ||
+        certificate.id.toLowerCase().includes(term) ||
+        certificate.provider.toLowerCase().includes(term);
+      const matchesStatus = statusFilter === 'all' || certificate.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [certificates, searchQuery, statusFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, statusFilter]);
+
+  useEffect(() => {
+    if (!focusCertificateId) {
+      return;
+    }
+
+    const targetCertificate = certificates.find(
+      (certificate) => certificate.id.toUpperCase() === String(focusCertificateId).toUpperCase()
+    );
+    if (targetCertificate) {
+      setSelectedCert(targetCertificate);
+      setIsVerifying(false);
+      setIsVerified(false);
+    }
+    onFocusHandled?.();
+  }, [focusCertificateId, certificates, onFocusHandled]);
+
+  const validCount = filteredCerts.filter((certificate) => certificate.status === 'valid').length;
+  const expiredCount = filteredCerts.filter((certificate) => certificate.status !== 'valid').length;
+  const totalPages = Math.max(1, Math.ceil(filteredCerts.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedCerts = filteredCerts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  return (
+    <div className="space-y-4 md:space-y-6 relative animate-in fade-in duration-300 pb-10">
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 rounded-2xl p-4 md:p-6 flex flex-col gap-4 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-300">
+        <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+          <div className="flex items-center space-x-4">
+            <div className="p-3 bg-cyan-50 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400 rounded-xl border border-cyan-100 dark:border-cyan-800/30 shadow-sm">
+              <Lock className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white">Secure Evidence Vault</h2>
+              <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Tamper-evident, cryptographically verified statutory reports.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onLinkGen}
+              className="w-full md:w-auto px-5 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-bold flex items-center justify-center space-x-2 transition-all border border-slate-200 dark:border-slate-700 shadow-sm"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Generate Audit Link</span>
+            </button>
+          </div>
+        </div>
+
+        <UploadDropZone
+          onFilesSelected={(files) => {
+            files.forEach((file) => onUploadComplete(file.name));
+          }}
+        />
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
+                statusFilter === 'all'
+                  ? 'bg-cyan-600 text-white border-cyan-600'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              All {filteredCerts.length}
+            </button>
+            <button
+              onClick={() => setStatusFilter('valid')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
+                statusFilter === 'valid'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50'
+              }`}
+            >
+              Valid {validCount}
+            </button>
+            <button
+              onClick={() => setStatusFilter('expired')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${
+                statusFilter === 'expired'
+                  ? 'bg-rose-600 text-white border-rose-600'
+                  : 'bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/50'
+              }`}
+            >
+              Expired {expiredCount}
+            </button>
+          </div>
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Showing page {currentPage} of {totalPages}
+          </span>
+        </div>
+      </div>
+
+      {paginatedCerts.length === 0 ? (
+        <div className="p-12 text-center glass-panel bg-white/50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 animate-in fade-in">
+          <FileSignature className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-500 dark:text-slate-400 font-medium">No certificates found matching "{searchQuery}"</p>
+        </div>
+      ) : (
+        <>
+          <div className="hidden md:block glass-panel bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm transition-colors duration-300 stagger-item">
+            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+              <thead className="bg-slate-50/50 dark:bg-slate-900/20">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Record
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Asset Focus
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Issuer
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Expiry
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                {paginatedCerts.map((certificate, index) => (
+                  <tr
+                    key={certificate.id}
+                    className="stagger-item hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors"
+                    style={{ animationDelay: `${index * 0.05}s` }}
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center space-x-3">
+                        <FileSignature
+                          className={`w-5 h-5 ${
+                            certificate.status === 'valid' ? 'text-cyan-500 dark:text-cyan-400' : 'text-slate-400'
+                          }`}
+                        />
+                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200 font-mono">
+                          {certificate.id}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col">
+                        <span className="text-sm text-slate-800 dark:text-white font-medium">{certificate.assetName}</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">{certificate.regime}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col">
+                        <span className="text-sm text-slate-700 dark:text-slate-300">{certificate.provider}</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center mt-1 font-bold tracking-wide">
+                          <CheckCircle2 className="w-3 h-3 mr-1" /> VAULT SECURED
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-700 dark:text-slate-300">
+                      {formatDateLabel(certificate.expiryDate)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <StatusPill
+                        status={certificate.status === 'valid' ? 'compliant' : 'overdue'}
+                        text={certificate.status}
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <button
+                        onClick={() => handleViewCert(certificate)}
+                        className="px-4 py-1.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 dark:bg-cyan-900/20 dark:hover:bg-cyan-900/40 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800/30 rounded-lg text-sm font-bold transition-all shadow-sm"
+                      >
+                        Inspect Record
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="md:hidden space-y-3">
+            {paginatedCerts.map((certificate, index) => (
+              <div
+                key={certificate.id}
+                className="stagger-item glass-panel bg-white/80 dark:bg-slate-800/80 rounded-xl p-4 flex flex-col relative border border-slate-200 dark:border-slate-700 shadow-sm"
+                style={{ animationDelay: `${index * 0.05}s` }}
+              >
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex items-center space-x-2">
+                    <FileSignature
+                      className={`w-4 h-4 ${
+                        certificate.status === 'valid' ? 'text-cyan-500 dark:text-cyan-400' : 'text-slate-400'
+                      }`}
+                    />
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200 font-mono">{certificate.id}</span>
+                  </div>
+                  <StatusPill
+                    status={certificate.status === 'valid' ? 'compliant' : 'overdue'}
+                    text={certificate.status}
+                  />
+                </div>
+                <p className="text-base font-medium text-slate-800 dark:text-white mb-1">{certificate.assetName}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">{certificate.provider}</p>
+                <div className="flex items-center justify-between mt-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Expires {formatDateLabel(certificate.expiryDate)}
+                  </span>
+                  <button
+                    onClick={() => handleViewCert(certificate)}
+                    className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-bold transition-colors shadow-sm"
+                  >
+                    Inspect
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <PaginationControls
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPrevious={() => setPage((previous) => Math.max(1, previous - 1))}
+            onNext={() => setPage((previous) => Math.min(totalPages, previous + 1))}
+          />
+        </>
+      )}
+
+      {selectedCert && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 dark:bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] transform transition-all scale-100">
+            <div className="flex justify-between items-center p-5 md:p-6 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+              <div>
+                <h3 className="text-lg md:text-xl font-bold text-slate-800 dark:text-white flex items-center">
+                  <ShieldCheck className="w-5 h-5 text-cyan-500 dark:text-cyan-400 mr-2" /> Evidence Detail
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-1">{selectedCert.id}</p>
+              </div>
+              <button
+                onClick={handleCloseModal}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-600 shadow-sm"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 md:p-6 overflow-y-auto flex-1 space-y-6">
+              <div
+                className={`flex flex-col md:flex-row md:items-center justify-between p-4 rounded-xl border transition-all duration-500 overflow-hidden relative ${
+                  isVerified
+                    ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800/30'
+                    : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/50'
+                }`}
+              >
+                {isVerifying && (
+                  <div
+                    className="absolute top-0 left-0 h-1 bg-cyan-500 animate-[drawPath_2s_linear_forwards] w-full"
+                    style={{ strokeDasharray: '0', animation: 'progress 2s linear forwards' }}
+                  />
+                )}
+                <style>{`@keyframes progress { from { width: 0%; } to { width: 100%; } }`}</style>
+
+                <div className="flex items-start md:items-center space-x-3 relative z-10">
+                  {isVerifying ? (
+                    <Loader2 className="w-6 h-6 shrink-0 text-cyan-500 animate-spin mt-1 md:mt-0" />
+                  ) : isVerified ? (
+                    <CheckCircle2 className="w-6 h-6 shrink-0 text-emerald-500 mt-1 md:mt-0" />
+                  ) : (
+                    <Lock className="w-6 h-6 shrink-0 text-slate-400 dark:text-slate-500 mt-1 md:mt-0" />
+                  )}
+                  <div>
+                    <p
+                      className={`font-bold text-sm tracking-wide ${
+                        isVerified ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {isVerifying
+                        ? 'Verifying cryptographic signature...'
+                        : isVerified
+                          ? 'Cryptographically Verified & Authentic'
+                          : 'Verification Required'}
+                    </p>
+                    <p className="text-[10px] md:text-xs mt-1 font-mono break-all leading-tight text-slate-500 dark:text-slate-400">
+                      SHA: {selectedCert.hash}
+                    </p>
+                  </div>
+                </div>
+                {!isVerified && !isVerifying && (
+                  <button
+                    onClick={runVerification}
+                    className="mt-3 md:mt-0 px-4 py-1.5 text-xs font-bold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 shadow-sm transition-colors relative z-10"
+                  >
+                    Run Verification
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Asset Details</p>
+                  <p className="font-bold text-slate-800 dark:text-white text-lg">{selectedCert.assetName}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    ID: <span className="text-slate-800 dark:text-slate-300">{selectedCert.assetId}</span>
+                  </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Regime: <span className="text-emerald-600 dark:text-emerald-400 font-medium">{selectedCert.regime}</span>
+                  </p>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Inspection Validity</p>
+                  <p className="font-bold text-slate-800 dark:text-white text-base">{selectedCert.provider}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Issued: {formatDateLabel(selectedCert.issueDate)}</p>
+                  <p className="text-sm font-bold text-rose-600 dark:text-rose-400 mt-1 flex items-center">
+                    <Clock className="w-3 h-3 mr-1" /> Expires: {formatDateLabel(selectedCert.expiryDate)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
+                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Document Artefact</p>
+                <div className="space-y-4">
+                  <CertificateDocumentCard certificate={selectedCert} isVerified={isVerified} />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <button
+                      onClick={() => downloadCertificatePdf(selectedCert)}
+                      className="px-4 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors shadow-sm flex items-center justify-center gap-1.5"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Download PDF
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const didCopy = await navigator.clipboard
+                          .writeText(buildCertificateDeepLink(selectedCert.id))
+                          .then(() => true)
+                          .catch(() => false);
+                        if (!didCopy) {
+                          window.prompt('Copy certificate link', buildCertificateDeepLink(selectedCert.id));
+                        }
+                      }}
+                      className="px-4 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors shadow-sm flex items-center justify-center gap-1.5"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy Link
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 md:p-6 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex flex-col md:flex-row justify-end space-y-3 md:space-y-0 md:space-x-3">
+              <button
+                onClick={handleCloseModal}
+                className="w-full md:w-auto px-5 py-2.5 font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl transition-colors shadow-sm"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => downloadCertificatePdf(selectedCert)}
+                className="w-full md:w-auto px-6 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl flex items-center justify-center space-x-2 transition-colors shadow-sm"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export Official Record</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProviderNetworkView({ providers, searchQuery, onDispatch }) {
+  const [selectedProviderId, setSelectedProviderId] = useState(providers[0]?.id || null);
+
+  const filteredProviders = useMemo(() => {
+    return providers.filter((provider) => provider.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [providers, searchQuery]);
+
+  const selectedProvider =
+    filteredProviders.find((provider) => provider.id === selectedProviderId) || filteredProviders[0] || null;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 pb-10">
+      <div>
+        <h2 className="text-xl font-bold text-slate-800 dark:text-white">Verified Network</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Pre-vetted, accredited inspection bodies ready for dispatch.
+        </p>
+      </div>
+
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-6 shadow-sm hover-lift">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+          <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center">
+            <MapIcon className="w-5 h-5 mr-2 text-cyan-500" /> Provider Coverage View
+          </h3>
+          {selectedProvider && (
+            <span className="text-xs px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold">
+              Selected: {selectedProvider.name}
+            </span>
+          )}
+        </div>
+        <CoverageMap providers={filteredProviders} selectedProviderId={selectedProvider?.id || null} onSelect={setSelectedProviderId} />
+      </div>
+
+      {filteredProviders.length === 0 ? (
+         <div className="p-12 text-center glass-panel bg-white/50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 animate-in fade-in">
+           <Building2 className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-500 dark:text-slate-400 font-medium">No providers found matching "{searchQuery}"</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredProviders.map((provider, index) => (
+            <div
+              key={provider.id}
+              className="stagger-item glass-panel bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm flex flex-col justify-between"
+              style={{ animationDelay: `${index * 0.1}s` }}
+            >
+              <div>
+                <div className="flex justify-between items-start mb-5">
+                  <div className="w-12 h-12 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl flex items-center justify-center text-slate-800 dark:text-white font-bold text-lg shadow-sm">
+                    {provider.name.charAt(0)}
+                  </div>
+                  <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800/30 text-[10px] uppercase tracking-widest font-bold rounded-md flex items-center">
+                    <ShieldCheck className="w-3 h-3 mr-1" /> {provider.tier}
+                  </span>
+                </div>
+
+                <h3 className="font-bold text-lg text-slate-800 dark:text-white mb-2">{provider.name}</h3>
+
+                <div className="flex flex-wrap gap-2 mb-6">
+                  {provider.regimes.map((regime) => (
+                    <span
+                      key={regime}
+                      className="text-[10px] font-bold bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-md flex items-center"
+                    >
+                      <Tag className="w-3 h-3 mr-1 opacity-50" /> {regime}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center mt-auto">
+                <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">
+                  Active: <span className="text-cyan-600 dark:text-cyan-400">{provider.activeJobs} Jobs</span>
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedProviderId(provider.id)}
+                    className="text-sm font-bold text-slate-700 dark:text-white bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 px-3 py-1.5 rounded-lg transition-colors flex items-center shadow-sm"
+                  >
+                    Focus
+                  </button>
+                  <button
+                    onClick={() => onDispatch(provider.name)}
+                    className="text-sm font-bold text-slate-700 dark:text-white bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 px-3 py-1.5 rounded-lg transition-colors flex items-center shadow-sm"
+                  >
+                    Dispatch <ChevronRight className="w-4 h-4 ml-1 text-slate-400" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MarketplaceExchangeView({
+  assets,
+  auditors,
+  jobs,
+  inspectionTemplates = [],
+  companyContext = { id: '', name: '' },
+  debugRole = 'company',
+  searchQuery,
+  onCreateJob,
+  onDispatchJob,
+  onAcceptOffer,
+  onStartJob,
+  onUploadDocuments,
+  onCompleteJob,
+  onSubmitExternalForReview,
+  onReviewExternalAudit,
+  onApplyAdjustment,
+  onStartAuditRunForJob,
+  onRecordFinding,
+}) {
+  const resolveMarketplaceMode = useCallback(
+    (role) => {
+      const normalizedRole = normalizeUserRole(role, 'company');
+      if (['company', 'auditor', 'insurer', 'certex'].includes(normalizedRole)) {
+        return normalizedRole;
+      }
+      return 'company';
+    },
+    []
+  );
+  const [activeMode, setActiveMode] = useState(() => resolveMarketplaceMode(debugRole));
+  const [selectedAuditorId, setSelectedAuditorId] = useState(auditors[0]?.id || '');
+  const [showComposer, setShowComposer] = useState(false);
+  const [adjustmentJobId, setAdjustmentJobId] = useState('');
+  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const [workspaceJobId, setWorkspaceJobId] = useState('');
+  const [startAuditJobId, setStartAuditJobId] = useState('');
+  const [startAuditMode, setStartAuditMode] = useState(AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE);
+  const [acceptJobId, setAcceptJobId] = useState('');
+  const [acceptAuditMode, setAcceptAuditMode] = useState(AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE);
+  const pageSize = 6;
+
+  useEffect(() => {
+    const timerId = window.setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => window.clearInterval(timerId);
+  }, []);
+
+  useEffect(() => {
+    setActiveMode(resolveMarketplaceMode(debugRole));
+  }, [debugRole, resolveMarketplaceMode]);
+
+  const isCompanyPortal = activeMode === 'company';
+  const isAuditorPortal = activeMode === 'auditor';
+  const isCertexPortal = activeMode === 'certex';
+  const isInsurerPortal = activeMode === 'insurer';
+  const isRoleLockedMarketplaceMode = normalizeUserRole(debugRole) !== 'certex';
+
+  const selectedAuditor = auditors.find((auditor) => auditor.id === selectedAuditorId) || auditors[0] || null;
+  const workspaceJob = jobs.find((job) => job.id === workspaceJobId) || null;
+  const startAuditJob = jobs.find((job) => job.id === startAuditJobId) || null;
+  const acceptJob = jobs.find((job) => job.id === acceptJobId) || null;
+  const acceptJobPayoutOptions = useMemo(
+    () => (acceptJob ? getAuditorPayoutOptions(getMarketplaceJobPricing(acceptJob)) : null),
+    [acceptJob]
+  );
+  const workspaceTemplate = useMemo(() => {
+    if (!workspaceJob) {
+      return null;
+    }
+    return pickBestInspectionTemplateForRegime(inspectionTemplates, workspaceJob.regime, {
+      templateId: workspaceJob.inspectionTemplateId,
+      companyId: workspaceJob.companyId || companyContext?.id,
+      companyName: workspaceJob.companyName || companyContext?.name,
+    });
+  }, [workspaceJob, inspectionTemplates, companyContext?.id, companyContext?.name]);
+
+  const filteredJobs = useMemo(() => {
+    const term = searchQuery.toLowerCase();
+    return jobs.filter((job) => {
+      const matchesSearch =
+        job.assetName.toLowerCase().includes(term) ||
+        job.site.toLowerCase().includes(term) ||
+        job.regime.toLowerCase().includes(term) ||
+        job.id.toLowerCase().includes(term);
+      const matchesStatus = isInsurerPortal ? true : statusFilter === 'all' || job.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [jobs, searchQuery, statusFilter, isInsurerPortal]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, statusFilter, activeMode]);
+
+  useEffect(() => {
+    if (!isAuditorPortal) {
+      setWorkspaceJobId('');
+      setStartAuditJobId('');
+      setAcceptJobId('');
+    }
+  }, [isAuditorPortal]);
+
+  useEffect(() => {
+    if (!workspaceJobId) {
+      return;
+    }
+    if (!workspaceJob || workspaceJob.status === 'completed') {
+      setWorkspaceJobId('');
+    }
+  }, [workspaceJobId, workspaceJob]);
+
+  useEffect(() => {
+    if (!startAuditJobId) {
+      return;
+    }
+    const canSelectMethodForLegacyInProgress =
+      startAuditJob?.status === 'in_progress' && !startAuditJob?.auditMethodLocked;
+    if (!startAuditJob || (startAuditJob.status !== 'assigned' && !canSelectMethodForLegacyInProgress)) {
+      setStartAuditJobId('');
+    }
+  }, [startAuditJobId, startAuditJob]);
+
+  useEffect(() => {
+    if (!acceptJobId) {
+      return;
+    }
+    if (!acceptJob || !['open', 'offered'].includes(acceptJob.status)) {
+      setAcceptJobId('');
+    }
+  }, [acceptJobId, acceptJob]);
+
+  const visibleJobs = useMemo(() => {
+    if (isAuditorPortal) {
+      return filteredJobs.filter((job) => job.status === 'open' || job.matchedAuditorId === selectedAuditorId);
+    }
+    if (isInsurerPortal) {
+      return filteredJobs.filter((job) => job.status === 'completed');
+    }
+    if (isCompanyPortal || isCertexPortal) {
+      return filteredJobs;
+    }
+    return filteredJobs;
+  }, [filteredJobs, isAuditorPortal, isInsurerPortal, isCompanyPortal, isCertexPortal, selectedAuditorId]);
+
+  const totalPages = Math.max(1, Math.ceil(visibleJobs.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedJobs = visibleJobs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const openCount = jobs.filter((job) => job.status === 'open').length;
+  const offeredCount = jobs.filter((job) => job.status === 'offered').length;
+  const assignedCount = jobs.filter((job) => job.status === 'assigned').length;
+  const inProgressCount = jobs.filter((job) => ['in_progress', 'awaiting_review'].includes(job.status)).length;
+  const awaitingReviewCount = jobs.filter((job) => job.status === 'awaiting_review').length;
+  const completedCount = jobs.filter((job) => job.status === 'completed').length;
+  const selectedAdjustmentJob = jobs.find((job) => job.id === adjustmentJobId) || null;
+  const workspacePageRef = useRef(null);
+  const certexFinanceTotals = useMemo(
+    () =>
+      visibleJobs.reduce(
+        (totals, job) => {
+          const pricing = getMarketplaceJobPricing(job);
+          return {
+            companyTotalIncVat: totals.companyTotalIncVat + pricing.total,
+            auditorPayoutExVat: totals.auditorPayoutExVat + pricing.providerPayoutExVat,
+            certexGrossExVat: totals.certexGrossExVat + pricing.platformFeeExVat,
+          };
+        },
+        {
+          companyTotalIncVat: 0,
+          auditorPayoutExVat: 0,
+          certexGrossExVat: 0,
+        }
+      ),
+    [visibleJobs]
+  );
+
+  const scrollWorkspacePageToTop = useCallback(() => {
+    if (!workspacePageRef.current || typeof window === 'undefined') {
+      return;
+    }
+
+    const workspaceNode = workspacePageRef.current;
+    workspaceNode.scrollTop = 0;
+
+    let ancestor = workspaceNode.parentElement;
+    while (ancestor) {
+      const style = window.getComputedStyle(ancestor);
+      const overflowY = style.overflowY;
+      if ((overflowY === 'auto' || overflowY === 'scroll') && ancestor.scrollHeight > ancestor.clientHeight) {
+        ancestor.scrollTop = 0;
+        break;
+      }
+      ancestor = ancestor.parentElement;
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceJobId) {
+      return undefined;
+    }
+
+    scrollWorkspacePageToTop();
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(scrollWorkspacePageToTop);
+    const timeoutId = window.setTimeout(scrollWorkspacePageToTop, 40);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [workspaceJobId, scrollWorkspacePageToTop]);
+
+  const openAuditMethodPicker = (job) => {
+    setStartAuditJobId(job.id);
+    setStartAuditMode(normalizeAuditExecutionMode(job.auditExecutionMode));
+  };
+
+  const openAcceptMethodPicker = (job) => {
+    setAcceptJobId(job.id);
+    setAcceptAuditMode(
+      Boolean(job.auditMethodLocked)
+        ? normalizeAuditExecutionMode(job.auditExecutionMode)
+        : AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+    );
+  };
+
+  const confirmAcceptJob = () => {
+    if (!acceptJob || !selectedAuditor) {
+      return;
+    }
+    const didAccept = onAcceptOffer?.(
+      acceptJob.id,
+      selectedAuditor.id,
+      selectedAuditor.name,
+      normalizeAuditExecutionMode(acceptAuditMode)
+    );
+    if (didAccept === false) {
+      return;
+    }
+    setAcceptJobId('');
+  };
+
+  const confirmAuditStart = () => {
+    if (!startAuditJob || !selectedAuditor) {
+      return;
+    }
+
+    const selectedMode = normalizeAuditExecutionMode(startAuditMode);
+    const didStart = onStartJob(startAuditJob.id, selectedAuditor.id, selectedMode);
+    if (didStart === false) {
+      return;
+    }
+
+    setStartAuditJobId('');
+    if (selectedMode === AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE) {
+      onStartAuditRunForJob?.(startAuditJob.id);
+      setWorkspaceJobId(startAuditJob.id);
+    }
+  };
+
+  if (isAuditorPortal && workspaceJob && selectedAuditor) {
+    return (
+      <div ref={workspacePageRef} className="space-y-4 animate-in fade-in duration-300 pb-10">
+        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+            <div>
+              <p className="text-xs font-bold tracking-wider uppercase text-cyan-600 dark:text-cyan-400 mb-1">
+                Auditor Workspace
+              </p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {workspaceJob.id} • {workspaceJob.assetName} • {workspaceJob.regime}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWorkspaceJobId('')}
+              className="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold"
+            >
+              Back to Jobs
+            </button>
+          </div>
+        </div>
+
+        <AuditorTemplateRunModal
+          job={workspaceJob}
+          auditor={selectedAuditor}
+          template={workspaceTemplate}
+          onClose={() => setWorkspaceJobId('')}
+          onUploadEvidence={(files) => onUploadDocuments(workspaceJob.id, files, selectedAuditor.id)}
+          onRecordFinding={(findingPayload) =>
+            onRecordFinding?.(workspaceJob.id, selectedAuditor.id, findingPayload)
+          }
+          onCompleteAudit={() => onCompleteJob(workspaceJob.id, selectedAuditor.id)}
+        />
+
+        {showAdjustmentModal && selectedAdjustmentJob && (
+          <PricingAdjustmentModal
+            job={selectedAdjustmentJob}
+            onClose={() => {
+              setShowAdjustmentModal(false);
+              setAdjustmentJobId('');
+            }}
+            onSubmit={(payload) => {
+              const wasApplied = onApplyAdjustment(selectedAdjustmentJob.id, payload);
+              if (wasApplied) {
+                setShowAdjustmentModal(false);
+                setAdjustmentJobId('');
+              }
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 pb-10">
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm hover-lift">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold tracking-wider uppercase text-cyan-600 dark:text-cyan-400 mb-2">
+              Certex Exchange
+            </p>
+            <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">
+              {isCompanyPortal && 'Company Portal'}
+              {isAuditorPortal && 'Auditor Portal'}
+              {isCertexPortal && 'Certex Admin Portal'}
+              {isInsurerPortal && 'Insurer Read-only Portal'}
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 max-w-2xl">
+              {isCompanyPortal &&
+                'Book statutory work with fixed quotes. Company users only see total, VAT, and booking status.'}
+              {isAuditorPortal &&
+                'View assigned/open jobs, accept offers, deliver evidence, and manage completion workflow.'}
+              {isCertexPortal &&
+                'Admin visibility for quoted totals, provider payout, platform fee, and operational adjustments.'}
+              {isInsurerPortal &&
+                'Read-only access to completed jobs and verification-ready evidence trails.'}
+            </p>
+          </div>
+          {isCompanyPortal && (
+            <button
+              onClick={() => setShowComposer(true)}
+              className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-sm flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Advertise Audit Job
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <GlassStatCard title="Open Jobs" value={openCount} icon={<ClipboardList />} color="text-cyan-600 dark:text-cyan-400" bgClass="bg-cyan-50 dark:bg-cyan-900/20" />
+        <GlassStatCard title="Offers Sent" value={offeredCount} icon={<Bell />} color="text-violet-600 dark:text-violet-400" bgClass="bg-violet-50 dark:bg-violet-900/20" />
+        <GlassStatCard title="Assigned" value={assignedCount} icon={<Users />} color="text-indigo-600 dark:text-indigo-400" bgClass="bg-indigo-50 dark:bg-indigo-900/20" />
+        <GlassStatCard
+          title={awaitingReviewCount > 0 ? `In Progress (${awaitingReviewCount} review)` : 'In Progress'}
+          value={inProgressCount}
+          icon={<Activity />}
+          color="text-amber-600 dark:text-amber-400"
+          bgClass="bg-amber-50 dark:bg-amber-900/20"
+        />
+        <GlassStatCard title="Completed" value={completedCount} icon={<CheckCircle2 />} color="text-emerald-600 dark:text-emerald-400" bgClass="bg-emerald-50 dark:bg-emerald-900/20" />
+      </div>
+
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          {isRoleLockedMarketplaceMode ? (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 bg-slate-50/80 dark:bg-slate-900/40">
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                Role view locked to {USER_ROLE_OPTIONS.find((roleOption) => roleOption.id === activeMode)?.label || 'Company'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-4 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden w-full md:w-auto">
+              <button
+                onClick={() => setActiveMode('company')}
+                className={`px-3 py-2 text-xs font-bold ${isCompanyPortal ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+              >
+                Company
+              </button>
+              <button
+                onClick={() => setActiveMode('auditor')}
+                className={`px-3 py-2 text-xs font-bold border-l border-slate-200 dark:border-slate-700 ${isAuditorPortal ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+              >
+                Auditor
+              </button>
+              <button
+                onClick={() => setActiveMode('certex')}
+                className={`px-3 py-2 text-xs font-bold border-l border-slate-200 dark:border-slate-700 ${isCertexPortal ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+              >
+                Certex
+              </button>
+              <button
+                onClick={() => setActiveMode('insurer')}
+                className={`px-3 py-2 text-xs font-bold border-l border-slate-200 dark:border-slate-700 ${isInsurerPortal ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+              >
+                Insurer
+              </button>
+            </div>
+          )}
+
+          {isInsurerPortal ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+              Read-only feed: completed jobs and evidence timeline only.
+            </p>
+          ) : (
+            <div className="flex gap-2 flex-wrap">
+              {['all', 'open', 'offered', 'assigned', 'in_progress', 'awaiting_review', 'completed'].map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border ${
+                    statusFilter === status
+                      ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {status === 'all' ? 'All' : status.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {isAuditorPortal && (
+          <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col md:flex-row md:items-center gap-3">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Active Auditor
+            </label>
+            <select
+              value={selectedAuditorId}
+              onChange={(event) => setSelectedAuditorId(event.target.value)}
+              className="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm"
+            >
+              {auditors.map((auditor) => (
+                <option key={auditor.id} value={auditor.id}>
+                  {auditor.name} ({auditor.rating.toFixed(1)}★, {auditor.baseLocation})
+                </option>
+              ))}
+            </select>
+            {selectedAuditor && (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Avg response {selectedAuditor.avgResponseMins} mins • Active jobs {selectedAuditor.activeJobs}/
+                {selectedAuditor.maxConcurrentJobs || 8}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {isCertexPortal && (
+        <div className="glass-panel bg-emerald-50/70 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-900/40 rounded-2xl p-4 md:p-5 shadow-sm">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 mb-3">
+            Certex Admin Finance Summary
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-emerald-200/70 dark:border-emerald-900/50 bg-white/70 dark:bg-slate-900/30 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wider text-emerald-700/90 dark:text-emerald-300/90">Company Total (inc VAT)</p>
+              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{formatCurrencyGBP(certexFinanceTotals.companyTotalIncVat)}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200/70 dark:border-emerald-900/50 bg-white/70 dark:bg-slate-900/30 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wider text-emerald-700/90 dark:text-emerald-300/90">Auditor Payout (ex VAT)</p>
+              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{formatCurrencyGBP(certexFinanceTotals.auditorPayoutExVat)}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200/70 dark:border-emerald-900/50 bg-white/70 dark:bg-slate-900/30 px-3 py-2">
+              <p className="text-[11px] uppercase tracking-wider text-emerald-700/90 dark:text-emerald-300/90">Certex Gross (ex VAT)</p>
+              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{formatCurrencyGBP(certexFinanceTotals.certexGrossExVat)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isCompanyPortal || isCertexPortal ? (
+        <div className="space-y-4">
+          {paginatedJobs.length === 0 ? (
+            <div className="p-12 text-center glass-panel bg-white/50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
+              <ClipboardList className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+              <p className="text-slate-500 dark:text-slate-400 font-medium">No advertised jobs for this filter.</p>
+            </div>
+          ) : (
+            paginatedJobs.map((job) => {
+              const matchedAuditor = auditors.find((auditor) => auditor.id === job.matchedAuditorId);
+              const rankedAuditors = rankAuditorsForJob(job, auditors, nowTick).slice(0, 3);
+              const resolvedTemplate = pickBestInspectionTemplateForRegime(inspectionTemplates, job.regime, {
+                templateId: job.inspectionTemplateId,
+                companyId: job.companyId || companyContext?.id,
+                companyName: job.companyName || companyContext?.name,
+              });
+              const templateControlCount =
+                Array.isArray(resolvedTemplate?.controls) && resolvedTemplate.controls.length > 0
+                  ? resolvedTemplate.controls.length
+                  : getDefaultChecklistControlsByRegime(job.regime).length;
+              const scope = getMarketplaceJobScope(job);
+              const pricing = getMarketplaceJobPricing(job);
+              const pricingHistory = getMarketplaceJobPricingHistory(job, pricing);
+              const pricingLock = getMarketplaceJobPricingLock(job, pricing);
+              const adjustments = getMarketplaceJobPricingAdjustments(job);
+              const settlement = getMarketplaceJobSettlement(job, pricing);
+              const dispatch = getMarketplaceJobDispatch(job);
+              const auditExecutionMode = normalizeAuditExecutionMode(job.auditExecutionMode);
+              const isExternalAuditFlow = auditExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE;
+              const externalReviewStatus = resolveExternalAuditReviewStatus(job, auditExecutionMode);
+              const offerExpired = isOfferExpired(job, nowTick);
+              const offerMinsRemaining = minutesUntil(dispatch.offerExpiresAt, nowTick);
+              const dispatchSlaRemaining = minutesUntil(dispatch.dispatchDeadlineAt, nowTick);
+              return (
+                <div
+                  key={job.id}
+                  className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm hover-lift"
+                >
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-slate-800 dark:text-white">
+                        {job.id} • {job.assetName}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {job.site} • {job.regime} • Due {formatDateLabel(job.dueDate)} • {formatCurrencyGBP(pricing.total)}
+                      </p>
+                    </div>
+                    <JobStatusPill status={job.status} />
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 px-3 py-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Scope Builder
+                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                      {getScopeTemplateLabel(scope.template)} • {scope.assetCount} asset(s) • {scope.estimatedHours}h •{' '}
+                      {scope.complexity.replace('_', ' ')}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Travel {scope.travelKm}km • Equipment {scope.equipment.replace('_', ' ')} •{' '}
+                      {scope.expedite ? 'Expedite requested' : 'Standard dispatch'}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Template: {resolvedTemplate?.name || job.inspectionTemplateName || `${job.regime} default checklist`} • {templateControlCount} controls
+                    </p>
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/75 dark:bg-slate-900/30 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Audit Delivery
+                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                      Method: {getAuditExecutionModeLabel(auditExecutionMode)}
+                      {isExternalAuditFlow
+                        ? ` • Review: ${getExternalAuditReviewStatusLabel(externalReviewStatus)}`
+                        : ''}
+                    </p>
+                  </div>
+
+                  {isCertexPortal ? (
+                    <div className="mt-3 grid grid-cols-2 md:grid-cols-6 gap-2">
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500">Labour</p>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatCurrencyGBP(pricing.labour)}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500">Travel</p>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatCurrencyGBP(pricing.travel)}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500">Equipment</p>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatCurrencyGBP(pricing.equipment)}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500">Modifiers</p>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatCurrencyGBP(pricing.expedite)}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500">VAT</p>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatCurrencyGBP(pricing.vatAmount)}</p>
+                      </div>
+                      <div className="rounded-lg border border-cyan-200 dark:border-cyan-800/30 bg-cyan-50/70 dark:bg-cyan-900/10 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Total inc VAT</p>
+                        <p className="text-xs font-black text-cyan-700 dark:text-cyan-300">{formatCurrencyGBP(pricing.total)}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500">VAT</p>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatCurrencyGBP(pricing.vatAmount)}</p>
+                      </div>
+                      <div className="rounded-lg border border-cyan-200 dark:border-cyan-800/30 bg-cyan-50/70 dark:bg-cyan-900/10 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Total inc VAT</p>
+                        <p className="text-xs font-black text-cyan-700 dark:text-cyan-300">{formatCurrencyGBP(pricing.total)}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-3">{job.notes}</p>
+
+                  <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/75 dark:bg-slate-900/30 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Dispatch SLA
+                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                      Confirm by {formatDateTimeLabel(dispatch.dispatchDeadlineAt)} (
+                      {dispatchSlaRemaining === null
+                        ? 'n/a'
+                        : dispatchSlaRemaining >= 0
+                          ? `${dispatchSlaRemaining} mins remaining`
+                          : `${Math.abs(dispatchSlaRemaining)} mins overdue`}
+                      ) • Attempts {dispatch.attempts}
+                    </p>
+                    {job.status === 'offered' && (
+                      <p className={`text-xs mt-1 ${offerExpired ? 'text-rose-500' : 'text-violet-600 dark:text-violet-300'}`}>
+                        {offerExpired
+                          ? 'Offer expired. Re-dispatch required.'
+                          : `Offer expires ${formatDateTimeLabel(dispatch.offerExpiresAt)} (${offerMinsRemaining} mins left)`}
+                      </p>
+                    )}
+                  </div>
+
+                  {isCertexPortal && (
+                    <div className="mt-3 rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/60 dark:bg-emerald-900/10 px-3 py-3 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                          Certex Finance View
+                        </p>
+                        <span className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80">
+                          {pricing.quoteId} • v{pricing.quoteVersion} • {formatPercentage(pricing.effectiveTakeRate)} take-rate
+                        </span>
+                      </div>
+                      <p className="text-xs text-emerald-800/80 dark:text-emerald-300/90">
+                        Company pays {formatCurrencyGBP(pricing.total)} inc VAT • Auditor receives {formatCurrencyGBP(pricing.providerPayoutExVat)} ex VAT • Certex platform/documentation fee {formatCurrencyGBP(pricing.platformFeeExVat)} ex VAT
+                      </p>
+                      <p className="text-xs text-emerald-800/80 dark:text-emerald-300/90">
+                        Certex share covers platform operations, documentation workflows, verification, and compliance delivery overhead.
+                      </p>
+                      <p className="text-xs text-emerald-800/80 dark:text-emerald-300/90">
+                        Model {pricing.pricingModelVersion} • Rate card {pricing.rateCardVersionId} • Route {pricing.routeEstimate?.miles || 0} miles
+                      </p>
+                      <p className="text-xs text-emerald-800/80 dark:text-emerald-300/90">
+                        Auditor payout profile: £{Number(pricing.auditorHourlyRate || 0).toFixed(2)}/h • {Number(
+                          pricing.auditorBillableHours || 0
+                        ).toFixed(2)} billable h • travel payout {formatCurrencyGBP(pricing.auditorTravelPayoutExVat)} ex VAT
+                      </p>
+                      <p className="text-xs text-emerald-800/80 dark:text-emerald-300/90">
+                        {pricingLock
+                          ? `Pricing lock ${pricingLock.pricingLockId} at ${formatDateTimeLabel(pricingLock.lockedAt)}`
+                          : 'Awaiting provider acceptance to create pricing lock.'}
+                      </p>
+
+                      {adjustments.length > 0 && (
+                        <div className="pt-1 space-y-1">
+                          {adjustments.slice(-2).map((entry) => (
+                            <p key={entry.adjustmentId} className="text-xs text-emerald-900/80 dark:text-emerald-200/90">
+                              {entry.type.replace(/_/g, ' ')} {entry.amountExVatDelta >= 0 ? '+' : ''}{formatCurrencyGBP(entry.amountExVatDelta)} ex VAT • {entry.reasonCode}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+
+                      {pricingLock && (
+                        <div className="pt-1 flex flex-wrap gap-2">
+                          <button
+                            onClick={() => {
+                              setAdjustmentJobId(job.id);
+                              setShowAdjustmentModal(true);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold border border-emerald-300 dark:border-emerald-800/50 bg-white/80 dark:bg-slate-900/50 text-emerald-700 dark:text-emerald-300"
+                          >
+                            Add Adjustment Event
+                          </button>
+                          <span className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80 self-center">
+                            Quote history: {pricingHistory.length} version(s)
+                          </span>
+                        </div>
+                      )}
+
+                      {settlement && (
+                        <p className="text-xs text-emerald-800/80 dark:text-emerald-300/90">
+                          Settlement {settlement.payoutStatus.replace('_', ' ')} • payout {settlement.scheduledPayoutDate || 'n/a'} • holdback {formatCurrencyGBP(settlement.holdbackAmount)} • reserve {formatCurrencyGBP(settlement.disputeReserveAmount)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {isCertexPortal && (job.status === 'open' || (job.status === 'offered' && offerExpired)) && (
+                    <div className="mt-4">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                        Certex Match Recommendations
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        {rankedAuditors.length === 0 ? (
+                          <p className="text-xs text-slate-500 dark:text-slate-400">No suitable auditors found for {job.regime}.</p>
+                        ) : (
+                          rankedAuditors.map((candidate) => (
+                            <button
+                              key={candidate.auditor.id}
+                              onClick={() => onDispatchJob(job.id, candidate.auditor.id)}
+                              className="text-left rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/40 p-3 hover-lift"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-bold text-slate-800 dark:text-white">{candidate.auditor.name}</p>
+                                <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400">{candidate.score}%</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                                ETA {candidate.etaHours}h
+                                {isCertexPortal
+                                  ? ` • Payout est. ${formatCurrencyGBP(candidate.payoutEstimate)} • £${Number(
+                                      candidate.auditorHourlyRate || 0
+                                    ).toFixed(2)}/h`
+                                  : ''}
+                              </p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                                Capacity {candidate.capacityRemaining} slot(s) • Offer window {candidate.offerWindowMins} mins
+                              </p>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {matchedAuditor && job.status === 'offered' && !offerExpired && (
+                    <div className="mt-4 rounded-xl border border-violet-200 dark:border-violet-800/30 bg-violet-50/70 dark:bg-violet-900/10 px-3 py-2 text-xs text-violet-700 dark:text-violet-300">
+                      Awaiting acceptance from <span className="font-bold">{matchedAuditor.name}</span> by{' '}
+                      {formatDateTimeLabel(dispatch.offerExpiresAt)}.
+                    </div>
+                  )}
+
+                  {matchedAuditor && ['assigned', 'in_progress', 'awaiting_review', 'completed'].includes(job.status) && (
+                    <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
+                      Assigned auditor: <span className="font-bold">{matchedAuditor.name}</span>
+                    </div>
+                  )}
+
+                  {isCertexPortal && isExternalAuditFlow && job.status === 'awaiting_review' && (
+                    <div className="mt-4 rounded-xl border border-cyan-200 dark:border-cyan-800/40 bg-cyan-50/70 dark:bg-cyan-900/20 px-3 py-3">
+                      <p className="text-xs text-cyan-700 dark:text-cyan-300 font-semibold">
+                        External audit evidence is pending Certex review.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onReviewExternalAudit?.(job.id, 'approve')}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                        >
+                          Approve Evidence
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onReviewExternalAudit?.(job.id, 'reject')}
+                          className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+                        >
+                          Request Revisions
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                      Activity Timeline
+                    </p>
+                    <div className="space-y-1.5">
+                      {job.timeline.slice(-3).map((item, index) => (
+                        <p key={`${job.id}-${index}`} className="text-xs text-slate-600 dark:text-slate-300">
+                          <span className="font-semibold">{item.at}</span> • {item.label} <span className="text-slate-400">({item.actor})</span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : isAuditorPortal ? (
+        <div className="space-y-4">
+          {paginatedJobs.length === 0 ? (
+            <div className="p-12 text-center glass-panel bg-white/50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
+              <Users className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+              <p className="text-slate-500 dark:text-slate-400 font-medium">No available jobs for this auditor.</p>
+            </div>
+          ) : (
+            paginatedJobs.map((job) => {
+              const currentMatch = selectedAuditor ? computeAuditorMatch(job, selectedAuditor, nowTick) : null;
+              const isOwnedBySelectedAuditor = job.matchedAuditorId === selectedAuditorId;
+              const dispatch = getMarketplaceJobDispatch(job);
+              const offerExpired = isOfferExpired(job, nowTick);
+              const offerMinsRemaining = minutesUntil(dispatch.offerExpiresAt, nowTick);
+              const pricing = getMarketplaceJobPricing(job);
+              const payoutOptions = getAuditorPayoutOptions(pricing);
+              const auditExecutionMode = normalizeAuditExecutionMode(job.auditExecutionMode);
+              const isExternalAuditFlow = auditExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE;
+              const externalReviewStatus = resolveExternalAuditReviewStatus(job, auditExecutionMode);
+              const requiresAuditMethodSelection =
+                isOwnedBySelectedAuditor && job.status === 'in_progress' && !job.auditMethodLocked;
+              const auditorPayoutLabel = (() => {
+                if (job.auditMethodLocked) {
+                  return auditExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+                    ? `${formatCurrencyGBP(payoutOptions.ownSoftwareExVat)} ex VAT`
+                    : `${formatCurrencyGBP(payoutOptions.certexTemplateExVat)} ex VAT`;
+                }
+                return `${formatCurrencyGBP(payoutOptions.minExVat)} to ${formatCurrencyGBP(
+                  payoutOptions.maxExVat
+                )} ex VAT`;
+              })();
+              return (
+                <div
+                  key={job.id}
+                  className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm hover-lift"
+                >
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-slate-800 dark:text-white">
+                        {job.id} • {job.assetName}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {job.site} • {job.regime} • Auditor payout {auditorPayoutLabel}
+                      </p>
+                    </div>
+                    <JobStatusPill status={job.status} />
+                  </div>
+
+                  {currentMatch && (
+                    <div className="mt-3">
+                      <p className="text-xs text-slate-600 dark:text-slate-300 mb-1">
+                        Match score for {selectedAuditor?.name}: <span className="font-bold">{currentMatch.score}%</span>
+                      </p>
+                      <MatchScoreBar score={currentMatch.score} />
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        Capacity remaining {currentMatch.capacityRemaining}
+                      </p>
+                    </div>
+                  )}
+
+                  {job.status === 'offered' && isOwnedBySelectedAuditor && (
+                    <p className={`mt-3 text-xs ${offerExpired ? 'text-rose-500' : 'text-violet-600 dark:text-violet-300'}`}>
+                      {offerExpired
+                        ? 'Offer expired before acceptance.'
+                        : `Offer expires ${formatDateTimeLabel(dispatch.offerExpiresAt)} (${offerMinsRemaining} mins left).`}
+                    </p>
+                  )}
+
+                  {getMarketplaceJobPricingLock(job, pricing) && (
+                    <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
+                      Locked quote {pricing.quoteId}
+                    </p>
+                  )}
+
+                  {isOwnedBySelectedAuditor && job.status !== 'open' && (
+                    <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 px-3 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Audit method
+                      </p>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                        {requiresAuditMethodSelection ? 'Select method to continue' : getAuditExecutionModeLabel(auditExecutionMode)}
+                        {isExternalAuditFlow
+                          ? ` • ${getExternalAuditReviewStatusLabel(externalReviewStatus)}`
+                          : ''}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {isOwnedBySelectedAuditor &&
+                      job.status === 'in_progress' &&
+                      !requiresAuditMethodSelection &&
+                      !isExternalAuditFlow && (
+                      <button
+                        onClick={() => setWorkspaceJobId(job.id)}
+                        className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+                      >
+                        Open Template
+                      </button>
+                      )}
+                    {job.status === 'open' && selectedAuditor && currentMatch?.canAccept && (
+                      <button
+                        onClick={() => openAcceptMethodPicker(job)}
+                        className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+                      >
+                        Claim Job
+                      </button>
+                    )}
+                    {job.status === 'offered' && isOwnedBySelectedAuditor && !offerExpired && (
+                      <button
+                        onClick={() => openAcceptMethodPicker(job)}
+                        className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+                      >
+                        Accept Offer
+                      </button>
+                    )}
+                    {job.status === 'offered' && isOwnedBySelectedAuditor && offerExpired && (
+                      <button
+                        onClick={() => onDispatchJob(job.id, selectedAuditor.id, selectedAuditor.name)}
+                        className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+                      >
+                        Request Re-offer
+                      </button>
+                    )}
+                    {(job.status === 'assigned' || requiresAuditMethodSelection) && isOwnedBySelectedAuditor && (
+                      <button
+                        onClick={() => {
+                          if (job.auditMethodLocked) {
+                            const selectedMode = normalizeAuditExecutionMode(job.auditExecutionMode);
+                            const didStart = onStartJob(job.id, selectedAuditorId, selectedMode);
+                            if (didStart === false) {
+                              return;
+                            }
+                            if (selectedMode === AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE) {
+                              onStartAuditRunForJob?.(job.id);
+                              setWorkspaceJobId(job.id);
+                            }
+                            return;
+                          }
+                          openAuditMethodPicker(job);
+                        }}
+                        className="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+                      >
+                        Start Audit
+                      </button>
+                    )}
+                    {job.status === 'in_progress' && isOwnedBySelectedAuditor && (
+                      isExternalAuditFlow ? (
+                        <>
+                          <label className="px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer">
+                            Upload Evidence
+                            <input
+                              type="file"
+                              multiple
+                              className="hidden"
+                              onChange={(event) =>
+                                onUploadDocuments(
+                                  job.id,
+                                  Array.from(event.target.files || []),
+                                  selectedAuditorId
+                                )
+                              }
+                            />
+                          </label>
+                          <button
+                            onClick={() => onSubmitExternalForReview?.(job.id, selectedAuditorId)}
+                            disabled={job.documents.length === 0}
+                            className={`px-3 py-2 rounded-lg text-white text-xs font-bold ${
+                              job.documents.length === 0
+                                ? 'bg-indigo-300 dark:bg-indigo-900/40 cursor-not-allowed'
+                                : 'bg-indigo-600 hover:bg-indigo-700'
+                            }`}
+                          >
+                            Submit for Review
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <label className="px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer">
+                            Upload Docs
+                            <input
+                              type="file"
+                              multiple
+                              className="hidden"
+                              onChange={(event) =>
+                                onUploadDocuments(
+                                  job.id,
+                                  Array.from(event.target.files || []),
+                                  selectedAuditorId
+                                )
+                              }
+                            />
+                          </label>
+                          <button
+                            onClick={() => onCompleteJob(job.id, selectedAuditorId)}
+                            className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                          >
+                            Mark Complete
+                          </button>
+                        </>
+                      )
+                    )}
+                    {job.status === 'awaiting_review' &&
+                      isOwnedBySelectedAuditor &&
+                      isExternalAuditFlow && (
+                        <span className="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold">
+                          Awaiting Certex review
+                        </span>
+                      )}
+                  </div>
+
+                  {job.documents.length > 0 && (
+                    <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                      Uploaded docs: {job.documents.join(', ')}
+                    </div>
+                  )}
+                  {isOwnedBySelectedAuditor &&
+                    isExternalAuditFlow &&
+                    job.status === 'in_progress' &&
+                    job.documents.length === 0 && (
+                      <div className="mt-3 text-xs text-amber-600 dark:text-amber-300">
+                        Upload at least one evidence file before submitting for review.
+                      </div>
+                    )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {paginatedJobs.length === 0 ? (
+            <div className="p-12 text-center glass-panel bg-white/50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
+              <ShieldCheck className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+              <p className="text-slate-500 dark:text-slate-400 font-medium">No completed jobs for insurer review.</p>
+            </div>
+          ) : (
+            paginatedJobs.map((job) => {
+              const matchedAuditor = auditors.find((auditor) => auditor.id === job.matchedAuditorId);
+              const completionEvent =
+                [...job.timeline].reverse().find((entry) => entry.label.toLowerCase().includes('complete')) || null;
+              return (
+                <div
+                  key={job.id}
+                  className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm"
+                >
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-slate-800 dark:text-white">
+                        {job.id} • {job.assetName}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {job.site} • {job.regime} • Completed {completionEvent?.at || formatDateLabel(job.dueDate)}
+                      </p>
+                    </div>
+                    <JobStatusPill status={job.status} />
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Verification Snapshot
+                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                      Auditor: {matchedAuditor?.name || 'Assigned provider'} • Evidence files: {job.documents.length}
+                    </p>
+                    {job.documents.length > 0 && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Documents: {job.documents.join(', ')}</p>
+                    )}
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                      Activity Timeline
+                    </p>
+                    <div className="space-y-1.5">
+                      {job.timeline.slice(-4).map((item, index) => (
+                        <p key={`${job.id}-insurer-${index}`} className="text-xs text-slate-600 dark:text-slate-300">
+                          <span className="font-semibold">{item.at}</span> • {item.label} <span className="text-slate-400">({item.actor})</span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      <PaginationControls
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPrevious={() => setPage((previous) => Math.max(1, previous - 1))}
+        onNext={() => setPage((previous) => Math.min(totalPages, previous + 1))}
+      />
+
+      {acceptJob && selectedAuditor && (
+        <div className="fixed inset-0 z-[124] bg-slate-900/45 dark:bg-slate-950/70 backdrop-blur-sm p-4 flex items-center justify-center">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 dark:text-white">Accept Job</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {acceptJob.id} • {acceptJob.assetName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAcceptJobId('')}
+                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              <button
+                type="button"
+                onClick={() => setAcceptAuditMode(AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE)}
+                className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
+                  normalizeAuditExecutionMode(acceptAuditMode) === AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+                    ? 'border-cyan-400 bg-cyan-50/80 dark:bg-cyan-900/20'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/30'
+                }`}
+              >
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Certex Template</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Payout: {formatCurrencyGBP(acceptJobPayoutOptions?.certexTemplateExVat || 0)} ex VAT
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAcceptAuditMode(AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE)}
+                className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
+                  normalizeAuditExecutionMode(acceptAuditMode) === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+                    ? 'border-indigo-400 bg-indigo-50/80 dark:bg-indigo-900/20'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/30'
+                }`}
+              >
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">My Own Software</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Payout: {formatCurrencyGBP(acceptJobPayoutOptions?.ownSoftwareExVat || 0)} ex VAT
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Evidence upload and Certex review required before completion.
+                </p>
+              </button>
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAcceptJobId('')}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmAcceptJob}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white"
+              >
+                Accept Job
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {startAuditJob && (
+        <div className="fixed inset-0 z-[125] bg-slate-900/45 dark:bg-slate-950/70 backdrop-blur-sm p-4 flex items-center justify-center">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 dark:text-white">Choose Audit Method</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {startAuditJob.id} • {startAuditJob.assetName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStartAuditJobId('')}
+                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              <button
+                type="button"
+                onClick={() => setStartAuditMode(AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE)}
+                className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
+                  normalizeAuditExecutionMode(startAuditMode) === AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+                    ? 'border-cyan-400 bg-cyan-50/80 dark:bg-cyan-900/20'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/30'
+                }`}
+              >
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Use Certex Template</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Full in-app checklist workflow and standard payout schedule.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStartAuditMode(AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE)}
+                className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
+                  normalizeAuditExecutionMode(startAuditMode) === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
+                    ? 'border-indigo-400 bg-indigo-50/80 dark:bg-indigo-900/20'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/30'
+                }`}
+              >
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Use My Own Software</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Evidence upload and Certex review required before completion.
+                </p>
+              </button>
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setStartAuditJobId('')}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmAuditStart}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white"
+              >
+                Start Audit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showComposer && (
+        <MarketplaceComposerModal
+          assets={assets}
+          onClose={() => setShowComposer(false)}
+          onSubmit={(payload) => {
+            onCreateJob(payload);
+            setShowComposer(false);
+          }}
+        />
+      )}
+
+      {showAdjustmentModal && selectedAdjustmentJob && (
+        <PricingAdjustmentModal
+          job={selectedAdjustmentJob}
+          onClose={() => {
+            setShowAdjustmentModal(false);
+            setAdjustmentJobId('');
+          }}
+          onSubmit={(payload) => {
+            const wasApplied = onApplyAdjustment(selectedAdjustmentJob.id, payload);
+            if (wasApplied) {
+              setShowAdjustmentModal(false);
+              setAdjustmentJobId('');
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AuditorTemplateRunModal({
+  job,
+  auditor,
+  template,
+  onClose,
+  onUploadEvidence,
+  onRecordFinding,
+  onCompleteAudit,
+}) {
+  const auditQuestions = useMemo(() => {
+    const normalizeQuestion = (question, fallbackId, fallbackText) => ({
+      id: String(question?.id || fallbackId),
+      text: String(question?.text || fallbackText).trim(),
+      weight: Math.max(1, Number(question?.weight || 1)),
+      critical: Boolean(question?.critical),
+    });
+
+    const catalogTemplate = getCatalogTemplateByInspectionTemplate(template, job?.regime);
+    if (Array.isArray(catalogTemplate?.questions) && catalogTemplate.questions.length > 0) {
+      const booleanQuestions = catalogTemplate.questions.filter(
+        (question) => String(question?.type || '').toLowerCase() === 'boolean'
+      );
+      if (booleanQuestions.length > 0) {
+        return booleanQuestions.map((question, index) =>
+          normalizeQuestion(question, `Q-${index + 1}`, `Checklist control ${index + 1}`)
+        );
+      }
+    }
+
+    if (Array.isArray(template?.controls) && template.controls.length > 0) {
+      return template.controls.map((control, index) =>
+        normalizeQuestion(
+          { id: `CTRL-${index + 1}`, text: String(control), weight: 1, critical: false },
+          `CTRL-${index + 1}`,
+          String(control)
+        )
+      );
+    }
+
+    return getDefaultChecklistControlsByRegime(job?.regime).map((control, index) =>
+      normalizeQuestion(
+        { id: `AUTO-${index + 1}`, text: String(control), weight: 1, critical: false },
+        `AUTO-${index + 1}`,
+        String(control)
+      )
+    );
+  }, [template, job?.regime]);
+
+  const [responses, setResponses] = useState({});
+  const [notesByQuestionId, setNotesByQuestionId] = useState({});
+  const [evidenceByQuestionId, setEvidenceByQuestionId] = useState({});
+  const [errorMessage, setErrorMessage] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const workspaceRootRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const questionsPerPage = 10;
+
+  useEffect(() => {
+    const nextResponses = {};
+    const nextNotes = {};
+    const nextEvidence = {};
+    auditQuestions.forEach((question) => {
+      nextResponses[question.id] = '';
+      nextNotes[question.id] = '';
+      nextEvidence[question.id] = [];
+    });
+    setResponses(nextResponses);
+    setNotesByQuestionId(nextNotes);
+    setEvidenceByQuestionId(nextEvidence);
+    setErrorMessage('');
+    setCurrentPage(1);
+  }, [job?.id, template?.id, auditQuestions]);
+
+  const totalPages = Math.max(1, Math.ceil(auditQuestions.length / questionsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  useEffect(() => {
+    if (safeCurrentPage !== currentPage) {
+      setCurrentPage(safeCurrentPage);
+    }
+  }, [safeCurrentPage, currentPage]);
+
+  const resetWorkspaceScrollToTop = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+    if (workspaceRootRef.current) {
+      workspaceRootRef.current.scrollTop = 0;
+    }
+  }, []);
+
+  useEffect(() => {
+    resetWorkspaceScrollToTop();
+
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const frameId = window.requestAnimationFrame(resetWorkspaceScrollToTop);
+    const timeoutId = window.setTimeout(resetWorkspaceScrollToTop, 40);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+    };
+  }, [job?.id, template?.id, safeCurrentPage, resetWorkspaceScrollToTop]);
+
+  const pageStartIndex = (safeCurrentPage - 1) * questionsPerPage;
+  const visibleQuestions = auditQuestions.slice(pageStartIndex, pageStartIndex + questionsPerPage);
+  const failedQuestions = auditQuestions.filter((question) => responses[question.id] === 'no');
+  const criticalFailedQuestions = failedQuestions.filter((question) => question.critical);
+  const missingEvidenceQuestions = failedQuestions.filter((question) => {
+    const evidenceList = evidenceByQuestionId[question.id];
+    return !Array.isArray(evidenceList) || evidenceList.length === 0;
+  });
+  const unansweredCount = auditQuestions.filter((question) => !responses[question.id]).length;
+  const answeredCount = auditQuestions.length - unansweredCount;
+  const completionPercent = auditQuestions.length > 0 ? Math.round((answeredCount / auditQuestions.length) * 100) : 0;
+  const evidenceTotal = Object.values(evidenceByQuestionId).reduce((total, files) => total + (files?.length || 0), 0);
+
+  const applicableQuestions = auditQuestions.filter(
+    (question) => responses[question.id] === 'yes' || responses[question.id] === 'no'
+  );
+  const scorePossible = applicableQuestions.reduce((total, question) => total + Number(question.weight || 1), 0);
+  const scoreEarned = applicableQuestions.reduce((total, question) => {
+    return total + (responses[question.id] === 'yes' ? Number(question.weight || 1) : 0);
+  }, 0);
+  const scorePercent = scorePossible > 0 ? Math.round((scoreEarned / scorePossible) * 100) : 0;
+  const configuredPassPercent =
+    Number(template?.passScore) > 0 && Number(template?.maxScore) > 0
+      ? Math.round((Number(template.passScore) / Number(template.maxScore)) * 100)
+      : 80;
+  const effectivePassPercent = Math.max(60, Math.min(95, configuredPassPercent || 80));
+  const isPassing = scorePossible > 0 && scorePercent >= effectivePassPercent && criticalFailedQuestions.length === 0;
+
+  const submitCompletion = () => {
+    if (unansweredCount > 0) {
+      setErrorMessage(`Complete all checklist questions before completion (${unansweredCount} remaining).`);
+      return;
+    }
+    if (missingEvidenceQuestions.length > 0) {
+      setErrorMessage(`Attach evidence for all "No" responses before completion (${missingEvidenceQuestions.length} missing).`);
+      return;
+    }
+
+    failedQuestions.forEach((question) => {
+      onRecordFinding?.({
+        control: question.text,
+        notes: notesByQuestionId[question.id] || '',
+        severity: question.critical ? 'high' : 'medium',
+      });
+    });
+
+    const didComplete = onCompleteAudit?.();
+    if (didComplete === false) {
+      return;
+    }
+    onClose?.();
+  };
+
+  const goToNextPage = () => {
+    setErrorMessage('');
+    setCurrentPage((previous) => Math.min(totalPages, previous + 1));
+  };
+
+  const goToPreviousPage = () => {
+    setErrorMessage('');
+    setCurrentPage((previous) => Math.max(1, previous - 1));
+  };
+
+  const setQuestionResponse = (questionId, value) => {
+    setResponses((previous) => ({
+      ...previous,
+      [questionId]: value,
+    }));
+    setErrorMessage('');
+  };
+
+  const appendEvidenceFiles = (questionId, files) => {
+    const selectedFiles = Array.from(files || []);
+    if (selectedFiles.length === 0) {
+      return;
+    }
+    const fileNames = selectedFiles.map((file) => file.name);
+    setEvidenceByQuestionId((previous) => ({
+      ...previous,
+      [questionId]: [...(previous[questionId] || []), ...fileNames],
+    }));
+    onUploadEvidence?.(selectedFiles);
+  };
+
+  const canSaveAndClose = unansweredCount === 0;
+  const saveAndClose = () => {
+    if (!canSaveAndClose) {
+      setErrorMessage(`Answer all checklist questions before saving (${unansweredCount} remaining).`);
+      return;
+    }
+    onClose?.();
+  };
+
+  return (
+    <div
+      ref={workspaceRootRef}
+      className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm"
+    >
+      <div className="h-[calc(100dvh-12rem)] md:h-[calc(100dvh-10.5rem)] w-full bg-white dark:bg-slate-900 flex flex-col">
+        <div className="px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-xl md:text-2xl font-black text-slate-800 dark:text-white">Audit Template Workspace</h3>
+            <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
+              {job.id} • {job.assetName} • {job.regime} • {auditor.name}
+            </p>
+            <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Template: {template?.name || `${job.regime} default checklist`}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+
+        <div className="px-4 md:px-6 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
+              Page {safeCurrentPage}/{totalPages}
+            </span>
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+              Answered {answeredCount}/{auditQuestions.length}
+            </span>
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              Score {scorePercent}% ({scoreEarned}/{Math.max(scorePossible, 1)})
+            </span>
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+              No responses {failedQuestions.length}
+            </span>
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+              Critical fails {criticalFailedQuestions.length}
+            </span>
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+              Evidence files {evidenceTotal}
+            </span>
+            <span
+              className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                isPassing
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+              }`}
+            >
+              {isPassing ? 'Currently passing' : `Needs ${effectivePassPercent}% + no critical fails`}
+            </span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-cyan-500 transition-all duration-300 ease-out"
+              style={{ width: `${Math.max(2, completionPercent)}%` }}
+            />
+          </div>
+        </div>
+
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
+          {visibleQuestions.map((question, index) => {
+            const questionNumber = pageStartIndex + index + 1;
+            const response = responses[question.id] || '';
+            const evidenceList = evidenceByQuestionId[question.id] || [];
+            const requiresEvidence = response === 'no';
+
+            const responseButtonStyles = {
+              yes: response === 'yes'
+                ? 'bg-emerald-500 text-white shadow'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20',
+              no: response === 'no'
+                ? 'bg-rose-500 text-white shadow'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-rose-50 dark:hover:bg-rose-900/20',
+              na: response === 'na'
+                ? 'bg-slate-700 text-white shadow'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800',
+            };
+
+            return (
+              <article
+                key={`${job.id}-${question.id}`}
+                className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3 md:p-4 space-y-3"
+              >
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Question {questionNumber}
+                    </p>
+                    <p className="text-sm md:text-base font-semibold text-slate-800 dark:text-slate-100 mt-1">{question.text}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                      Weight {question.weight}
+                    </span>
+                    {question.critical && (
+                      <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+                        Critical
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="inline-flex rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setQuestionResponse(question.id, 'yes')}
+                    className={`px-4 py-2 text-xs font-bold transition-all duration-200 ${responseButtonStyles.yes}`}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuestionResponse(question.id, 'no')}
+                    className={`px-4 py-2 text-xs font-bold transition-all duration-200 border-l border-slate-200 dark:border-slate-700 ${responseButtonStyles.no}`}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuestionResponse(question.id, 'na')}
+                    className={`px-4 py-2 text-xs font-bold transition-all duration-200 border-l border-slate-200 dark:border-slate-700 ${responseButtonStyles.na}`}
+                  >
+                    N/A
+                  </button>
+                </div>
+
+                <textarea
+                  value={notesByQuestionId[question.id] || ''}
+                  onChange={(event) =>
+                    setNotesByQuestionId((previous) => ({
+                      ...previous,
+                      [question.id]: event.target.value,
+                    }))
+                  }
+                  rows={2}
+                  placeholder="Observation notes, defect context, or action recommendation..."
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs md:text-sm"
+                />
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-bold cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    Upload Evidence
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(event) => appendEvidenceFiles(question.id, event.target.files)}
+                    />
+                  </label>
+                  <label className="px-2.5 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800/40 text-[11px] font-bold cursor-pointer hover:bg-cyan-100 dark:hover:bg-cyan-900/30 transition-colors inline-flex items-center gap-1.5 text-cyan-700 dark:text-cyan-300">
+                    <Camera className="w-3.5 h-3.5" />
+                    Camera
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(event) => appendEvidenceFiles(question.id, event.target.files)}
+                    />
+                  </label>
+                  {requiresEvidence && (
+                    <span
+                      className={`text-[11px] font-semibold ${
+                        evidenceList.length > 0
+                          ? 'text-emerald-700 dark:text-emerald-300'
+                          : 'text-rose-600 dark:text-rose-300'
+                      }`}
+                    >
+                      {evidenceList.length > 0 ? 'Evidence attached' : 'Evidence required for "No" response'}
+                    </span>
+                  )}
+                </div>
+
+                {evidenceList.length > 0 && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Files: {evidenceList.join(', ')}
+                  </p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="px-4 md:px-6 py-4 border-t border-slate-200 dark:border-slate-700 space-y-2">
+          {errorMessage && <p className="text-xs font-semibold text-rose-600 dark:text-rose-300">{errorMessage}</p>}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Step-through mode: 10 questions per page. Complete all pages to finish the audit.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={saveAndClose}
+                disabled={!canSaveAndClose}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
+                  canSaveAndClose
+                    ? 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                    : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                Save & Close
+              </button>
+              <button
+                type="button"
+                onClick={goToPreviousPage}
+                disabled={safeCurrentPage <= 1}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
+                  safeCurrentPage <= 1
+                    ? 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-500 cursor-not-allowed'
+                    : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                Previous Page
+              </button>
+              {safeCurrentPage < totalPages ? (
+                <button
+                  type="button"
+                  onClick={goToNextPage}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white transition-colors"
+                >
+                  Next Page
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={submitCompletion}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                >
+                  Complete Audit
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PricingAdjustmentModal({ job, onClose, onSubmit }) {
+  const adjustmentDefaults = {
+    scope_up: { amount: 120, reasonCode: 'scope_change_up' },
+    scope_down: { amount: -80, reasonCode: 'scope_change_down' },
+    service_credit: { amount: -60, reasonCode: 'service_credit' },
+    cancellation: { amount: 95, reasonCode: 'cancellation_fee' },
+    no_show: { amount: 140, reasonCode: 'no_show_fee' },
+  };
+
+  const [type, setType] = useState('scope_up');
+  const [amountExVatDelta, setAmountExVatDelta] = useState(adjustmentDefaults.scope_up.amount);
+  const [reasonCode, setReasonCode] = useState(adjustmentDefaults.scope_up.reasonCode);
+  const [evidenceRef, setEvidenceRef] = useState('');
+  const [approvedByUserId, setApprovedByUserId] = useState('ops_manager');
+
+  useEffect(() => {
+    const defaults = adjustmentDefaults[type] || adjustmentDefaults.scope_up;
+    setAmountExVatDelta(defaults.amount);
+    setReasonCode(defaults.reasonCode);
+  }, [type]);
+
+  return (
+    <div className="fixed inset-0 z-[122] bg-slate-900/45 dark:bg-slate-950/70 backdrop-blur-sm p-4 flex items-center justify-center">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-black text-slate-800 dark:text-white">Apply Pricing Adjustment</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {job.id} • {job.assetName}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit({
+              type,
+              reasonCode,
+              evidenceRef,
+              approvedByUserId,
+              amountExVatDelta: Number(amountExVatDelta || 0),
+            });
+          }}
+          className="p-5 space-y-4"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Adjustment Type
+              </label>
+              <select
+                value={type}
+                onChange={(event) => setType(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              >
+                <option value="scope_up">Scope change up</option>
+                <option value="scope_down">Scope change down</option>
+                <option value="service_credit">Service credit</option>
+                <option value="cancellation">Cancellation fee</option>
+                <option value="no_show">No-show fee</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Amount Ex VAT
+              </label>
+              <input
+                type="number"
+                step="1"
+                value={amountExVatDelta}
+                onChange={(event) => setAmountExVatDelta(Number(event.target.value || 0))}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Reason Code
+              </label>
+              <input
+                value={reasonCode}
+                onChange={(event) => setReasonCode(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Approved By
+              </label>
+              <input
+                value={approvedByUserId}
+                onChange={(event) => setApprovedByUserId(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+              Evidence Reference
+            </label>
+            <input
+              value={evidenceRef}
+              onChange={(event) => setEvidenceRef(event.target.value)}
+              placeholder="job-log://..., chat://..., or document ref"
+              className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+            />
+          </div>
+
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 p-3 text-xs text-slate-600 dark:text-slate-300">
+            This creates a new immutable quote version and records an auditable adjustment event.
+          </div>
+
+          <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white"
+            >
+              Apply Adjustment
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function MarketplaceComposerModal({ assets, onClose, onSubmit }) {
+  const [assetId, setAssetId] = useState(assets[0]?.id || '');
+  const [dueDate, setDueDate] = useState(() => {
+    const target = new Date();
+    target.setDate(target.getDate() + 7);
+    return target.toISOString().slice(0, 10);
+  });
+  const [scopeTemplate, setScopeTemplate] = useState(MARKETPLACE_SCOPE_TEMPLATES[0].id);
+  const [assetCount, setAssetCount] = useState(1);
+  const [complexity, setComplexity] = useState('standard');
+  const [equipment, setEquipment] = useState('none');
+  const [travelKm, setTravelKm] = useState(12);
+  const [weekendAccess, setWeekendAccess] = useState(false);
+  const [expedite, setExpedite] = useState(false);
+  const [notes, setNotes] = useState('');
+
+  const selectedAsset = useMemo(
+    () => assets.find((asset) => asset.id === assetId) || assets[0] || null,
+    [assets, assetId]
+  );
+
+  const estimatedHours = useMemo(
+    () => estimateScopeHours(scopeTemplate, assetCount, weekendAccess),
+    [scopeTemplate, assetCount, weekendAccess]
+  );
+
+  const scope = useMemo(
+    () =>
+      normalizeMarketplaceScope({
+        template: scopeTemplate,
+        assetCount,
+        estimatedHours,
+        complexity,
+        equipment,
+        travelKm,
+        weekendAccess,
+        expedite,
+      }),
+    [scopeTemplate, assetCount, estimatedHours, complexity, equipment, travelKm, weekendAccess, expedite]
+  );
+
+  const quote = useMemo(
+    () =>
+      calculateMarketplaceQuote({
+        scope,
+        regime: selectedAsset?.regime,
+        site: selectedAsset?.site,
+      }),
+    [scope, selectedAsset]
+  );
+
+  const dispatchSlaMins = useMemo(() => resolveDispatchSlaMinutes(scope), [scope]);
+
+  return (
+    <div className="fixed inset-0 z-[120] bg-slate-900/40 dark:bg-slate-950/65 backdrop-blur-sm p-4 flex items-center justify-center">
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <h3 className="text-lg font-black text-slate-800 dark:text-white">Advertise Audit Job with Scope Builder</h3>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!selectedAsset) {
+              return;
+            }
+            onSubmit({
+              assetId: selectedAsset.id,
+              dueDate,
+              notes,
+              scope,
+              pricing: quote,
+              dispatchSlaMins,
+            });
+          }}
+          className="p-5 space-y-4"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Asset
+              </label>
+              <select
+                required
+                value={assetId}
+                onChange={(event) => setAssetId(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              >
+                {assets.map((asset) => (
+                  <option key={asset.id} value={asset.id}>
+                    {asset.id} • {asset.name} ({asset.regime})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Due Date
+              </label>
+              <input
+                required
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+                type="date"
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Scope Template
+              </label>
+              <select
+                value={scopeTemplate}
+                onChange={(event) => setScopeTemplate(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              >
+                {MARKETPLACE_SCOPE_TEMPLATES.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Asset Count
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="30"
+                value={assetCount}
+                onChange={(event) => setAssetCount(Number(event.target.value || 1))}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Estimated Hours
+              </label>
+              <input
+                readOnly
+                value={estimatedHours}
+                className="w-full rounded-xl px-3 py-2 bg-slate-100 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Access Complexity
+              </label>
+              <select
+                value={complexity}
+                onChange={(event) => setComplexity(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              >
+                <option value="standard">Standard</option>
+                <option value="restricted">Restricted access</option>
+                <option value="out_of_hours">Out of hours</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Equipment
+              </label>
+              <select
+                value={equipment}
+                onChange={(event) => setEquipment(event.target.value)}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              >
+                <option value="none">None</option>
+                <option value="specialist_instruments">Specialist instruments</option>
+                <option value="rope_access">Rope access</option>
+                <option value="confined_space">Confined space</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                Travel (km)
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="300"
+                value={travelKm}
+                onChange={(event) => setTravelKm(Number(event.target.value || 0))}
+                className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+              <input type="checkbox" checked={weekendAccess} onChange={(event) => setWeekendAccess(event.target.checked)} />
+              Weekend access required
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+              <input type="checkbox" checked={expedite} onChange={(event) => setExpedite(event.target.checked)} />
+              Expedite dispatch SLA
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+              Access Notes
+            </label>
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows="4"
+              placeholder="Any escort requirements, operating hours, or permit constraints..."
+              className="w-full rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm resize-none"
+            />
+          </div>
+
+          <div className="rounded-xl border border-cyan-200 dark:border-cyan-800/30 bg-cyan-50/70 dark:bg-cyan-900/10 p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Instant Quote</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <p className="text-cyan-700/80 dark:text-cyan-300/80">VAT</p>
+                <p className="font-bold text-cyan-700 dark:text-cyan-300">{formatCurrencyGBP(quote.vatAmount)}</p>
+              </div>
+              <div>
+                <p className="text-cyan-700/80 dark:text-cyan-300/80">Total inc VAT</p>
+                <p className="font-black text-cyan-700 dark:text-cyan-300">{formatCurrencyGBP(quote.total)}</p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-cyan-700/90 dark:text-cyan-300/90">
+              Dispatch SLA target: {dispatchSlaMins} minutes from publish. Model {quote.pricingModelVersion}.
+            </p>
+          </div>
+
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button type="submit" className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white">
+              Publish Job
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function JobStatusPill({ status }) {
+  const map = {
+    open: 'bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20',
+    offered: 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:border-violet-500/20',
+    assigned: 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-400 dark:border-indigo-500/20',
+    in_progress: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20',
+    awaiting_review: 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/20',
+    completed: 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20',
+  };
+
+  return (
+    <span className={`px-2.5 py-1 border inline-flex text-[10px] md:text-xs font-bold uppercase tracking-wider rounded-md shadow-sm ${map[status] || map.open}`}>
+      {status.replace('_', ' ')}
+    </span>
+  );
+}
+
+function MatchScoreBar({ score }) {
+  return (
+    <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+      <div
+        className={`h-full ${
+          score >= 85 ? 'bg-emerald-500' : score >= 70 ? 'bg-cyan-500' : score >= 50 ? 'bg-amber-500' : 'bg-rose-500'
+        }`}
+        style={{ width: `${score}%` }}
+      />
+    </div>
+  );
+}
+
+function SparklineChart({ points }) {
+  if (!points || points.length === 0) {
+    return null;
+  }
+
+  const width = 620;
+  const height = 180;
+  const padding = 12;
+  const max = Math.max(...points);
+  const min = Math.min(...points);
+  const range = Math.max(1, max - min);
+
+  const toCoordinates = (value, index) => {
+    const x = padding + (index / (points.length - 1 || 1)) * (width - padding * 2);
+    const y = height - padding - ((value - min) / range) * (height - padding * 2);
+    return { x, y };
+  };
+
+  const coordinates = points.map(toCoordinates);
+  const linePath = coordinates
+    .map((coordinate, index) => `${index === 0 ? 'M' : 'L'} ${coordinate.x.toFixed(2)} ${coordinate.y.toFixed(2)}`)
+    .join(' ');
+
+  const fillPath = `${linePath} L ${width - padding} ${height - padding} L ${padding} ${height - padding} Z`;
+
+  return (
+    <div className="rounded-xl border border-cyan-100 dark:border-cyan-900/40 bg-gradient-to-br from-cyan-50/70 to-emerald-50/70 dark:from-slate-900 dark:to-slate-900 p-4">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-36">
+        <defs>
+          <linearGradient id="sparklineStroke" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#06b6d4" />
+            <stop offset="100%" stopColor="#10b981" />
+          </linearGradient>
+          <linearGradient id="sparklineFill" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="rgba(6, 182, 212, 0.22)" />
+            <stop offset="100%" stopColor="rgba(16, 185, 129, 0.02)" />
+          </linearGradient>
+        </defs>
+        <path d={fillPath} fill="url(#sparklineFill)" />
+        <path d={linePath} fill="none" stroke="url(#sparklineStroke)" strokeWidth="3" strokeLinecap="round" />
+        {coordinates.map((coordinate, index) => (
+          <circle key={index} cx={coordinate.x} cy={coordinate.y} r={3.8} fill={index === coordinates.length - 1 ? '#10b981' : '#06b6d4'} />
+        ))}
+      </svg>
+      <div className="flex items-center justify-between mt-2 text-xs text-slate-500 dark:text-slate-400">
+        <span>12 months ago</span>
+        <span className="font-semibold text-slate-700 dark:text-slate-200">Current cycle</span>
+      </div>
+    </div>
+  );
+}
+
+function UrgentAssetItem({ asset }) {
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/40 p-3 hover-lift">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-slate-800 dark:text-white">{asset.name}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            {asset.id} • {asset.site}
+          </p>
+        </div>
+        <StatusPill status={asset.status} />
+      </div>
+      <div className="mt-2 text-xs text-slate-600 dark:text-slate-300 flex items-center justify-between">
+        <span>{formatDateLabel(asset.nextDue)}</span>
+        <span className="font-semibold">{formatRelativeDueLabel(asset.nextDue)}</span>
+      </div>
+    </div>
+  );
+}
+
+function PaginationControls({ currentPage, totalPages, onPrevious, onNext }) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/85 px-4 py-3">
+      <button
+        onClick={onPrevious}
+        disabled={currentPage <= 1}
+        className="px-3 py-1.5 rounded-lg text-sm font-bold border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        Previous
+      </button>
+      <span className="text-xs text-slate-500 dark:text-slate-400">
+        Page {currentPage} of {totalPages}
+      </span>
+      <button
+        onClick={onNext}
+        disabled={currentPage >= totalPages}
+        className="px-3 py-1.5 rounded-lg text-sm font-bold border border-slate-200 dark:border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        Next
+      </button>
+    </div>
+  );
+}
+
+function UploadDropZone({ onFilesSelected }) {
+  const [isDragging, setIsDragging] = useState(false);
+  const inputRef = useRef(null);
+
+  const emitFiles = (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) {
+      return;
+    }
+    onFilesSelected(files);
+  };
+
+  return (
+    <div
+      onDragOver={(event) => {
+        event.preventDefault();
+        setIsDragging(true);
+      }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setIsDragging(false);
+        emitFiles(event.dataTransfer.files);
+      }}
+      className={`rounded-xl border-2 border-dashed p-4 transition-colors ${
+        isDragging
+          ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-900/10'
+          : 'border-slate-300 dark:border-slate-600 bg-slate-50/70 dark:bg-slate-900/20'
+      }`}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept=".pdf"
+        className="hidden"
+        onChange={(event) => emitFiles(event.target.files)}
+      />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <UploadCloud className="w-5 h-5 text-cyan-600 dark:text-cyan-400 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-slate-800 dark:text-white">Drop provider certificates here</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              PDFs are queued for parsing and metadata extraction.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => inputRef.current?.click()}
+          className="px-3 py-2 rounded-lg text-sm font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+        >
+          Browse Files
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CoverageMap({ providers, selectedProviderId, onSelect }) {
+  const pinPositions = [
+    { left: '20%', top: '30%' },
+    { left: '48%', top: '45%' },
+    { left: '72%', top: '24%' },
+    { left: '60%', top: '68%' },
+    { left: '34%', top: '62%' },
+    { left: '80%', top: '54%' },
+  ];
+
+  return (
+    <div className="relative h-64 rounded-xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-slate-100 to-cyan-50 dark:from-slate-900 dark:to-slate-900 overflow-hidden">
+      <div className="absolute inset-0 opacity-40 dark:opacity-20">
+        <div className="absolute inset-y-0 left-1/4 w-px bg-slate-300 dark:bg-slate-700" />
+        <div className="absolute inset-y-0 left-1/2 w-px bg-slate-300 dark:bg-slate-700" />
+        <div className="absolute inset-y-0 left-3/4 w-px bg-slate-300 dark:bg-slate-700" />
+        <div className="absolute inset-x-0 top-1/3 h-px bg-slate-300 dark:bg-slate-700" />
+        <div className="absolute inset-x-0 top-2/3 h-px bg-slate-300 dark:bg-slate-700" />
+      </div>
+      <div className="absolute top-3 left-3 inline-flex items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-white/80 dark:bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+        <LocateFixed className="w-3.5 h-3.5 text-cyan-500" />
+        Live dispatch coverage
+      </div>
+
+      {providers.map((provider, index) => {
+        const position = pinPositions[index % pinPositions.length];
+        const isSelected = provider.id === selectedProviderId;
+        return (
+          <button
+            key={provider.id}
+            onClick={() => onSelect(provider.id)}
+            className={`absolute -translate-x-1/2 -translate-y-1/2 transition-all ${
+              isSelected ? 'scale-110 z-20' : 'hover:scale-105 z-10'
+            }`}
+            style={{ left: position.left, top: position.top }}
+            title={provider.name}
+          >
+            <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center text-xs font-black ${
+              isSelected
+                ? 'bg-cyan-600 border-cyan-200 text-white shadow-lg'
+                : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200'
+            }`}>
+              {provider.name.charAt(0)}
+            </div>
+            {isSelected && <span className="absolute -inset-1 rounded-full border border-cyan-400/50 pulse-soft" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CommandPalette({ isOpen, onClose, onAction }) {
+  const [query, setQuery] = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setQuery('');
+      return;
+    }
+    const timeoutId = setTimeout(() => inputRef.current?.focus(), 10);
+    return () => clearTimeout(timeoutId);
+  }, [isOpen]);
+
+  const actions = useMemo(
+    () => [
+      { id: 'go-dashboard', label: 'Go to Dashboard', description: 'View estate compliance overview', icon: LayoutDashboard },
+      { id: 'go-landing', label: 'Open Landing Pages', description: 'Review public website sitemap pages', icon: MapIcon },
+      { id: 'go-onboarding', label: 'Open Onboarding Portal', description: 'View persona onboarding journeys', icon: Building2 },
+      { id: 'go-assets', label: 'Open Asset Register', description: 'Inspect assets, due dates, and status', icon: Box },
+      { id: 'go-vault', label: 'Open Evidence Vault', description: 'Inspect and verify certificates', icon: Lock },
+      { id: 'go-providers', label: 'Open Provider Network', description: 'Find and dispatch providers', icon: Users },
+      { id: 'go-marketplace', label: 'Open Audit Marketplace', description: 'Advertise and match audit jobs', icon: ClipboardList },
+      { id: 'go-help', label: 'Open Help Center', description: 'View product guides and placeholders', icon: FileText },
+      { id: 'new-asset', label: 'Add New Asset', description: 'Create an asset in the register', icon: Plus },
+      { id: 'request-inspection', label: 'Request Inspection', description: 'Open dispatch flow', icon: Calendar },
+      { id: 'new-programme', label: 'Create Recurring Programme', description: 'Schedule recurring audits and inspections', icon: History },
+      { id: 'scan-lookup', label: 'Scan QR / Lookup', description: 'Open asset or certificate from a QR value', icon: ScanLine },
+      { id: 'post-audit-job', label: 'Post Audit Job', description: 'Create a new marketplace listing', icon: Sparkles },
+      { id: 'export-audit', label: 'Export Audit Pack', description: 'Generate current compliance export', icon: Download },
+      { id: 'copy-audit-link', label: 'Copy Audit Link', description: 'Create secure read-only access', icon: Share2 },
+    ],
+    []
+  );
+
+  const filteredActions = actions.filter((action) => {
+    const term = query.trim().toLowerCase();
+    if (!term) {
+      return true;
+    }
+    return (
+      action.label.toLowerCase().includes(term) ||
+      action.description.toLowerCase().includes(term)
+    );
+  });
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[120] bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="max-w-2xl mx-auto mt-8 md:mt-16 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 shadow-2xl overflow-hidden float-in"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="px-4 md:px-5 py-4 border-b border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-2">
+            <Command className="w-5 h-5 text-cyan-500" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search actions..."
+              className="w-full bg-transparent outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+            />
+            <button onClick={onClose} className="text-xs font-bold px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+              ESC
+            </button>
+          </div>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto p-2">
+          {filteredActions.length === 0 ? (
+            <div className="px-3 py-6 text-sm text-slate-500 dark:text-slate-400 text-center">
+              No matching action for "{query}".
+            </div>
+          ) : (
+            filteredActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.id}
+                  onClick={() => onAction(action.id)}
+                  className="w-full text-left rounded-xl px-3 py-3 hover:bg-slate-100 dark:hover:bg-slate-700/70 transition-colors flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyan-50 dark:bg-cyan-900/25 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800 dark:text-white">{action.label}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{action.description}</p>
+                    </div>
+                  </div>
+                  <ArrowUpRight className="w-4 h-4 text-slate-400" />
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useQrDataUrl(value, size = 640) {
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  useEffect(() => {
+    if (!value) {
+      setQrDataUrl('');
+      return;
+    }
+
+    let isCancelled = false;
+    QRCode.toDataURL(value, {
+      width: size,
+      margin: 1,
+      errorCorrectionLevel: 'H',
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff',
+      },
+    })
+      .then((dataUrl) => {
+        if (!isCancelled) {
+          setQrDataUrl(dataUrl);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setQrDataUrl('');
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [value, size]);
+
+  return qrDataUrl;
+}
+
+function QrCodePreview({ value, size = 220, withLogo = true }) {
+  const qrDataUrl = useQrDataUrl(value, size * 3);
+
+  return (
+    <div
+      className="relative rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+      style={{ width: size, height: size }}
+    >
+      {qrDataUrl ? (
+        <img src={qrDataUrl} alt="CertEx QR code" className="w-full h-full rounded-xl" />
+      ) : (
+        <div className="w-full h-full rounded-xl bg-slate-100 flex items-center justify-center">
+          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        </div>
+      )}
+      {withLogo && (
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-white/95 border border-slate-200 shadow-sm flex items-center justify-center text-[8px] font-black tracking-wide text-slate-700 text-center leading-tight px-1">
+            CertEx
+            <br />
+            LOGO
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScanLookupModal({ isOpen, onClose, onResolve }) {
+  const [inputValue, setInputValue] = useState('');
+  const [cameraStatus, setCameraStatus] = useState('idle');
+  const [cameraMessage, setCameraMessage] = useState('');
+  const [lastDetection, setLastDetection] = useState('');
+  const inputRef = useRef(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const detectorRef = useRef(null);
+  const animationFrameRef = useRef(0);
+  const lastDetectAtRef = useRef(0);
+  const isOpenRef = useRef(isOpen);
+
+  const stopCamera = useCallback((nextStatus = 'idle') => {
+    if (animationFrameRef.current) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = 0;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    detectorRef.current = null;
+    setCameraStatus(nextStatus);
+  }, []);
+
+  const startCameraScan = useCallback(async () => {
+    if (typeof window === 'undefined') {
+      setCameraStatus('unsupported');
+      setCameraMessage('Camera scanning is unavailable in this environment.');
+      return;
+    }
+
+    if (!window.navigator?.mediaDevices?.getUserMedia) {
+      setCameraStatus('unsupported');
+      setCameraMessage('Camera access is not available in this browser/device.');
+      return;
+    }
+
+    if (typeof window.BarcodeDetector !== 'function') {
+      setCameraStatus('unsupported');
+      setCameraMessage('BarcodeDetector is not supported. Use manual paste or Chrome/Edge.');
+      return;
+    }
+
+    try {
+      stopCamera('starting');
+      setCameraMessage('');
+      setLastDetection('');
+
+      const preferredFormats = [
+        'qr_code',
+        'code_128',
+        'code_39',
+        'ean_13',
+        'ean_8',
+        'upc_a',
+        'upc_e',
+        'data_matrix',
+        'pdf417',
+        'aztec',
+      ];
+
+      const supportedFormats = typeof window.BarcodeDetector.getSupportedFormats === 'function'
+        ? await window.BarcodeDetector.getSupportedFormats().catch(() => [])
+        : [];
+      const detectorFormats =
+        supportedFormats.length > 0
+          ? preferredFormats.filter((format) => supportedFormats.includes(format))
+          : preferredFormats;
+
+      detectorRef.current = new window.BarcodeDetector(
+        detectorFormats.length > 0 ? { formats: detectorFormats } : undefined
+      );
+
+      const stream = await window.navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+
+      if (!videoRef.current) {
+        stopCamera('error');
+        setCameraMessage('Unable to start camera preview.');
+        return;
+      }
+
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      setCameraStatus('active');
+
+      const scanFrame = async () => {
+        if (!isOpenRef.current || !videoRef.current || !detectorRef.current) {
+          return;
+        }
+
+        const video = videoRef.current;
+
+        if (video.readyState >= 2) {
+          const now = window.performance.now();
+          if (now - lastDetectAtRef.current >= 250) {
+            lastDetectAtRef.current = now;
+            try {
+              const detections = await detectorRef.current.detect(video);
+              if (Array.isArray(detections) && detections.length > 0) {
+                const detectedValue = detections.map(extractBarcodeRawValue).find((value) => value);
+                if (detectedValue) {
+                  setInputValue(detectedValue);
+                  setLastDetection(detectedValue);
+                  const didResolve = onResolve(detectedValue);
+                  if (didResolve) {
+                    stopCamera('idle');
+                    return;
+                  }
+                  setCameraMessage('Code detected but no matching asset/certificate was found.');
+                }
+              }
+            } catch {
+              stopCamera('error');
+              setCameraMessage('Live scan failed. Check camera permissions and retry.');
+              return;
+            }
+          }
+        }
+
+        animationFrameRef.current = window.requestAnimationFrame(scanFrame);
+      };
+
+      animationFrameRef.current = window.requestAnimationFrame(scanFrame);
+    } catch (error) {
+      const errorName = error && typeof error === 'object' ? error.name : '';
+      if (errorName === 'NotAllowedError') {
+        setCameraMessage('Camera permission denied. Enable permission and retry.');
+      } else if (errorName === 'NotFoundError') {
+        setCameraMessage('No camera detected on this device.');
+      } else {
+        setCameraMessage('Unable to start camera scanning.');
+      }
+      stopCamera('error');
+    }
+  }, [onResolve, stopCamera]);
+
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+
+    if (!isOpen) {
+      stopCamera('idle');
+      setInputValue('');
+      setLastDetection('');
+      setCameraMessage('');
+      return;
+    }
+    const timeoutId = setTimeout(() => inputRef.current?.focus(), 20);
+    return () => {
+      clearTimeout(timeoutId);
+      stopCamera('idle');
+    };
+  }, [isOpen, stopCamera]);
+
+  const toggleCameraScan = () => {
+    if (cameraStatus === 'active' || cameraStatus === 'starting') {
+      stopCamera('idle');
+      return;
+    }
+    startCameraScan();
+  };
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[125] bg-slate-900/45 dark:bg-slate-950/70 backdrop-blur-sm p-4 flex items-center justify-center">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+            <ScanLine className="w-5 h-5 text-cyan-500" />
+            Scan / Lookup
+          </h3>
+          <button
+            onClick={() => {
+              stopCamera('idle');
+              onClose();
+            }}
+            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+          >
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onResolve(inputValue);
+          }}
+          className="p-5 space-y-4"
+        >
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3 space-y-3">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Live Camera Scan
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Use the camera to scan a QR/barcode without manual paste.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={toggleCameraScan}
+                className={`px-3 py-2 rounded-lg text-xs font-bold border inline-flex items-center gap-1 ${
+                  cameraStatus === 'active' || cameraStatus === 'starting'
+                    ? 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800/40 text-rose-700 dark:text-rose-300'
+                    : 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-200 dark:border-cyan-800/40 text-cyan-700 dark:text-cyan-300'
+                }`}
+              >
+                {cameraStatus === 'active' || cameraStatus === 'starting' ? (
+                  <>
+                    <CameraOff className="w-3.5 h-3.5" />
+                    Stop Camera
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-3.5 h-3.5" />
+                    Start Camera
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-900">
+              {cameraStatus === 'active' || cameraStatus === 'starting' ? (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="w-full h-44 object-cover"
+                />
+              ) : (
+                <div className="h-44 flex flex-col items-center justify-center gap-2 text-slate-300">
+                  {cameraStatus === 'unsupported' ? (
+                    <CameraOff className="w-6 h-6" />
+                  ) : cameraStatus === 'error' ? (
+                    <AlertTriangle className="w-6 h-6 text-amber-300" />
+                  ) : (
+                    <Camera className="w-6 h-6" />
+                  )}
+                  <p className="text-xs text-center px-4">
+                    {cameraStatus === 'starting'
+                      ? 'Starting camera...'
+                      : 'Camera preview appears here when scanning starts.'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {(cameraMessage || lastDetection) && (
+              <div className="space-y-1">
+                {cameraMessage && (
+                  <p className="text-xs text-slate-600 dark:text-slate-300">{cameraMessage}</p>
+                )}
+                {lastDetection && (
+                  <p className="text-xs font-mono text-cyan-700 dark:text-cyan-300 break-all">
+                    Last detection: {lastDetection}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+              Paste scanned QR value
+            </label>
+            <input
+              ref={inputRef}
+              value={inputValue}
+              onChange={(event) => setInputValue(event.target.value)}
+              placeholder="AST-001, CERT-2026-1031, or https://...#asset=AST-001"
+              className="w-full rounded-xl px-3 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm outline-none focus:ring-2 focus:ring-cyan-500"
+            />
+          </div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3">
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Supported formats</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              `AST-xxx`, `CERT-yyyy-nnnn`, or CertEx deep links generated from asset labels/certificates.
+            </p>
+          </div>
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                stopCamera('idle');
+                onClose();
+              }}
+              className="px-4 py-2 rounded-lg text-sm font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200"
+            >
+              Cancel
+            </button>
+            <button type="submit" className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white">
+              Open Record
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AssetQrLabelModal({ asset, latestCertificate, certificateCount, onClose, onNotify }) {
+  const assetLink = buildAssetDeepLink(asset.id);
+  const qrDataUrl = useQrDataUrl(assetLink, 900);
+  const latestCertificateLink = latestCertificate ? buildCertificateDeepLink(latestCertificate.id) : '';
+
+  const copyValue = async (value, successMessage) => {
+    const didCopy = await navigator.clipboard
+      .writeText(value)
+      .then(() => true)
+      .catch(() => false);
+
+    if (didCopy) {
+      onNotify(successMessage, 'success');
+      return;
+    }
+
+    window.prompt('Copy value', value);
+  };
+
+  const printLabel = () => {
+    if (!qrDataUrl) {
+      onNotify('QR code is still generating. Try again in a second.', 'info');
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=820,height=980');
+    if (!printWindow) {
+      onNotify('Unable to open print window. Allow popups and try again.', 'info');
+      return;
+    }
+
+    const certificateLine = latestCertificate
+      ? `${escapeHtml(latestCertificate.id)} • exp ${escapeHtml(formatDateLabel(latestCertificate.expiryDate))}`
+      : 'No certificate yet';
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>CertEx Asset Label</title>
+          <style>
+            body { margin: 0; font-family: Arial, sans-serif; background: #e2e8f0; padding: 28px; }
+            .label { width: 360px; border-radius: 16px; border: 1px solid #cbd5e1; background: white; padding: 18px; }
+            .brand { font-weight: 800; color: #0f172a; letter-spacing: 0.04em; font-size: 18px; }
+            .meta { margin-top: 8px; font-size: 12px; color: #475569; line-height: 1.4; }
+            .qr-wrap { margin-top: 14px; position: relative; width: 100%; max-width: 320px; }
+            .qr-wrap img { width: 100%; height: auto; display: block; border-radius: 12px; }
+            .logo { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+            .logo-box { background: rgba(255,255,255,0.95); border: 1px solid #cbd5e1; border-radius: 10px; width: 56px; height: 56px; display: grid; place-items: center; text-align: center; line-height: 1.1; font-size: 9px; font-weight: 800; color: #0f172a; }
+            .small { margin-top: 8px; font-size: 10px; color: #64748b; word-break: break-all; }
+          </style>
+        </head>
+        <body>
+          <div class="label">
+            <div class="brand">CertEx ASSET TAG</div>
+            <div class="meta">
+              <div><strong>${escapeHtml(asset.id)}</strong> • ${escapeHtml(asset.name)}</div>
+              <div>${escapeHtml(asset.site)} • ${escapeHtml(asset.regime)}</div>
+              <div>Latest cert: ${certificateLine}</div>
+            </div>
+            <div class="qr-wrap">
+              <img src="${qrDataUrl}" alt="QR" />
+              <div class="logo"><div class="logo-box">CertEx<br/>LOGO</div></div>
+            </div>
+            <div class="small">${escapeHtml(assetLink)}</div>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 120);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[125] bg-slate-900/45 dark:bg-slate-950/70 backdrop-blur-sm p-4 flex items-center justify-center">
+      <div className="w-full max-w-3xl rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+            <QrCode className="w-5 h-5 text-cyan-500" />
+            Printable Asset QR Label
+          </h3>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700">
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+
+        <div className="p-5 md:p-6 grid grid-cols-1 md:grid-cols-[1.1fr_0.9fr] gap-6">
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Asset</p>
+              <p className="text-lg font-black text-slate-800 dark:text-white mt-1">{asset.name}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-1 font-mono">{asset.id}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                {asset.site} • {asset.regime} • Next due {formatDateLabel(asset.nextDue)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Audit trail
+              </p>
+              <p className="text-sm text-slate-700 dark:text-slate-200">
+                {certificateCount} certificate(s) linked to this asset.
+              </p>
+              {latestCertificate ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Latest: {latestCertificate.id} • Expires {formatDateLabel(latestCertificate.expiryDate)}
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400">No certificate issued yet.</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => copyValue(assetLink, 'Asset deep link copied')}
+                className="w-full px-3 py-2.5 rounded-lg text-sm font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-2"
+              >
+                <Copy className="w-4 h-4" />
+                Copy Asset Link
+              </button>
+              {latestCertificate && (
+                <button
+                  onClick={() => copyValue(latestCertificateLink, 'Certificate link copied')}
+                  className="w-full px-3 py-2.5 rounded-lg text-sm font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-2"
+                >
+                  <FileSignature className="w-4 h-4" />
+                  Copy Latest Certificate Link
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-cyan-100 dark:border-cyan-800/30 bg-cyan-50/60 dark:bg-cyan-900/10 p-4 flex flex-col items-center">
+            <QrCodePreview value={assetLink} size={252} />
+            <p className="text-[11px] text-cyan-700 dark:text-cyan-300 mt-3 text-center font-semibold">
+              Scan to open this asset and previous audits
+            </p>
+            <p className="text-[10px] text-cyan-700/80 dark:text-cyan-300/80 mt-2 break-all text-center">
+              {assetLink}
+            </p>
+
+            <div className="w-full grid grid-cols-1 gap-2 mt-4">
+              <a
+                href={qrDataUrl || '#'}
+                download={`certex-${asset.id}-qr.png`}
+                className="w-full px-3 py-2.5 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-700 flex items-center justify-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Download PNG
+              </a>
+              <button
+                onClick={printLabel}
+                className="w-full px-3 py-2.5 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white flex items-center justify-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print Label
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CertificateDocumentCard({ certificate, isVerified }) {
+  const certificateLink = buildCertificateDeepLink(certificate.id);
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-sm text-slate-900 relative overflow-hidden">
+      <svg className="absolute inset-0 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <rect x="1.4" y="1.4" width="97.2" height="97.2" rx="2.8" fill="none" stroke="#06b6d4" strokeWidth="1" />
+        <rect x="3.2" y="3.2" width="93.6" height="93.6" rx="2.4" fill="none" stroke="#94a3b8" strokeDasharray="1 1.6" strokeWidth="0.4" />
+      </svg>
+
+      <div className="relative z-10 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-black tracking-[0.25em] text-cyan-700">CERTEX CERTIFICATE</p>
+            <h4 className="text-xl font-black text-slate-900 mt-1">{certificate.assetName}</h4>
+            <p className="text-xs text-slate-600 mt-1 font-mono">{certificate.id}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Status</p>
+            <p className={`text-xs font-black mt-1 ${certificate.status === 'valid' ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {certificate.status.toUpperCase()}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <p className="font-bold text-slate-500 uppercase tracking-wide">Asset ID</p>
+            <p className="font-semibold text-slate-800 mt-1">{certificate.assetId}</p>
+          </div>
+          <div>
+            <p className="font-bold text-slate-500 uppercase tracking-wide">Regime</p>
+            <p className="font-semibold text-slate-800 mt-1">{certificate.regime}</p>
+          </div>
+          <div>
+            <p className="font-bold text-slate-500 uppercase tracking-wide">Issue Date</p>
+            <p className="font-semibold text-slate-800 mt-1">{formatDateLabel(certificate.issueDate)}</p>
+          </div>
+          <div>
+            <p className="font-bold text-slate-500 uppercase tracking-wide">Expiry Date</p>
+            <p className="font-semibold text-slate-800 mt-1">{formatDateLabel(certificate.expiryDate)}</p>
+          </div>
+          <div className="col-span-2">
+            <p className="font-bold text-slate-500 uppercase tracking-wide">Issued By</p>
+            <p className="font-semibold text-slate-800 mt-1">{certificate.provider}</p>
+          </div>
+          <div className="col-span-2">
+            <p className="font-bold text-slate-500 uppercase tracking-wide">SHA-256 Fingerprint</p>
+            <p className="font-mono text-[11px] text-slate-700 mt-1 break-all">{certificate.hash}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Verification URL</p>
+            <p className="text-[10px] text-slate-600 break-all mt-1">{certificateLink}</p>
+            <p className="text-[10px] text-slate-500 mt-1">
+              {isVerified ? 'Verified by CertEx cryptographic check' : 'Pending cryptographic verification'}
+            </p>
+          </div>
+          <QrCodePreview value={certificateLink} size={94} withLogo={false} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- UTILS & MICRO COMPONENTS ---
+
+function GlassStatCard({ title, value, icon, color, bgClass = '' }) {
+  return (
+    <div className="glass-panel bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-6 shadow-sm transition-colors duration-300 h-full flex flex-col justify-center">
+      <div className="flex justify-between items-start mb-3 md:mb-4">
+        <div className={`p-2.5 md:p-3 rounded-xl border border-transparent dark:border-white/5 ${bgClass} ${color}`}>
+          {React.cloneElement(icon, { className: 'w-5 h-5 md:w-6 md:h-6' })}
+        </div>
+      </div>
+      <div>
+        <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 font-bold mb-1">{title}</p>
+        <h3 className="text-2xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight">{value}</h3>
+      </div>
+    </div>
+  );
+}
+
+function AnimatedProgressBar({ name, compliant, total, color }) {
+  const percentage = total > 0 ? Math.round((compliant / total) * 100) : 0;
+  return (
+    <div>
+      <div className="flex justify-between text-xs md:text-sm mb-2">
+        <span className="font-bold text-slate-700 dark:text-slate-300">{name}</span>
+        <span className="text-slate-500 dark:text-slate-400 font-mono">
+          {compliant}/{total}
+        </span>
+      </div>
+      <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 border border-slate-200 dark:border-slate-600 overflow-hidden relative">
+        <div className={`h-full rounded-full ${color} relative overflow-hidden`} style={{ width: `${percentage}%`, transition: 'width 1s ease-out' }} />
+      </div>
+    </div>
+  );
+}
+
+function GlassActionButton({ icon, label, primary, badge, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex justify-between items-center p-3.5 rounded-xl transition-colors font-bold text-sm border shadow-sm ${
+        primary
+          ? 'bg-cyan-600 hover:bg-cyan-700 text-white border-transparent'
+          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+      }`}
+    >
+      <div className="flex items-center space-x-3">
+        {React.cloneElement(icon, {
+          className: `w-5 h-5 ${primary ? 'text-white/90' : 'text-slate-400 dark:text-slate-500'}`,
+        })}
+        <span>{label}</span>
+      </div>
+      {badge && <span className="bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{badge}</span>}
+    </button>
+  );
+}
+
+function StatusPill({ status, text }) {
+  const isCompliant = status === 'compliant';
+  const isWarning = status === 'warning';
+
+  const colors = isCompliant
+    ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+    : isWarning
+      ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20'
+      : 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
+
+  return (
+    <span className={`px-2.5 py-1 border inline-flex text-[10px] md:text-xs font-bold uppercase tracking-wider rounded-md shadow-sm ${colors}`}>
+      {text || status}
+    </span>
+  );
+}

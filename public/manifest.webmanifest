@@ -1,0 +1,18 @@
+{
+  "name": "CertEx",
+  "short_name": "CertEx",
+  "description": "Compliance tracking, inspection workflows, and evidence vault for statutory assets.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0ea5e9",
+  "icons": [
+    {
+      "src": "/icons/certex-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
