@@ -88,14 +88,18 @@ const USER_ROLE_OPTIONS = [
 ];
 
 const USER_ROLE_TAB_ACCESS = {
-  company: ['dashboard', 'onboarding', 'assets', 'vault', 'marketplace', 'help'],
-  auditor: ['marketplace', 'help'],
-  third_party: ['marketplace', 'help'],
+  company: ['dashboard', 'onboarding', 'assets', 'vault', 'marketplace', 'accountancy', 'help'],
+  auditor: ['marketplace', 'accountancy', 'help'],
+  third_party: ['marketplace', 'accountancy', 'help'],
   insurer: ['marketplace', 'help'],
-  incert: ['dashboard', 'onboarding', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'ops', 'help'],
+  incert: ['dashboard', 'onboarding', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'ops', 'templates', 'help'],
 };
 
 const SUPABASE_ENV_CONFIGURED = isSupabaseConfigured;
+const SUPPORTED_REGIMES = Array.from(
+  new Set(templateRegimeOptions.map((regime) => String(regime || '').trim().toUpperCase()).filter(Boolean))
+);
+const FALLBACK_PROVIDER_REGIMES = SUPPORTED_REGIMES.length > 0 ? SUPPORTED_REGIMES : ['LOLER', 'PUWER', 'PSSR'];
 
 // --- INITIAL MOCK DATA ---
 const initialAssets = [
@@ -1799,9 +1803,55 @@ const EQUIPMENT_SURCHARGES = {
 };
 
 const REGIME_MULTIPLIERS = {
+  HS: 1.05,
+  FRA: 1.08,
   LOLER: 1,
   PUWER: 0.94,
   PSSR: 1.16,
+  COSHH: 1.02,
+  ASBESTOS: 1.14,
+  LEGIONELLA: 1.08,
+  ELECTRICAL: 1.03,
+  SCAFFOLD: 1.06,
+  FOOD: 1.01,
+  WORKPLACE: 0.98,
+  SUPPLEMENTAL: 0.96,
+  MACHINE: 0.97,
+  FIRE_DOOR: 0.99,
+  RETAIL: 0.95,
+  HOSPITALITY: 0.97,
+  WAREHOUSE: 1.04,
+  CONSTRUCTION: 1.12,
+  EDUCATION: 0.96,
+  HEALTHCARE: 1.09,
+  MYSTERY: 0.9,
+  PEN_TEST: 1.2,
+};
+
+const REGIME_HOURS_MULTIPLIERS = {
+  HS: 1.06,
+  FRA: 1.08,
+  LOLER: 1,
+  PUWER: 0.96,
+  PSSR: 1.18,
+  COSHH: 1.03,
+  ASBESTOS: 1.14,
+  LEGIONELLA: 1.08,
+  ELECTRICAL: 1.04,
+  SCAFFOLD: 1.06,
+  FOOD: 1.02,
+  WORKPLACE: 0.98,
+  SUPPLEMENTAL: 0.96,
+  MACHINE: 0.97,
+  FIRE_DOOR: 1,
+  RETAIL: 0.95,
+  HOSPITALITY: 0.97,
+  WAREHOUSE: 1.05,
+  CONSTRUCTION: 1.12,
+  EDUCATION: 0.97,
+  HEALTHCARE: 1.1,
+  MYSTERY: 0.9,
+  PEN_TEST: 1.22,
 };
 
 const REGION_HOURLY_RATE = {
@@ -1839,9 +1889,29 @@ const PRICING_ENGINE_CONFIG = {
   premiumTakeRateFloor: 0.4,
   takeRateCeiling: 0.85,
   marketHourlyRateByRegime: {
+    HS: 132,
+    FRA: 138,
     LOLER: 128,
     PUWER: 118,
     PSSR: 148,
+    COSHH: 134,
+    ASBESTOS: 150,
+    LEGIONELLA: 140,
+    ELECTRICAL: 136,
+    SCAFFOLD: 137,
+    FOOD: 130,
+    WORKPLACE: 124,
+    SUPPLEMENTAL: 120,
+    MACHINE: 122,
+    FIRE_DOOR: 126,
+    RETAIL: 118,
+    HOSPITALITY: 122,
+    WAREHOUSE: 134,
+    CONSTRUCTION: 146,
+    EDUCATION: 120,
+    HEALTHCARE: 142,
+    MYSTERY: 110,
+    PEN_TEST: 168,
   },
   marketOpsPremiumPct: 0.08,
   marketOpsPremiumPctPremium: 0.12,
@@ -1890,7 +1960,10 @@ function mapSupabaseRoleToUserRole(role) {
   if (normalized === 'insurer_viewer') {
     return 'insurer';
   }
-  if (normalized === 'provider_admin' || normalized === 'inspector' || normalized === 'auditor_viewer') {
+  if (normalized === 'provider_admin') {
+    return 'third_party';
+  }
+  if (normalized === 'inspector' || normalized === 'auditor_viewer') {
     return 'auditor';
   }
   return 'company';
@@ -2351,12 +2424,7 @@ function calculateMarketplaceQuote({ scope, regime, site, auditor = null }) {
     : 1;
   const urgencyMultiplier = normalizedScope.expedite ? PRICING_ENGINE_CONFIG.urgencyLabourMultiplier : 1;
   const outOfHoursMultiplier = isOutOfHours ? PRICING_ENGINE_CONFIG.outOfHoursLabourMultiplier : 1;
-  const regimeHoursMultiplier =
-    regime === 'PSSR'
-      ? 1.18
-      : regime === 'PUWER'
-        ? 0.96
-        : 1;
+  const regimeHoursMultiplier = REGIME_HOURS_MULTIPLIERS[regime] || 1;
 
   const travelMiles = normalizedScope.travelKm * 0.621371;
   const travelHours = travelMiles / 28;
@@ -2997,6 +3065,10 @@ function normalizeCompanyIdentifier(value) {
     .replace(/^-+|-+$/g, '');
 }
 
+function normalizeFinanceIdentityKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 function resolveCompanyTemplateContext(companyContext = {}) {
   const normalizedCompanyId = normalizeCompanyIdentifier(companyContext?.companyId || companyContext?.id);
   const normalizedCompanyName = normalizeCompanyIdentifier(companyContext?.companyName || companyContext?.name);
@@ -3324,6 +3396,1654 @@ function incrementTemplateVersion(versionValue) {
     return '1.0';
   }
   return `${major}.${minor + 1}`;
+}
+
+const TEMPLATE_QUESTION_TYPES = ['boolean', 'text', 'select', 'numeric'];
+
+function sanitizeTemplateQuestionId(value, fallbackPrefix, index, usedIds) {
+  const normalizedPrefix = String(fallbackPrefix || 'Q')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toUpperCase()
+    .slice(0, 8) || 'Q';
+  const rawId = String(value || '')
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .toUpperCase();
+  const defaultId = `${normalizedPrefix}${String(index + 1).padStart(3, '0')}`;
+  const baseId = rawId || defaultId;
+  let candidateId = baseId;
+  let suffix = 1;
+  while (usedIds.has(candidateId)) {
+    candidateId = `${baseId}_${suffix}`;
+    suffix += 1;
+  }
+  usedIds.add(candidateId);
+  return candidateId;
+}
+
+function normalizeTemplateQuestionBank(questions = [], fallbackPrefix = 'Q') {
+  const usedIds = new Set();
+  return (Array.isArray(questions) ? questions : [])
+    .map((question, index) => {
+      const safeQuestion = question && typeof question === 'object' ? question : {};
+      const typeValue = String(safeQuestion.type || 'boolean').toLowerCase();
+      const type = TEMPLATE_QUESTION_TYPES.includes(typeValue) ? typeValue : 'boolean';
+      const weightValue = Number(safeQuestion.weight);
+      const weight = Number.isFinite(weightValue) ? Math.max(1, Math.round(weightValue)) : 1;
+      const questionId = sanitizeTemplateQuestionId(safeQuestion.id, fallbackPrefix, index, usedIds);
+      const text = String(safeQuestion.text || '').trim();
+      const category = String(safeQuestion.category || 'General').trim() || 'General';
+      const showIfRaw = String(safeQuestion.showIf || '').trim();
+      const options =
+        type === 'boolean'
+          ? { yes: 1, no: 0 }
+          : safeQuestion.options && typeof safeQuestion.options === 'object'
+            ? safeQuestion.options
+            : {};
+
+      return {
+        id: questionId,
+        category,
+        text: text || `Question ${index + 1}`,
+        type,
+        options,
+        weight,
+        critical: type === 'boolean' ? Boolean(safeQuestion.critical) : false,
+        required: Boolean(safeQuestion.required),
+        evidence: {
+          photo: Boolean(safeQuestion?.evidence?.photo),
+          comment: safeQuestion?.evidence?.comment !== false,
+          signature: Boolean(safeQuestion?.evidence?.signature),
+        },
+        showIf: showIfRaw || null,
+      };
+    })
+    .filter((question) => String(question.text || '').trim().length > 0);
+}
+
+const TEMPLATE_REPORT_LOCATION_PROFILES = [
+  {
+    siteName: 'Meridian Logistics Centre',
+    addressLine1: 'Unit 14 Meridian Industrial Park',
+    addressLine2: 'Birmingham',
+    postcode: 'B24 8EZ',
+    primaryContact: 'Leah Davenport',
+    primaryPhone: '+44 121 555 0187',
+    primaryEmail: 'leah.davenport@meridian-logistics.co.uk',
+    emergencyPhone: '+44 800 011 9001',
+  },
+  {
+    siteName: 'Kingsway Retail Complex',
+    addressLine1: '28 Kingsway Exchange',
+    addressLine2: 'Leeds',
+    postcode: 'LS1 4PX',
+    primaryContact: 'Tom Eastwood',
+    primaryPhone: '+44 113 555 0262',
+    primaryEmail: 'tom.eastwood@kingswayretail.co.uk',
+    emergencyPhone: '+44 800 011 9015',
+  },
+  {
+    siteName: 'South Dock Distribution Hub',
+    addressLine1: 'Plot 6 South Dock Freight Estate',
+    addressLine2: 'Bristol',
+    postcode: 'BS11 0YH',
+    primaryContact: 'Nia Morgan',
+    primaryPhone: '+44 117 555 0149',
+    primaryEmail: 'nia.morgan@southdockhub.co.uk',
+    emergencyPhone: '+44 800 011 9061',
+  },
+  {
+    siteName: 'Riverside Manufacturing Campus',
+    addressLine1: 'Riverside Works, Foundry Road',
+    addressLine2: 'Sheffield',
+    postcode: 'S9 3HF',
+    primaryContact: 'Harvey Patel',
+    primaryPhone: '+44 114 555 0218',
+    primaryEmail: 'harvey.patel@riversidemfg.co.uk',
+    emergencyPhone: '+44 800 011 9084',
+  },
+  {
+    siteName: 'Northgate Hospitality Quarter',
+    addressLine1: '75 Northgate Square',
+    addressLine2: 'Manchester',
+    postcode: 'M2 4WQ',
+    primaryContact: 'Ava McKenna',
+    primaryPhone: '+44 161 555 0126',
+    primaryEmail: 'ava.mckenna@northgatehq.co.uk',
+    emergencyPhone: '+44 800 011 9024',
+  },
+  {
+    siteName: 'Cedar Medical Services Centre',
+    addressLine1: '2 Cedar Way',
+    addressLine2: 'Nottingham',
+    postcode: 'NG2 1AB',
+    primaryContact: 'Dr Samir Qureshi',
+    primaryPhone: '+44 115 555 0104',
+    primaryEmail: 'samir.qureshi@cedarmedical.co.uk',
+    emergencyPhone: '+44 800 011 9072',
+  },
+];
+
+const TEMPLATE_REPORT_BUSINESS_TYPE_BY_CATEGORY = {
+  HS: 'Corporate multi-site operations',
+  FRA: 'High-occupancy managed building',
+  LOLER: 'Lifting equipment operations',
+  PUWER: 'Industrial work-equipment estate',
+  PSSR: 'Pressure systems and utilities',
+  COSHH: 'Hazardous substance controlled environment',
+  ASBESTOS: 'Legacy-building risk management',
+  LEGIONELLA: 'Water-system safety controls',
+  ELECTRICAL: 'Electrical safety compliance programme',
+  SCAFFOLD: 'Construction and temporary works',
+  FOOD: 'Food production and service operations',
+  WORKPLACE: 'General workplace safety management',
+  SUPPLEMENTAL: 'Supplementary statutory checks',
+  MACHINE: 'Machine safety and guarding',
+  FIRE_DOOR: 'Fire compartmentation controls',
+  RETAIL: 'Retail branch operations',
+  HOSPITALITY: 'Hospitality and guest safety',
+  WAREHOUSE: 'Warehousing and logistics operations',
+  CONSTRUCTION: 'Project-based site safety',
+  EDUCATION: 'Education and safeguarding environment',
+  HEALTHCARE: 'Clinical and care-service environment',
+  MYSTERY: 'Customer journey and service assurance',
+  PEN_TEST: 'Cybersecurity and resilience assurance',
+};
+
+const TEMPLATE_REPORT_BUILDING_TYPE_BY_CATEGORY = {
+  HS: 'Head office and mixed-use estate',
+  FRA: 'Commercial premises with public access',
+  LOLER: 'Lift shafts, pits, and machine rooms',
+  PUWER: 'Production floor and maintenance bays',
+  PSSR: 'Plant room and compressor house',
+  COSHH: 'Chemical storage and controlled handling areas',
+  ASBESTOS: 'Multi-phase legacy construction site',
+  LEGIONELLA: 'Domestic and process water network',
+  ELECTRICAL: 'Distribution boards and switchgear areas',
+  SCAFFOLD: 'Temporary elevated access structures',
+  FOOD: 'Kitchen, prep, and cold-chain areas',
+  WORKPLACE: 'Office, welfare, and shared spaces',
+  SUPPLEMENTAL: 'Specialist verification areas',
+  MACHINE: 'Machine shop and guarding zones',
+  FIRE_DOOR: 'Compartmented escape routes',
+  RETAIL: 'Front-of-house and stockroom',
+  HOSPITALITY: 'Guest rooms and back-of-house',
+  WAREHOUSE: 'Loading bays and racking aisles',
+  CONSTRUCTION: 'Active construction workfront',
+  EDUCATION: 'Classrooms and shared corridors',
+  HEALTHCARE: 'Clinical wards and treatment rooms',
+  MYSTERY: 'Customer-facing service environment',
+  PEN_TEST: 'Network perimeter and critical systems',
+};
+
+const TEMPLATE_REPORT_MOTIFS = ['orbits', 'chevrons', 'wave', 'mesh', 'strata'];
+
+const TEMPLATE_REPORT_CATEGORY_HUES = {
+  HS: 188,
+  FRA: 14,
+  LOLER: 220,
+  PUWER: 164,
+  PSSR: 204,
+  COSHH: 28,
+  ASBESTOS: 8,
+  LEGIONELLA: 196,
+  ELECTRICAL: 42,
+  SCAFFOLD: 232,
+  FOOD: 148,
+  WORKPLACE: 176,
+  SUPPLEMENTAL: 210,
+  MACHINE: 206,
+  FIRE_DOOR: 18,
+  RETAIL: 302,
+  HOSPITALITY: 338,
+  WAREHOUSE: 196,
+  CONSTRUCTION: 26,
+  EDUCATION: 262,
+  HEALTHCARE: 332,
+  MYSTERY: 286,
+  PEN_TEST: 248,
+};
+
+function createDeterministicSeed(value) {
+  const source = String(value || '');
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index) + index;
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createPseudoDigest(input, length = 64) {
+  const source = String(input || 'incert');
+  let seed = createDeterministicSeed(source) || 1;
+  let digest = '';
+
+  while (digest.length < length) {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    const chunk = (seed >>> 0).toString(16).padStart(8, '0');
+    digest += chunk;
+  }
+
+  return digest.slice(0, Math.max(8, length));
+}
+
+function getTemplateCategoryLabel(categoryValue) {
+  const normalizedCategory = String(categoryValue || '').toUpperCase();
+  const option = templateCategoryOptions.find((entry) => String(entry?.value || '').toUpperCase() === normalizedCategory);
+  return option?.label || normalizedCategory || 'General';
+}
+
+function buildTemplateReportTheme(template, templateIndex = 0) {
+  const category = String(template?.category || 'HS').toUpperCase();
+  const seedSource = `${template?.id || ''}|${template?.name || ''}|${category}|${template?.currentVersion || '1.0'}|${templateIndex}`;
+  const seed = createDeterministicSeed(seedSource);
+  const baseHue = TEMPLATE_REPORT_CATEGORY_HUES[category] ?? 196;
+  const hueShift = (seed % 24) - 12;
+  const hueA = (baseHue + hueShift + 360) % 360;
+  const hueB = (hueA + 24 + (seed % 18)) % 360;
+  const hueC = (hueA + 190) % 360;
+  const motif = TEMPLATE_REPORT_MOTIFS[seed % TEMPLATE_REPORT_MOTIFS.length];
+  const motifId = `motif-${String(template?.id || 'tpl').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}-${seed % 1000}`;
+
+  return {
+    motif,
+    motifId,
+    pageBackground: `linear-gradient(140deg, hsl(${hueA} 65% 97%), hsl(${hueB} 78% 96%))`,
+    heroBackground: `linear-gradient(128deg, hsl(${hueA} 62% 19%), hsl(${hueB} 68% 26%))`,
+    accent: `hsl(${hueA} 72% 43%)`,
+    accentSoft: `hsl(${hueA} 68% 94%)`,
+    accentBright: `hsl(${hueB} 72% 56%)`,
+    neutralInk: 'hsl(215 28% 18%)',
+    muterInk: 'hsl(215 17% 40%)',
+    danger: 'hsl(350 74% 48%)',
+    success: 'hsl(154 70% 36%)',
+    motifColorA: `hsla(${hueC}, 72%, 96%, 0.44)`,
+    motifColorB: `hsla(${hueB}, 76%, 80%, 0.34)`,
+  };
+}
+
+function evaluateTemplateQuestionForReport(template, question, questionIndex, completedAtIso) {
+  const questionSeed = createDeterministicSeed(`${template?.id || 'TPL'}:${question?.id || ''}:${questionIndex}`);
+  const questionType = String(question?.type || 'boolean').toLowerCase();
+  const weight = Math.max(1, Number(question?.weight || 1));
+  const options = question?.options && typeof question.options === 'object' ? question.options : {};
+  const evidenceConfig = question?.evidence || {};
+
+  let answerValue = '';
+  let answerLabel = '';
+  let isCompliant = true;
+  let normalizedScore = 1;
+
+  if (questionType === 'boolean') {
+    const noThreshold = question?.critical ? 14 : 24;
+    const isNo = (questionSeed % 100) < noThreshold;
+    answerValue = isNo ? 0 : 1;
+    answerLabel = isNo ? 'No' : 'Yes';
+    isCompliant = !isNo;
+    normalizedScore = isCompliant ? 1 : 0;
+  } else if (questionType === 'numeric') {
+    const numericValue = 45 + (questionSeed % 56);
+    answerValue = numericValue;
+    answerLabel = `${numericValue}%`;
+    isCompliant = numericValue >= 72;
+    normalizedScore = isCompliant ? Math.max(0.75, numericValue / 100) : Math.max(0.3, (numericValue / 100) * 0.72);
+  } else if (questionType === 'select') {
+    const optionEntries = Object.entries(options);
+    const fallbackOptions = optionEntries.length > 0 ? optionEntries : [['pass', 1], ['improvement_required', 0.5], ['fail', 0]];
+    const selectedOption = fallbackOptions[questionSeed % fallbackOptions.length];
+    const optionKey = String(selectedOption[0] || '').trim();
+    const optionScoreRaw = Number(selectedOption[1]);
+    const normalizedOptionScore = Number.isFinite(optionScoreRaw)
+      ? Math.max(0, Math.min(1, optionScoreRaw))
+      : /pass|yes|compliant|good|ok/i.test(optionKey)
+        ? 1
+        : /warn|partial|improvement|minor/i.test(optionKey)
+          ? 0.55
+          : 0;
+    answerValue = optionKey;
+    answerLabel = optionKey.replaceAll('_', ' ') || 'Selected';
+    isCompliant = normalizedOptionScore >= 0.6;
+    normalizedScore = normalizedOptionScore;
+  } else {
+    const hasGap = question?.required ? (questionSeed % 100) < 22 : (questionSeed % 100) < 14;
+    answerValue = hasGap
+      ? 'Evidence partially available; procedure consistency needs improvement.'
+      : 'Control observed and records reviewed during walkthrough.';
+    answerLabel = hasGap ? 'Needs follow-up' : 'Control confirmed';
+    isCompliant = !hasGap;
+    normalizedScore = hasGap ? 0.45 : 0.9;
+  }
+
+  const evidenceKinds = [];
+  if (evidenceConfig.photo) {
+    evidenceKinds.push('Photo');
+  }
+  if (evidenceConfig.comment !== false) {
+    evidenceKinds.push('Comment');
+  }
+  if (evidenceConfig.signature) {
+    evidenceKinds.push('Signature');
+  }
+  if (evidenceKinds.length === 0 && (question?.required || !isCompliant)) {
+    evidenceKinds.push('Comment');
+  }
+
+  const evidenceRecords = evidenceKinds.map((kind, evidenceIndex) => {
+    const offsetMinutes = (questionIndex + 1) * 9 + evidenceIndex * 4;
+    const capturedAt = new Date(new Date(completedAtIso).getTime() - offsetMinutes * 60_000).toISOString();
+    const recordId = `EVD-${String(questionIndex + 1).padStart(3, '0')}-${String(evidenceIndex + 1).padStart(2, '0')}`;
+    const fingerprint = createPseudoDigest(
+      `${template?.id || 'TPL'}:${question?.id || ''}:${kind}:${capturedAt}:${recordId}`,
+      48
+    );
+    const verified = (createDeterministicSeed(`${recordId}:${fingerprint}`) % 9) !== 0 || !question?.required;
+
+    return {
+      id: recordId,
+      kind,
+      capturedAt,
+      fingerprint,
+      verified,
+      verifier: verified ? 'InCert Evidence Vault' : 'Pending verifier',
+    };
+  });
+
+  const hasPendingVerification = evidenceRecords.some((record) => !record.verified);
+  const evidenceVerificationStatus =
+    evidenceRecords.length === 0 ? 'not_required' : hasPendingVerification ? 'pending' : 'verified';
+
+  const needsAction = !isCompliant || (question?.required && evidenceVerificationStatus === 'pending');
+  const severity = !isCompliant && question?.critical ? 'critical' : !isCompliant ? 'high' : hasPendingVerification ? 'medium' : 'low';
+  const score = Number((weight * Math.max(0, Math.min(1, normalizedScore))).toFixed(2));
+
+  return {
+    id: question?.id || `Q${questionIndex + 1}`,
+    category: question?.category || 'General',
+    text: question?.text || `Question ${questionIndex + 1}`,
+    type: questionType,
+    weight,
+    score,
+    critical: Boolean(question?.critical),
+    required: Boolean(question?.required),
+    answerValue,
+    answerLabel,
+    isCompliant,
+    needsAction,
+    severity,
+    evidenceRecords,
+    evidenceSummary:
+      evidenceRecords.length > 0
+        ? evidenceRecords.map((record) => `${record.kind} ${record.id}`).join(', ')
+        : 'No evidence required',
+    evidenceVerificationStatus,
+  };
+}
+
+function buildTemplateCompletionReportModel(template, templateIndex = 0) {
+  const safeTemplate = template && typeof template === 'object' ? template : {};
+  const templateId = String(safeTemplate.id || `TPLX-${String(templateIndex + 1).padStart(4, '0')}`);
+  const category = String(safeTemplate.category || 'HS').toUpperCase();
+  const templateName = String(safeTemplate.name || `Template ${templateIndex + 1}`);
+  const currentVersion = String(safeTemplate.currentVersion || '1.0');
+  const questionBank = normalizeTemplateQuestionBank(safeTemplate.questionBank || [], category || templateId);
+  const seed = createDeterministicSeed(`${templateId}:${templateName}:${category}:${currentVersion}:${templateIndex}`);
+  const locationProfile = TEMPLATE_REPORT_LOCATION_PROFILES[seed % TEMPLATE_REPORT_LOCATION_PROFILES.length];
+  const categoryLabel = getTemplateCategoryLabel(category);
+  const theme = buildTemplateReportTheme(safeTemplate, templateIndex);
+  const businessType = TEMPLATE_REPORT_BUSINESS_TYPE_BY_CATEGORY[category] || 'Compliance assurance programme';
+  const buildingType = TEMPLATE_REPORT_BUILDING_TYPE_BY_CATEGORY[category] || 'Managed operational site';
+  const equipmentFocus = questionBank
+    .slice(0, 3)
+    .map((question) => String(question.category || '').trim())
+    .filter(Boolean)
+    .filter((value, index, source) => source.indexOf(value) === index)
+    .join(', ') || 'General controls';
+
+  const completedAt = new Date(Date.now() - ((seed % 7) + 1) * 24 * 60 * 60 * 1000);
+  const startedAt = new Date(completedAt.getTime() - (((seed >> 4) % 11) + 3) * 60 * 60 * 1000);
+  const nextReviewAt = new Date(completedAt.getTime() + (90 + (seed % 60)) * 24 * 60 * 60 * 1000);
+  const completedDateIso = completedAt.toISOString();
+  const reportId = `RPT-${createPseudoDigest(`${templateId}:${completedDateIso}:report`, 10).toUpperCase()}`;
+  const auditReference = `${templateId}-${completedAt.getFullYear()}${String(completedAt.getMonth() + 1).padStart(2, '0')}${String(completedAt.getDate()).padStart(2, '0')}`;
+  const vaultRecordId = `VLT-${createPseudoDigest(`${templateId}:${completedDateIso}:vault`, 8).toUpperCase()}`;
+  const tamperSealId = `SEAL-${createPseudoDigest(`${templateId}:${completedDateIso}:seal`, 8).toUpperCase()}`;
+  const verificationRunId = `VRF-${createPseudoDigest(`${templateId}:${completedDateIso}:verify`, 8).toUpperCase()}`;
+  const evidenceMerkleRoot = createPseudoDigest(`${templateId}:${completedDateIso}:merkle`, 64);
+  const chainHash = createPseudoDigest(`${templateId}:${reportId}:chain`, 64);
+  const signatureBundleId = `SIG-${createPseudoDigest(`${templateId}:${currentVersion}:signature`, 10).toUpperCase()}`;
+
+  const questionResults = questionBank.map((question, questionIndex) =>
+    evaluateTemplateQuestionForReport(safeTemplate, question, questionIndex, completedDateIso)
+  );
+
+  const maxScore = questionResults.reduce((total, result) => total + Math.max(1, Number(result.weight || 1)), 0);
+  const awardedScore = questionResults.reduce((total, result) => total + Number(result.score || 0), 0);
+  const passScoreConfigured = Number(safeTemplate?.passThreshold?.passScore || 0);
+  const passScore = passScoreConfigured > 0 ? passScoreConfigured : Math.max(1, Math.ceil(maxScore * 0.8));
+  const passPercent = maxScore > 0 ? Math.round((awardedScore / maxScore) * 100) : 0;
+  const criticalFailures = questionResults.filter((result) => result.critical && !result.isCompliant);
+  const nonCompliantQuestions = questionResults.filter((result) => !result.isCompliant);
+  const pendingVerificationCount = questionResults.filter((result) => result.evidenceVerificationStatus === 'pending').length;
+  const requiresActionCount = questionResults.filter((result) => result.needsAction).length;
+  const isPass = awardedScore >= passScore && criticalFailures.length === 0;
+  const statusLabel = isPass ? 'Pass' : 'Action required';
+
+  const autoActionMap = new Map(
+    (Array.isArray(safeTemplate.autoActions) ? safeTemplate.autoActions : [])
+      .filter((action) => action && typeof action === 'object' && action.questionId)
+      .map((action) => [String(action.questionId), action])
+  );
+
+  const defaultRecommendationOwner = category === 'PEN_TEST' ? 'Security Lead' : category === 'MYSTERY' ? 'Operations Manager' : 'Site Manager';
+  const recommendationsSource = questionResults.filter((result) => result.needsAction);
+  const recommendations = recommendationsSource.slice(0, 8).map((result, index) => {
+    const linkedAction = autoActionMap.get(String(result.id));
+    const dueDays = Number(linkedAction?.dueWithinDays || (result.critical ? 7 : result.severity === 'high' ? 14 : 21));
+    const recommendationText = linkedAction?.action
+      ? linkedAction.action
+      : result.evidenceVerificationStatus === 'pending'
+        ? `Complete evidence verification for ${result.id} and re-run vault integrity check.`
+        : `Resolve: ${result.text.replace(/\?$/, '')}. Capture closure evidence and re-verify.`;
+
+    return {
+      id: `REC-${String(index + 1).padStart(2, '0')}`,
+      questionId: result.id,
+      severity: result.severity,
+      recommendation: recommendationText,
+      owner: linkedAction?.assignee || defaultRecommendationOwner,
+      dueWithinDays: Math.max(2, dueDays),
+    };
+  });
+
+  if (recommendations.length === 0) {
+    recommendations.push({
+      id: 'REC-01',
+      questionId: 'GENERAL',
+      severity: 'low',
+      recommendation: 'Maintain current controls and schedule routine spot checks to preserve performance.',
+      owner: defaultRecommendationOwner,
+      dueWithinDays: 30,
+    });
+  }
+
+  const evidenceLedger = questionResults
+    .flatMap((result) =>
+      result.evidenceRecords.map((record) => ({
+        questionId: result.id,
+        questionText: result.text,
+        kind: record.kind,
+        recordId: record.id,
+        fingerprint: record.fingerprint,
+        capturedAt: record.capturedAt,
+        verified: record.verified,
+        verifier: record.verifier,
+      }))
+    )
+    .slice(0, 24);
+
+  const totalEvidenceCount = evidenceLedger.length;
+  const verifiedEvidenceCount = evidenceLedger.filter((entry) => entry.verified).length;
+  const verificationCoverage = totalEvidenceCount > 0 ? Math.round((verifiedEvidenceCount / totalEvidenceCount) * 100) : 100;
+
+  const verificationUrl = `${getAppBaseUrl()}#verify=${encodeURIComponent(reportId)}`;
+  const vaultUrl = `${getAppBaseUrl()}#vaultRecord=${encodeURIComponent(vaultRecordId)}`;
+  const tamperUrl = `${getAppBaseUrl()}#seal=${encodeURIComponent(tamperSealId)}`;
+
+  return {
+    template: {
+      id: templateId,
+      name: templateName,
+      category,
+      categoryLabel,
+      version: currentVersion,
+      scoringModel: String(safeTemplate.scoringModel || 'weighted_sections'),
+    },
+    audit: {
+      reportId,
+      auditReference,
+      completedAt: completedDateIso,
+      startedAt: startedAt.toISOString(),
+      nextReviewAt: nextReviewAt.toISOString(),
+      auditorName: category === 'PEN_TEST' ? 'InCert Cyber Assurance Team' : 'InCert Lead Auditor Team',
+      auditorPhone: category === 'PEN_TEST' ? '+44 20 3903 4102' : '+44 20 3903 4101',
+      auditorEmail: category === 'PEN_TEST' ? 'cyber.assurance@incert.co.uk' : 'audits@incert.co.uk',
+      executionMode: category === 'MYSTERY' ? 'Mystery shopper observed visit' : category === 'PEN_TEST' ? 'Authorised penetration test' : 'On-site compliance audit',
+    },
+    site: {
+      ...locationProfile,
+      businessType,
+      buildingType,
+      equipmentFocus,
+    },
+    summary: {
+      isPass,
+      statusLabel,
+      awardedScore: Number(awardedScore.toFixed(2)),
+      maxScore: Number(maxScore.toFixed(2)),
+      passScore: Number(passScore.toFixed(2)),
+      passPercent,
+      questionCount: questionResults.length,
+      nonCompliantCount: nonCompliantQuestions.length,
+      criticalFailureCount: criticalFailures.length,
+      pendingVerificationCount,
+      requiresActionCount,
+      verificationCoverage,
+    },
+    recommendations,
+    questionResults,
+    evidence: {
+      mandatoryBlocks: Math.max(0, Number(safeTemplate.mandatoryEvidenceBlocks || 0)),
+      ledger: evidenceLedger,
+      totalEvidenceCount,
+      verifiedEvidenceCount,
+      verificationCoverage,
+    },
+    security: {
+      vaultRecordId,
+      tamperSealId,
+      verificationRunId,
+      signatureBundleId,
+      evidenceMerkleRoot,
+      chainHash,
+      timestampAuthority: 'InCert Vault TSA Node EU-WEST-2',
+      chainNode: `INCERT-VAULT-NODE-${String((seed % 9) + 1).padStart(2, '0')}`,
+      trustMode: verificationCoverage === 100 ? 'Verified' : 'Partially verified',
+    },
+    links: {
+      verificationUrl,
+      vaultUrl,
+      tamperUrl,
+    },
+    theme,
+  };
+}
+
+function normalizeAuditAnswerValue(value) {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  if (normalizedValue === 'yes' || normalizedValue === 'y' || normalizedValue === 'pass') {
+    return 'yes';
+  }
+  if (normalizedValue === 'no' || normalizedValue === 'n' || normalizedValue === 'fail') {
+    return 'no';
+  }
+  return 'na';
+}
+
+function buildCompletedAuditRunReportModel({
+  auditRun = null,
+  templateBlueprint = null,
+  completionPayload = null,
+  job = null,
+  auditor = null,
+  companyContext = { id: '', name: '' },
+}) {
+  const payload = completionPayload && typeof completionPayload === 'object' ? completionPayload : {};
+  const templateId = String(
+    payload.templateId ||
+      templateBlueprint?.id ||
+      auditRun?.templateId ||
+      job?.inspectionTemplateId ||
+      `TPLR-${String(job?.id || '0000').replace(/[^A-Z0-9]/gi, '').slice(-6)}`
+  )
+    .trim()
+    .toUpperCase();
+  const templateName = String(
+    payload.templateName ||
+      templateBlueprint?.name ||
+      job?.inspectionTemplateName ||
+      `${String(job?.regime || 'General').toUpperCase()} Audit Checklist`
+  ).trim();
+  const templateCategory = String(
+    payload.templateCategory ||
+      templateBlueprint?.category ||
+      job?.regime ||
+      'HS'
+  )
+    .trim()
+    .toUpperCase();
+  const templateVersion = String(
+    payload.templateVersion ||
+      auditRun?.templateVersion ||
+      templateBlueprint?.currentVersion ||
+      '1.0'
+  );
+
+  const seedSource = `${templateId}:${job?.id || auditRun?.id || 'RUN'}:${templateCategory}`;
+  const seed = createDeterministicSeed(seedSource);
+  const locationProfile = TEMPLATE_REPORT_LOCATION_PROFILES[seed % TEMPLATE_REPORT_LOCATION_PROFILES.length];
+  const categoryLabel = getTemplateCategoryLabel(templateCategory);
+  const theme = buildTemplateReportTheme(
+    {
+      id: templateId,
+      name: templateName,
+      category: templateCategory,
+      currentVersion: templateVersion,
+    },
+    seed % 17
+  );
+
+  const startedAtIso = String(auditRun?.startedAt || payload.startedAt || new Date().toISOString());
+  const completedAtIso = String(auditRun?.completedAt || payload.completedAt || new Date().toISOString());
+  const nextReviewAt = new Date(completedAtIso);
+  nextReviewAt.setDate(nextReviewAt.getDate() + 90 + (seed % 45));
+
+  const reportId = `RPT-${createPseudoDigest(`${templateId}:${completedAtIso}:${job?.id || auditRun?.id || ''}`, 10).toUpperCase()}`;
+  const completedAtDate = new Date(completedAtIso);
+  const auditReference = `${templateId}-${completedAtDate.getFullYear()}${String(completedAtDate.getMonth() + 1).padStart(2, '0')}${String(
+    completedAtDate.getDate()
+  ).padStart(2, '0')}`;
+  const vaultRecordId = `VLT-${createPseudoDigest(`${reportId}:vault`, 8).toUpperCase()}`;
+  const tamperSealId = `SEAL-${createPseudoDigest(`${reportId}:seal`, 8).toUpperCase()}`;
+  const verificationRunId = `VRF-${createPseudoDigest(`${reportId}:verify`, 8).toUpperCase()}`;
+  const evidenceMerkleRoot = createPseudoDigest(`${reportId}:merkle`, 64);
+  const chainHash = createPseudoDigest(`${reportId}:chain`, 64);
+  const signatureBundleId = `SIG-${createPseudoDigest(`${reportId}:signature`, 10).toUpperCase()}`;
+
+  const payloadAnswers = Array.isArray(payload.answers) ? payload.answers : [];
+  const fallbackQuestionBank = normalizeTemplateQuestionBank(
+    templateBlueprint?.questionBank || [],
+    templateCategory || templateId
+  );
+
+  const normalizedAnswerEntries = payloadAnswers.length > 0
+    ? payloadAnswers.map((answer, index) => ({
+        id: String(answer.questionId || answer.id || `Q${index + 1}`).trim(),
+        category: String(answer.category || 'General').trim() || 'General',
+        text: String(answer.text || `Question ${index + 1}`).trim(),
+        weight: Math.max(1, Number(answer.weight || 1)),
+        critical: Boolean(answer.critical),
+        required: Boolean(answer.required),
+        response: normalizeAuditAnswerValue(answer.response),
+        notes: String(answer.notes || '').trim(),
+        evidenceFiles: Array.isArray(answer.evidenceFiles) ? answer.evidenceFiles.map((file) => String(file || '').trim()).filter(Boolean) : [],
+      }))
+    : fallbackQuestionBank.map((question, index) => ({
+        id: String(question.id || `Q${index + 1}`).trim(),
+        category: String(question.category || 'General').trim() || 'General',
+        text: String(question.text || `Question ${index + 1}`).trim(),
+        weight: Math.max(1, Number(question.weight || 1)),
+        critical: Boolean(question.critical),
+        required: Boolean(question.required),
+        response: normalizeAuditAnswerValue(payload.responsesByQuestionId?.[question.id]),
+        notes: String(payload.notesByQuestionId?.[question.id] || '').trim(),
+        evidenceFiles: Array.isArray(payload.evidenceByQuestionId?.[question.id])
+          ? payload.evidenceByQuestionId[question.id].map((file) => String(file || '').trim()).filter(Boolean)
+          : [],
+      }));
+
+  const questionResults = normalizedAnswerEntries.map((answer, index) => {
+    const response = normalizeAuditAnswerValue(answer.response);
+    const isCompliant = response !== 'no';
+    const isApplicable = response !== 'na';
+    const score = isApplicable && response === 'yes' ? answer.weight : 0;
+    const evidenceFiles = answer.evidenceFiles;
+    const needsEvidence = response === 'no' || answer.required;
+
+    const evidenceRecords = evidenceFiles.map((filename, evidenceIndex) => {
+      const capturedAt = new Date(new Date(completedAtIso).getTime() - (index + 1 + evidenceIndex) * 5 * 60_000).toISOString();
+      const recordId = `EVD-${String(index + 1).padStart(3, '0')}-${String(evidenceIndex + 1).padStart(2, '0')}`;
+      const fingerprint = createPseudoDigest(`${reportId}:${answer.id}:${filename}:${capturedAt}`, 48);
+      return {
+        id: recordId,
+        kind: 'File',
+        filename,
+        capturedAt,
+        fingerprint,
+        verified: true,
+        verifier: 'InCert Evidence Vault',
+      };
+    });
+
+    if (needsEvidence && evidenceRecords.length === 0) {
+      evidenceRecords.push({
+        id: `EVD-${String(index + 1).padStart(3, '0')}-01`,
+        kind: 'Pending',
+        filename: 'evidence-required',
+        capturedAt: completedAtIso,
+        fingerprint: createPseudoDigest(`${reportId}:${answer.id}:pending`, 48),
+        verified: false,
+        verifier: 'Pending verifier',
+      });
+    }
+
+    const hasPendingEvidence = evidenceRecords.some((record) => !record.verified);
+    const evidenceVerificationStatus =
+      evidenceRecords.length === 0 ? 'not_required' : hasPendingEvidence ? 'pending' : 'verified';
+    const needsAction = response === 'no' || evidenceVerificationStatus === 'pending';
+    const severity = response === 'no' && answer.critical ? 'critical' : response === 'no' ? 'high' : hasPendingEvidence ? 'medium' : 'low';
+
+    return {
+      id: answer.id || `Q${index + 1}`,
+      category: answer.category || 'General',
+      text: answer.text || `Question ${index + 1}`,
+      type: 'boolean',
+      weight: answer.weight,
+      score,
+      critical: Boolean(answer.critical),
+      required: Boolean(answer.required),
+      answerValue: response,
+      answerLabel: response === 'yes' ? 'Yes' : response === 'no' ? 'No' : 'N/A',
+      isCompliant,
+      needsAction,
+      severity,
+      notes: answer.notes,
+      evidenceRecords,
+      evidenceSummary:
+        evidenceRecords.length > 0
+          ? evidenceRecords.map((record) => `${record.kind} ${record.id}`).join(', ')
+          : 'No evidence required',
+      evidenceVerificationStatus,
+    };
+  });
+
+  const payloadSummary = payload.summary && typeof payload.summary === 'object' ? payload.summary : {};
+  const fallbackScorePossible = questionResults.reduce(
+    (total, result) => total + (result.answerValue === 'na' ? 0 : Math.max(1, Number(result.weight || 1))),
+    0
+  );
+  const fallbackScoreEarned = questionResults.reduce((total, result) => total + Number(result.score || 0), 0);
+
+  const scorePossibleRaw = Number(payloadSummary.scorePossible);
+  const scoreEarnedRaw = Number(payloadSummary.scoreEarned);
+  const scorePossible = Number.isFinite(scorePossibleRaw) && scorePossibleRaw > 0 ? scorePossibleRaw : fallbackScorePossible;
+  const awardedScore = Number.isFinite(scoreEarnedRaw) ? Math.max(0, scoreEarnedRaw) : fallbackScoreEarned;
+  const configuredPassPercent = Number(payloadSummary.effectivePassPercent || payloadSummary.passPercent || templateBlueprint?.passThreshold?.passPercent || 80);
+  const effectivePassPercent = Math.max(60, Math.min(95, Number.isFinite(configuredPassPercent) ? configuredPassPercent : 80));
+  const passScore = Math.max(1, Math.ceil(scorePossible * (effectivePassPercent / 100)));
+  const passPercent = scorePossible > 0 ? Math.round((awardedScore / scorePossible) * 100) : 0;
+
+  const criticalFailures = questionResults.filter((result) => result.critical && result.answerValue === 'no');
+  const nonCompliantQuestions = questionResults.filter((result) => result.answerValue === 'no');
+  const pendingVerificationCount = questionResults.filter((result) => result.evidenceVerificationStatus === 'pending').length;
+  const requiresActionCount = questionResults.filter((result) => result.needsAction).length;
+  const isPass =
+    payloadSummary.isPassing !== undefined
+      ? Boolean(payloadSummary.isPassing)
+      : awardedScore >= passScore && criticalFailures.length === 0;
+  const statusLabel = isPass ? 'Pass' : 'Action required';
+
+  const recommendations = questionResults
+    .filter((result) => result.needsAction)
+    .slice(0, 8)
+    .map((result, index) => {
+      const dueWithinDays = result.critical ? 7 : result.severity === 'high' ? 14 : 21;
+      const recommendation =
+        result.evidenceVerificationStatus === 'pending'
+          ? `Upload and verify evidence for ${result.id} (${result.text}).`
+          : `Correct ${result.id}: ${result.text.replace(/\?$/, '')}. Capture closure evidence and re-audit.`;
+      return {
+        id: `REC-${String(index + 1).padStart(2, '0')}`,
+        questionId: result.id,
+        severity: result.severity,
+        recommendation: result.notes ? `${recommendation} Auditor note: ${result.notes}` : recommendation,
+        owner: result.critical ? 'HSE Lead' : templateCategory === 'PEN_TEST' ? 'Security Lead' : 'Site Manager',
+        dueWithinDays,
+      };
+    });
+
+  if (recommendations.length === 0) {
+    recommendations.push({
+      id: 'REC-01',
+      questionId: 'GENERAL',
+      severity: 'low',
+      recommendation: 'No corrective actions required. Maintain controls and retain evidence pack.',
+      owner: 'Site Manager',
+      dueWithinDays: 30,
+    });
+  }
+
+  const evidenceLedger = questionResults
+    .flatMap((result) =>
+      result.evidenceRecords.map((record) => ({
+        questionId: result.id,
+        questionText: result.text,
+        kind: record.kind,
+        recordId: record.id,
+        fingerprint: record.fingerprint,
+        capturedAt: record.capturedAt,
+        verified: record.verified,
+        verifier: record.verifier,
+      }))
+    )
+    .slice(0, 30);
+
+  const totalEvidenceCount = evidenceLedger.length;
+  const verifiedEvidenceCount = evidenceLedger.filter((entry) => entry.verified).length;
+  const verificationCoverage = totalEvidenceCount > 0 ? Math.round((verifiedEvidenceCount / totalEvidenceCount) * 100) : 100;
+
+  const siteName = String(job?.site || locationProfile.siteName);
+  const businessName = String(job?.companyName || companyContext?.name || 'InCert Client Organization');
+  const verificationUrl = `${getAppBaseUrl()}#verify=${encodeURIComponent(reportId)}`;
+  const vaultUrl = `${getAppBaseUrl()}#vaultRecord=${encodeURIComponent(vaultRecordId)}`;
+  const tamperUrl = `${getAppBaseUrl()}#seal=${encodeURIComponent(tamperSealId)}`;
+
+  return {
+    template: {
+      id: templateId,
+      name: templateName,
+      category: templateCategory,
+      categoryLabel,
+      version: templateVersion,
+      scoringModel: String(templateBlueprint?.scoringModel || 'weighted_sections'),
+    },
+    audit: {
+      reportId,
+      auditReference,
+      completedAt: completedAtIso,
+      startedAt: startedAtIso,
+      nextReviewAt: nextReviewAt.toISOString(),
+      auditorName: String(auditor?.name || payload.auditorName || 'Assigned Auditor'),
+      auditorPhone: String(payload.auditorPhone || '+44 20 3903 4101'),
+      auditorEmail: String(payload.auditorEmail || 'audits@incert.co.uk'),
+      executionMode: 'InCert checklist workflow',
+    },
+    site: {
+      ...locationProfile,
+      siteName,
+      businessType: `${businessName} · ${TEMPLATE_REPORT_BUSINESS_TYPE_BY_CATEGORY[templateCategory] || 'Compliance programme'}`,
+      buildingType: TEMPLATE_REPORT_BUILDING_TYPE_BY_CATEGORY[templateCategory] || 'Managed operational site',
+      equipmentFocus: String(job?.assetName || payload.assetName || 'Mixed compliance controls'),
+    },
+    summary: {
+      isPass,
+      statusLabel,
+      awardedScore: Number(awardedScore.toFixed(2)),
+      maxScore: Number(scorePossible.toFixed(2)),
+      passScore: Number(passScore.toFixed(2)),
+      passPercent,
+      questionCount: questionResults.length,
+      nonCompliantCount: nonCompliantQuestions.length,
+      criticalFailureCount: criticalFailures.length,
+      pendingVerificationCount,
+      requiresActionCount,
+      verificationCoverage,
+    },
+    recommendations,
+    questionResults,
+    evidence: {
+      mandatoryBlocks: Math.max(0, Number(templateBlueprint?.mandatoryEvidenceBlocks || 0)),
+      ledger: evidenceLedger,
+      totalEvidenceCount,
+      verifiedEvidenceCount,
+      verificationCoverage,
+    },
+    security: {
+      vaultRecordId,
+      tamperSealId,
+      verificationRunId,
+      signatureBundleId,
+      evidenceMerkleRoot,
+      chainHash,
+      timestampAuthority: 'InCert Vault TSA Node EU-WEST-2',
+      chainNode: `INCERT-VAULT-NODE-${String((seed % 9) + 1).padStart(2, '0')}`,
+      trustMode: verificationCoverage === 100 ? 'Verified' : 'Partially verified',
+    },
+    links: {
+      verificationUrl,
+      vaultUrl,
+      tamperUrl,
+    },
+    theme,
+  };
+}
+
+function renderTemplateReportMotifSvg(theme) {
+  if (theme.motif === 'chevrons') {
+    return `
+      <svg viewBox="0 0 1200 260" class="motif-svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="${theme.motifId}-base" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stop-color="${theme.motifColorB}" />
+            <stop offset="100%" stop-color="${theme.motifColorA}" />
+          </linearGradient>
+          <linearGradient id="${theme.motifId}-shine" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="rgba(255,255,255,0.34)" />
+            <stop offset="100%" stop-color="rgba(255,255,255,0)" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="1200" height="260" fill="url(#${theme.motifId}-shine)" opacity="0.18" />
+        <g opacity="0.94">
+          <path d="M-180 260 L132 0 L356 0 L44 260 Z" fill="url(#${theme.motifId}-base)" />
+          <path d="M114 260 L426 0 L648 0 L336 260 Z" fill="${theme.motifColorA}" />
+          <path d="M408 260 L724 0 L938 0 L622 260 Z" fill="url(#${theme.motifId}-base)" />
+          <path d="M704 260 L1022 0 L1218 0 L900 260 Z" fill="${theme.motifColorA}" />
+          <path d="M954 260 L1214 42 L1214 260 Z" fill="url(#${theme.motifId}-base)" />
+        </g>
+        <path d="M0 106 L172 0 L252 0 L80 126 Z" fill="rgba(255,255,255,0.2)" />
+        <path d="M264 92 L420 0 L500 0 L344 112 Z" fill="rgba(255,255,255,0.16)" />
+        <path d="M0 222 L188 146 L352 222 L516 146 L680 222 L844 146 L1008 222 L1172 146" fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M0 196 L164 120 L328 196 L492 120 L656 196 L820 120 L984 196 L1148 120" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    `;
+  }
+  if (theme.motif === 'wave') {
+    return `
+      <svg viewBox="0 0 1200 260" class="motif-svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="${theme.motifId}-wave-main" x1="0" x2="1">
+            <stop offset="0%" stop-color="${theme.motifColorB}" />
+            <stop offset="100%" stop-color="${theme.motifColorA}" />
+          </linearGradient>
+          <linearGradient id="${theme.motifId}-wave-secondary" x1="0" x2="1">
+            <stop offset="0%" stop-color="${theme.motifColorA}" />
+            <stop offset="100%" stop-color="${theme.motifColorB}" />
+          </linearGradient>
+          <radialGradient id="${theme.motifId}-halo" cx="76%" cy="20%" r="88%">
+            <stop offset="0%" stop-color="rgba(255,255,255,0.36)" />
+            <stop offset="100%" stop-color="rgba(255,255,255,0)" />
+          </radialGradient>
+        </defs>
+        <rect x="0" y="0" width="1200" height="260" fill="url(#${theme.motifId}-halo)" />
+        <path d="M0 174 C126 94 252 82 378 148 C504 214 630 224 756 164 C882 104 1008 96 1134 148 C1158 158 1180 166 1200 172 L1200 260 L0 260 Z" fill="url(#${theme.motifId}-wave-main)" />
+        <path d="M0 198 C154 132 308 126 462 172 C616 218 770 222 924 188 C1018 166 1110 168 1200 188 L1200 260 L0 260 Z" fill="url(#${theme.motifId}-wave-secondary)" opacity="0.92" />
+        <path d="M0 224 C176 182 352 176 528 206 C704 236 880 232 1056 206 C1110 198 1158 198 1200 202 L1200 260 L0 260 Z" fill="${theme.motifColorA}" opacity="0.72" />
+        <path d="M0 106 C130 76 260 78 390 108 C520 138 650 140 780 112 C910 84 1040 80 1200 104" fill="none" stroke="rgba(255,255,255,0.44)" stroke-width="2.2" stroke-linecap="round" />
+        <path d="M0 128 C146 100 292 102 438 126 C584 150 730 150 876 126 C1022 102 1096 96 1200 110" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="1.3" stroke-linecap="round" />
+      </svg>
+    `;
+  }
+  if (theme.motif === 'mesh') {
+    return `
+      <svg viewBox="0 0 1200 260" class="motif-svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="${theme.motifId}-mesh-fill" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stop-color="${theme.motifColorB}" />
+            <stop offset="100%" stop-color="${theme.motifColorA}" />
+          </linearGradient>
+        </defs>
+        <path d="M0 172 L144 120 L286 156 L432 96 L588 150 L742 98 L894 150 L1048 102 L1200 146 L1200 260 L0 260 Z" fill="url(#${theme.motifId}-mesh-fill)" opacity="0.42" />
+        <g fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="1.6" stroke-linejoin="round">
+          <path d="M0 172 L144 120 L286 156 L432 96 L588 150 L742 98 L894 150 L1048 102 L1200 146" />
+          <path d="M0 206 L152 156 L300 188 L452 136 L608 188 L760 138 L912 190 L1060 142 L1200 178" />
+          <path d="M0 136 L140 86 L282 122 L426 62 L582 116 L736 64 L888 116 L1042 68 L1200 112" />
+          <path d="M64 260 L144 120 L226 260" />
+          <path d="M212 260 L286 156 L368 260" />
+          <path d="M354 260 L432 96 L516 260" />
+          <path d="M512 260 L588 150 L670 260" />
+          <path d="M666 260 L742 98 L824 260" />
+          <path d="M818 260 L894 150 L976 260" />
+          <path d="M970 260 L1048 102 L1128 260" />
+        </g>
+        <g fill="rgba(255,255,255,0.58)">
+          <circle cx="144" cy="120" r="3.3" />
+          <circle cx="286" cy="156" r="3.3" />
+          <circle cx="432" cy="96" r="3.3" />
+          <circle cx="588" cy="150" r="3.3" />
+          <circle cx="742" cy="98" r="3.3" />
+          <circle cx="894" cy="150" r="3.3" />
+          <circle cx="1048" cy="102" r="3.3" />
+        </g>
+        <g fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1.1">
+          <path d="M120 0 L286 156 L432 96 L588 150 L742 98 L894 150 L1058 0" />
+          <path d="M258 0 L432 96 L588 150 L742 98 L898 0" />
+        </g>
+      </svg>
+    `;
+  }
+  if (theme.motif === 'strata') {
+    return `
+      <svg viewBox="0 0 1200 260" class="motif-svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="${theme.motifId}-strata-fill" x1="0" x2="1">
+            <stop offset="0%" stop-color="${theme.motifColorA}" />
+            <stop offset="100%" stop-color="${theme.motifColorB}" />
+          </linearGradient>
+        </defs>
+        <path d="M0 164 C162 106 324 214 486 162 C648 110 810 214 972 166 C1062 138 1138 138 1200 152 L1200 260 L0 260 Z" fill="url(#${theme.motifId}-strata-fill)" opacity="0.5" />
+        <g fill="none" stroke="rgba(255,255,255,0.34)" stroke-width="2" stroke-linecap="round">
+          <path d="M0 132 C162 82 324 184 486 136 C648 88 810 186 972 138 C1068 108 1144 108 1200 120" />
+          <path d="M0 152 C164 102 328 198 492 152 C656 106 820 198 984 152 C1074 126 1148 126 1200 136" />
+          <path d="M0 172 C166 124 332 214 498 170 C664 126 830 216 996 172 C1080 150 1150 150 1200 160" />
+          <path d="M0 192 C168 148 336 232 504 190 C672 148 840 232 1008 192 C1088 174 1154 174 1200 182" />
+          <path d="M0 212 C170 172 340 250 510 210 C680 170 850 250 1020 212 C1094 198 1158 198 1200 204" />
+          <path d="M0 232 C170 198 340 262 510 232 C680 202 850 262 1020 232 C1094 222 1158 222 1200 226" />
+        </g>
+        <g fill="none" stroke="rgba(255,255,255,0.24)" stroke-width="1.1" stroke-dasharray="4 5">
+          <path d="M0 118 C160 72 320 168 480 122 C640 76 800 168 960 124 C1056 98 1138 98 1200 108" />
+          <path d="M0 204 C168 158 336 240 504 204 C672 166 840 240 1008 206 C1088 190 1154 190 1200 196" />
+        </g>
+      </svg>
+    `;
+  }
+  return `
+    <svg viewBox="0 0 1200 260" class="motif-svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="${theme.motifId}-ribbon-1" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0%" stop-color="${theme.motifColorA}" />
+          <stop offset="100%" stop-color="${theme.motifColorB}" />
+        </linearGradient>
+        <linearGradient id="${theme.motifId}-ribbon-2" x1="0" x2="1" y1="1" y2="0">
+          <stop offset="0%" stop-color="${theme.motifColorB}" />
+          <stop offset="100%" stop-color="${theme.motifColorA}" />
+        </linearGradient>
+        <linearGradient id="${theme.motifId}-sheen" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.3)" />
+          <stop offset="100%" stop-color="rgba(255,255,255,0)" />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="1200" height="260" fill="url(#${theme.motifId}-sheen)" opacity="0.24" />
+      <path d="M0 170 C174 112 348 112 522 166 C696 220 870 218 1044 166 C1102 148 1154 144 1200 148 L1200 260 L0 260 Z" fill="url(#${theme.motifId}-ribbon-1)" opacity="0.94" />
+      <path d="M0 206 C162 170 324 172 486 206 C648 240 810 238 972 208 C1068 190 1144 188 1200 196 L1200 260 L0 260 Z" fill="url(#${theme.motifId}-ribbon-2)" opacity="0.84" />
+      <path d="M514 -20 L780 -20 L1068 260 L802 260 Z" fill="rgba(255,255,255,0.14)" />
+      <path d="M626 -20 L870 -20 L1152 260 L910 260 Z" fill="rgba(255,255,255,0.1)" />
+      <g fill="none" stroke="rgba(255,255,255,0.32)" stroke-width="2" stroke-linejoin="round">
+        <path d="M0 134 L180 82 L360 124 L542 74 L724 120 L906 72 L1088 116 L1200 92" />
+        <path d="M0 156 L180 104 L360 146 L542 96 L724 142 L906 94 L1088 138 L1200 114" />
+      </g>
+      <g fill="none" stroke="rgba(255,255,255,0.24)" stroke-width="1.2">
+        <path d="M760 18 L966 18 L1170 220 L964 220 Z" />
+        <path d="M728 34 L934 34 L1138 236 L932 236 Z" />
+      </g>
+      <path d="M0 118 C164 90 328 92 492 120 C656 148 820 148 984 122 C1072 108 1144 106 1200 112" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.4" />
+    </svg>
+  `;
+}
+
+function buildTemplateCompletedReportHtml(reportModel, qrAssets = {}) {
+  const verificationQrDataUrl = qrAssets.verificationQrDataUrl || '';
+  const vaultQrDataUrl = qrAssets.vaultQrDataUrl || '';
+  const tamperQrDataUrl = qrAssets.tamperQrDataUrl || '';
+  const theme = reportModel.theme;
+  const motifSvg = renderTemplateReportMotifSvg(theme);
+
+  const recommendationRowsHtml = reportModel.recommendations
+    .map(
+      (recommendation) => `
+        <article class="recommendation severity-${escapeHtml(recommendation.severity)}">
+          <div class="recommendation-head">
+            <span class="rec-id">${escapeHtml(recommendation.id)}</span>
+            <span class="rec-severity">${escapeHtml(recommendation.severity)}</span>
+          </div>
+          <p class="rec-text">${escapeHtml(recommendation.recommendation)}</p>
+          <p class="rec-meta">
+            Owner: <strong>${escapeHtml(recommendation.owner)}</strong> · Due within <strong>${escapeHtml(
+              recommendation.dueWithinDays
+            )} days</strong> · Trigger <strong>${escapeHtml(recommendation.questionId)}</strong>
+          </p>
+        </article>
+      `
+    )
+    .join('');
+
+  const questionRowsHtml = reportModel.questionResults
+    .map((result) => {
+      const complianceClass = result.isCompliant ? 'ok' : 'issue';
+      const verificationClass =
+        result.evidenceVerificationStatus === 'verified'
+          ? 'verified'
+          : result.evidenceVerificationStatus === 'pending'
+            ? 'pending'
+            : 'na';
+
+      return `
+        <tr class="${complianceClass}">
+          <td class="question-id">${escapeHtml(result.id)}</td>
+          <td>
+            <p class="question-text">${escapeHtml(result.text)}</p>
+            <p class="question-meta">
+              ${escapeHtml(result.category)} · Weight ${escapeHtml(result.weight)}${result.critical ? ' · Critical' : ''}
+            </p>
+          </td>
+          <td>
+            <span class="answer-chip ${complianceClass}">${escapeHtml(result.answerLabel)}</span>
+          </td>
+          <td class="score-cell">${escapeHtml(result.score.toFixed(2))} / ${escapeHtml(result.weight)}</td>
+          <td>
+            <p>${escapeHtml(result.evidenceSummary)}</p>
+            ${
+              result.evidenceRecords[0]
+                ? `<p class="evidence-fingerprint">SHA256 ${escapeHtml(result.evidenceRecords[0].fingerprint.slice(0, 20))}...</p>`
+                : '<p class="evidence-fingerprint">-</p>'
+            }
+          </td>
+          <td>
+            <span class="verification-chip ${verificationClass}">${escapeHtml(result.evidenceVerificationStatus.replaceAll('_', ' '))}</span>
+          </td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  const evidenceLedgerRows = reportModel.evidence.ledger
+    .map(
+      (record) => `
+        <tr>
+          <td>${escapeHtml(record.recordId)}</td>
+          <td>${escapeHtml(record.kind)}</td>
+          <td>${escapeHtml(record.questionId)}</td>
+          <td class="mono">${escapeHtml(record.fingerprint.slice(0, 24))}...</td>
+          <td>${escapeHtml(formatDateLabel(record.capturedAt.slice(0, 10)))}</td>
+          <td>${record.verified ? 'Verified' : 'Pending'}</td>
+          <td>${escapeHtml(record.verifier)}</td>
+        </tr>
+      `
+    )
+    .join('');
+
+  const qrCard = (label, value, dataUrl) => `
+    <div class="qr-card">
+      <p class="qr-label">${escapeHtml(label)}</p>
+      ${
+        dataUrl
+          ? `<img src="${dataUrl}" alt="${escapeHtml(label)} QR code" class="qr-image" />`
+          : '<div class="qr-placeholder">Generating QR…</div>'
+      }
+      <p class="qr-value">${escapeHtml(value)}</p>
+    </div>
+  `;
+
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(reportModel.template.name)} - Completed Report</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap');
+          :root {
+            --page-bg: ${theme.pageBackground};
+            --hero-bg: ${theme.heroBackground};
+            --accent: ${theme.accent};
+            --accent-soft: ${theme.accentSoft};
+            --accent-bright: ${theme.accentBright};
+            --ink: ${theme.neutralInk};
+            --muted: ${theme.muterInk};
+            --danger: ${theme.danger};
+            --success: ${theme.success};
+            --white: #ffffff;
+            --line: rgba(15, 23, 42, 0.1);
+          }
+          * { box-sizing: border-box; }
+          html, body { margin: 0; padding: 0; background: var(--page-bg); color: var(--ink); }
+          body { font-family: 'Manrope', 'Segoe UI', sans-serif; padding: 22px; }
+          .report-shell {
+            background: #fff;
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid rgba(15, 23, 42, 0.12);
+            box-shadow: 0 26px 42px -28px rgba(15, 23, 42, 0.36);
+          }
+          .hero {
+            position: relative;
+            background: var(--hero-bg);
+            color: #f8fafc;
+            padding: 26px 28px 22px;
+            overflow: hidden;
+          }
+          .motif-svg { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.98; }
+          .hero-content { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: start; }
+          .kicker {
+            font-size: 10px;
+            letter-spacing: 0.22em;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: rgba(248, 250, 252, 0.82);
+          }
+          .hero-title { margin: 8px 0 0; font-family: 'Space Grotesk', 'Manrope', sans-serif; font-size: 30px; line-height: 1.15; letter-spacing: -0.02em; }
+          .hero-subtitle { margin: 10px 0 0; font-size: 13px; color: rgba(241, 245, 249, 0.88); max-width: 78ch; }
+          .score-pill {
+            display: grid;
+            place-items: center;
+            width: 122px;
+            min-height: 122px;
+            border-radius: 18px;
+            border: 1px solid rgba(255,255,255,0.26);
+            background: rgba(15, 23, 42, 0.22);
+            backdrop-filter: blur(4px);
+            text-align: center;
+            padding: 10px;
+          }
+          .score-pill .value { font-size: 32px; line-height: 1; font-weight: 800; letter-spacing: -0.03em; }
+          .score-pill .label { margin-top: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em; color: rgba(241,245,249,0.82); font-weight: 700; }
+          .meta-grid {
+            padding: 18px 20px 8px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+          }
+          .meta-card {
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 12px;
+            background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+          }
+          .meta-card h3 {
+            margin: 0;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: #64748b;
+          }
+          .meta-card p {
+            margin: 8px 0 0;
+            font-size: 13px;
+            color: var(--ink);
+            line-height: 1.45;
+          }
+          .meta-card .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+          .verification-band {
+            margin: 12px 20px 0;
+            border: 1px solid rgba(15,23,42,0.12);
+            border-radius: 16px;
+            background: linear-gradient(180deg, #ffffff 0%, var(--accent-soft) 100%);
+            overflow: hidden;
+          }
+          .verification-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(15,23,42,0.1);
+          }
+          .verification-title { font-size: 13px; font-weight: 800; letter-spacing: 0.03em; }
+          .verification-status {
+            font-size: 11px;
+            border-radius: 999px;
+            padding: 5px 9px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            background: rgba(255,255,255,0.72);
+            border: 1px solid rgba(15,23,42,0.14);
+          }
+          .verification-grid {
+            padding: 12px 14px;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+          }
+          .verification-grid p { margin: 0; }
+          .verification-grid .label {
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            font-weight: 700;
+          }
+          .verification-grid .value {
+            margin-top: 5px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--ink);
+            word-break: break-word;
+          }
+          .tamper-strip {
+            margin: 12px 20px 0;
+            border-radius: 12px;
+            border: 1px dashed rgba(15,23,42,0.34);
+            background:
+              repeating-linear-gradient(135deg, rgba(15,23,42,0.04), rgba(15,23,42,0.04) 6px, rgba(15,23,42,0.09) 6px, rgba(15,23,42,0.09) 10px);
+            padding: 9px 12px;
+            font-size: 11px;
+            color: #1e293b;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+          }
+          .tamper-strip code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 700; }
+          .content-grid {
+            padding: 16px 20px 0;
+            display: grid;
+            grid-template-columns: 1.08fr 0.92fr;
+            gap: 12px;
+          }
+          .panel {
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 12px;
+            background: #fff;
+          }
+          .panel h3 {
+            margin: 0 0 10px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: #475569;
+          }
+          .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+          }
+          .summary-item {
+            border: 1px solid rgba(15,23,42,0.08);
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 8px 9px;
+          }
+          .summary-item .label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; }
+          .summary-item .value { margin-top: 5px; font-size: 13px; font-weight: 800; color: var(--ink); }
+          .recommendations {
+            padding: 14px 20px 0;
+            display: grid;
+            gap: 8px;
+          }
+          .recommendation {
+            border: 1px solid var(--line);
+            border-left-width: 5px;
+            border-radius: 12px;
+            padding: 10px 12px;
+            background: #fff;
+          }
+          .severity-critical { border-left-color: #b91c1c; }
+          .severity-high { border-left-color: #dc2626; }
+          .severity-medium { border-left-color: #d97706; }
+          .severity-low { border-left-color: #0f766e; }
+          .recommendation-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+          .rec-id { font-size: 11px; font-weight: 800; letter-spacing: 0.1em; color: #334155; }
+          .rec-severity { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; font-weight: 700; }
+          .rec-text { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: #0f172a; }
+          .rec-meta { margin: 7px 0 0; font-size: 11px; color: #475569; }
+          .table-wrap {
+            margin: 14px 20px 0;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            overflow: hidden;
+            background: #fff;
+          }
+          table { width: 100%; border-collapse: collapse; }
+          thead th {
+            background: #f1f5f9;
+            color: #334155;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            text-align: left;
+            padding: 10px 9px;
+            border-bottom: 1px solid var(--line);
+          }
+          tbody td {
+            font-size: 11px;
+            color: #0f172a;
+            padding: 9px;
+            border-bottom: 1px solid rgba(15,23,42,0.08);
+            vertical-align: top;
+          }
+          tbody tr.issue { background: rgba(248, 113, 113, 0.08); }
+          tbody tr.ok { background: rgba(16, 185, 129, 0.05); }
+          .question-id, .score-cell { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; white-space: nowrap; }
+          .question-text { margin: 0; font-size: 11px; line-height: 1.35; color: #0f172a; }
+          .question-meta { margin: 4px 0 0; font-size: 10px; color: #64748b; }
+          .answer-chip, .verification-chip {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 4px 8px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border: 1px solid rgba(15,23,42,0.14);
+            background: #fff;
+          }
+          .answer-chip.ok { color: #166534; background: rgba(134, 239, 172, 0.28); }
+          .answer-chip.issue { color: #991b1b; background: rgba(252, 165, 165, 0.34); }
+          .verification-chip.verified { color: #166534; background: rgba(134, 239, 172, 0.28); }
+          .verification-chip.pending { color: #9a3412; background: rgba(253, 186, 116, 0.32); }
+          .verification-chip.na { color: #334155; background: rgba(203, 213, 225, 0.4); }
+          .evidence-fingerprint { margin: 4px 0 0; font-size: 10px; color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+          .ledger-wrap {
+            margin: 14px 20px 0;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            overflow: hidden;
+            background: #fff;
+          }
+          .ledger-wrap td { font-size: 10.5px; }
+          .ledger-wrap .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+          .qr-grid {
+            padding: 14px 20px 20px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+          }
+          .qr-card {
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: #fff;
+            padding: 10px;
+          }
+          .qr-label {
+            margin: 0;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.13em;
+            color: #64748b;
+            font-weight: 800;
+          }
+          .qr-image, .qr-placeholder {
+            margin-top: 8px;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 10px;
+            border: 1px solid rgba(15,23,42,0.12);
+            object-fit: cover;
+            background: #fff;
+          }
+          .qr-placeholder {
+            display: grid;
+            place-items: center;
+            font-size: 11px;
+            color: #64748b;
+            background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+          }
+          .qr-value {
+            margin: 7px 0 0;
+            font-size: 10px;
+            color: #334155;
+            word-break: break-all;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          }
+          .footer {
+            border-top: 1px solid var(--line);
+            background: #f8fafc;
+            padding: 10px 20px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 10px;
+            color: #475569;
+          }
+          .footer strong { color: #0f172a; }
+        </style>
+      </head>
+      <body>
+        <article class="report-shell">
+          <header class="hero">
+            ${motifSvg}
+            <div class="hero-content">
+              <div>
+                <p class="kicker">InCert completed evidence report · ${escapeHtml(reportModel.template.categoryLabel)}</p>
+                <h1 class="hero-title">${escapeHtml(reportModel.template.name)}</h1>
+                <p class="hero-subtitle">
+                  Report ${escapeHtml(reportModel.audit.reportId)} · Template ${escapeHtml(reportModel.template.id)} v${escapeHtml(
+    reportModel.template.version
+  )} · ${escapeHtml(reportModel.audit.executionMode)}
+                </p>
+              </div>
+              <div class="score-pill">
+                <span class="value">${escapeHtml(reportModel.summary.passPercent)}%</span>
+                <span class="label">${escapeHtml(reportModel.summary.statusLabel)}</span>
+              </div>
+            </div>
+          </header>
+
+          <section class="meta-grid">
+            <article class="meta-card">
+              <h3>Site and business profile</h3>
+              <p><strong>${escapeHtml(reportModel.site.siteName)}</strong></p>
+              <p>${escapeHtml(reportModel.site.addressLine1)}<br />${escapeHtml(reportModel.site.addressLine2)} ${escapeHtml(
+    reportModel.site.postcode
+  )}</p>
+              <p>${escapeHtml(reportModel.site.businessType)}<br />${escapeHtml(reportModel.site.buildingType)}</p>
+            </article>
+            <article class="meta-card">
+              <h3>Primary contacts</h3>
+              <p><strong>${escapeHtml(reportModel.site.primaryContact)}</strong></p>
+              <p>${escapeHtml(reportModel.site.primaryPhone)}<br />${escapeHtml(reportModel.site.primaryEmail)}</p>
+              <p>Emergency line: <strong>${escapeHtml(reportModel.site.emergencyPhone)}</strong></p>
+            </article>
+            <article class="meta-card">
+              <h3>Audit delivery</h3>
+              <p><strong>${escapeHtml(reportModel.audit.auditorName)}</strong></p>
+              <p>${escapeHtml(reportModel.audit.auditorPhone)}<br />${escapeHtml(reportModel.audit.auditorEmail)}</p>
+              <p class="mono">Ref ${escapeHtml(reportModel.audit.auditReference)}</p>
+              <p>Completed ${escapeHtml(formatDateLabel(reportModel.audit.completedAt.slice(0, 10)))} · Next review ${escapeHtml(
+    formatDateLabel(reportModel.audit.nextReviewAt.slice(0, 10))
+  )}</p>
+            </article>
+          </section>
+
+          <section class="verification-band">
+            <div class="verification-header">
+              <p class="verification-title">Evidence Vault Verification and Tamper-Evident Controls</p>
+              <span class="verification-status">${escapeHtml(reportModel.security.trustMode)}</span>
+            </div>
+            <div class="verification-grid">
+              <div>
+                <p class="label">Vault Record</p>
+                <p class="value">${escapeHtml(reportModel.security.vaultRecordId)}</p>
+              </div>
+              <div>
+                <p class="label">Tamper Seal</p>
+                <p class="value">${escapeHtml(reportModel.security.tamperSealId)}</p>
+              </div>
+              <div>
+                <p class="label">Verification Run</p>
+                <p class="value">${escapeHtml(reportModel.security.verificationRunId)}</p>
+              </div>
+              <div>
+                <p class="label">Signature Bundle</p>
+                <p class="value">${escapeHtml(reportModel.security.signatureBundleId)}</p>
+              </div>
+              <div>
+                <p class="label">Chain Hash</p>
+                <p class="value mono">${escapeHtml(reportModel.security.chainHash.slice(0, 22))}...</p>
+              </div>
+              <div>
+                <p class="label">Merkle Root</p>
+                <p class="value mono">${escapeHtml(reportModel.security.evidenceMerkleRoot.slice(0, 22))}...</p>
+              </div>
+              <div>
+                <p class="label">Chain Node</p>
+                <p class="value">${escapeHtml(reportModel.security.chainNode)}</p>
+              </div>
+              <div>
+                <p class="label">Timestamp Authority</p>
+                <p class="value">${escapeHtml(reportModel.security.timestampAuthority)}</p>
+              </div>
+            </div>
+          </section>
+
+          <div class="tamper-strip">
+            <span>Tamper-evident mesh active</span>
+            <span>Verification coverage: <strong>${escapeHtml(reportModel.summary.verificationCoverage)}%</strong></span>
+            <span>Evidence blocks: <strong>${escapeHtml(reportModel.evidence.totalEvidenceCount)}</strong></span>
+            <code>seal=${escapeHtml(reportModel.security.tamperSealId)}|vault=${escapeHtml(reportModel.security.vaultRecordId)}</code>
+          </div>
+
+          <section class="content-grid">
+            <article class="panel">
+              <h3>Outcome summary</h3>
+              <div class="summary-grid">
+                <div class="summary-item">
+                  <p class="label">Scoring</p>
+                  <p class="value">${escapeHtml(reportModel.summary.awardedScore.toFixed(2))} / ${escapeHtml(
+    reportModel.summary.maxScore.toFixed(2)
+  )}</p>
+                </div>
+                <div class="summary-item">
+                  <p class="label">Pass threshold</p>
+                  <p class="value">${escapeHtml(reportModel.summary.passScore.toFixed(2))}</p>
+                </div>
+                <div class="summary-item">
+                  <p class="label">Questions</p>
+                  <p class="value">${escapeHtml(reportModel.summary.questionCount)}</p>
+                </div>
+                <div class="summary-item">
+                  <p class="label">Non-compliant</p>
+                  <p class="value">${escapeHtml(reportModel.summary.nonCompliantCount)}</p>
+                </div>
+                <div class="summary-item">
+                  <p class="label">Critical failures</p>
+                  <p class="value">${escapeHtml(reportModel.summary.criticalFailureCount)}</p>
+                </div>
+                <div class="summary-item">
+                  <p class="label">Pending verification</p>
+                  <p class="value">${escapeHtml(reportModel.summary.pendingVerificationCount)}</p>
+                </div>
+              </div>
+            </article>
+            <article class="panel">
+              <h3>Context</h3>
+              <p><strong>Equipment or area focus:</strong> ${escapeHtml(reportModel.site.equipmentFocus)}</p>
+              <p><strong>Scoring model:</strong> ${escapeHtml(reportModel.template.scoringModel.replaceAll('_', ' '))}</p>
+              <p><strong>Mandatory evidence blocks:</strong> ${escapeHtml(reportModel.evidence.mandatoryBlocks)}</p>
+              <p><strong>Actions required:</strong> ${escapeHtml(reportModel.summary.requiresActionCount)}</p>
+              <p><strong>Next review due:</strong> ${escapeHtml(formatDateLabel(reportModel.audit.nextReviewAt.slice(0, 10)))}</p>
+            </article>
+          </section>
+
+          <section class="recommendations">
+            ${recommendationRowsHtml}
+          </section>
+
+          <section class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>QID</th>
+                  <th>Question</th>
+                  <th>Answer</th>
+                  <th>Score</th>
+                  <th>Evidence detail</th>
+                  <th>Verification</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${questionRowsHtml}
+              </tbody>
+            </table>
+          </section>
+
+          <section class="ledger-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Evidence ID</th>
+                  <th>Type</th>
+                  <th>Question</th>
+                  <th>Fingerprint</th>
+                  <th>Captured</th>
+                  <th>Status</th>
+                  <th>Verifier</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${evidenceLedgerRows}
+              </tbody>
+            </table>
+          </section>
+
+          <section class="qr-grid">
+            ${qrCard('Verification URL', reportModel.links.verificationUrl, verificationQrDataUrl)}
+            ${qrCard('Evidence Vault Record', reportModel.links.vaultUrl, vaultQrDataUrl)}
+            ${qrCard('Tamper Seal', reportModel.links.tamperUrl, tamperQrDataUrl)}
+          </section>
+
+          <footer class="footer">
+            <span>Generated HTML evidence report for PDF export</span>
+            <span><strong>InCert Trust Layer</strong> · ${escapeHtml(reportModel.security.verificationRunId)}</span>
+          </footer>
+        </article>
+      </body>
+    </html>
+  `;
 }
 
 function getSeverityRiskScore(severity) {
@@ -4043,9 +5763,20 @@ function buildDebugFinanceInvoices(jobs, auditors, historyDays = DEBUG_MOCK_HIST
     const dayOffset = index % historyDays;
     const issueDate = getDebugDateByDayOffset(dayOffset + 3, 10, (index * 5) % 60).toISOString().slice(0, 10);
     const dueDate = addDays(issueDate, 30);
-    const providerName =
-      auditors.find((auditor) => auditor.id === job.matchedAuditorId)?.name ||
-      cycleDebugValue(auditors, index, { name: 'Assigned provider' }).name;
+    const linkedAuditor =
+      auditors.find((auditor) => auditor.id === job.matchedAuditorId) ||
+      cycleDebugValue(auditors, index, { id: '', name: 'Assigned provider', employmentModel: 'direct' });
+    const providerName = String(linkedAuditor?.name || 'Assigned provider');
+    const companyName = String(job.companyName || 'Acme Logistics');
+    const companyId = String(job.companyId || normalizeCompanyIdentifier(companyName) || 'acme-logistics');
+    const payToAuditorId = String(linkedAuditor?.id || job.matchedAuditorId || '');
+    const payToOrganizationId = String(linkedAuditor?.dbOrganizationId || '');
+    const payToAuditCompanyId = String(
+      linkedAuditor?.thirdPartyOrganizationId ||
+      (isThirdPartyProvider(linkedAuditor)
+        ? linkedAuditor?.dbOrganizationId || linkedAuditor?.id || ''
+        : '')
+    );
     const totalIncVat = roundMoney(Number(job.budget || 340) + index * 12);
     const fallbackSubtotalExVat = roundMoney(totalIncVat / (1 + DEFAULT_VAT_RATE));
     const subtotalExVat = roundMoney(
@@ -4064,8 +5795,18 @@ function buildDebugFinanceInvoices(jobs, auditors, historyDays = DEBUG_MOCK_HIST
       quoteId: String(job?.pricing?.quoteId || `QTE-${String(2000 + index).padStart(4, '0')}`),
       assetName: String(job.assetName || 'Inspection scope'),
       providerName,
-      billToName: String(job.companyName || 'Acme Logistics'),
+      billToName: companyName,
       payToName: providerName,
+      companyId,
+      companyOrgId: String(job.companyOrgId || ''),
+      billToEntityType: 'company',
+      billToEntityId: companyId,
+      billToOrganizationId: String(job.companyOrgId || ''),
+      payToEntityType: payToAuditCompanyId ? 'auditor_company' : 'auditor',
+      payToEntityId: payToAuditCompanyId || payToAuditorId,
+      payToAuditorId,
+      payToAuditCompanyId,
+      payToOrganizationId,
       issueDate,
       dueDate,
       poNumber: `PO-${String(3100 + index).padStart(4, '0')}`,
@@ -4131,8 +5872,21 @@ function buildDebugPayoutRuns(invoices, historyDays = DEBUG_MOCK_HISTORY_DAYS) {
       invoiceId: String(invoice.id || ''),
       jobId: String(invoice.jobId || ''),
       providerName: String(invoice.providerName || 'Assigned provider'),
+      payToEntityType: String(invoice.payToEntityType || (invoice.payToAuditCompanyId ? 'auditor_company' : 'auditor')),
+      payToEntityId: String(
+        invoice.payToEntityId ||
+        invoice.payToAuditCompanyId ||
+        invoice.payToAuditorId ||
+        ''
+      ),
+      payToAuditorId: String(invoice.payToAuditorId || ''),
+      payToAuditCompanyId: String(invoice.payToAuditCompanyId || ''),
+      payToOrganizationId: String(invoice.payToOrganizationId || ''),
+      companyId: String(invoice.companyId || ''),
+      companyOrgId: String(invoice.companyOrgId || ''),
       payoutAmount: roundMoney(Math.max(0, payoutBaseExVat)),
       scheduledPayoutDate,
+      scheduledFor: scheduledPayoutDate,
       status,
       createdAt: createdAt || new Date().toISOString(),
       paidAt,
@@ -4142,11 +5896,12 @@ function buildDebugPayoutRuns(invoices, historyDays = DEBUG_MOCK_HISTORY_DAYS) {
 
 function buildDebugMockSnapshot() {
   const providerLocations = ['London', 'Birmingham', 'Manchester', 'Leeds', 'Glasgow', 'Bristol', 'Cardiff', 'Sheffield'];
+  const debugRegimeCycle = SUPPORTED_REGIMES.length > 0 ? SUPPORTED_REGIMES : ['LOLER', 'PUWER', 'PSSR'];
   const providerRegimes = [
-    ['LOLER', 'PUWER'],
-    ['PSSR', 'PUWER'],
-    ['LOLER', 'PSSR'],
-    ['LOLER', 'PUWER', 'PSSR'],
+    [debugRegimeCycle[0] || 'LOLER', debugRegimeCycle[1] || 'PUWER'],
+    [debugRegimeCycle[2] || 'PSSR', debugRegimeCycle[1] || 'PUWER'],
+    [debugRegimeCycle[0] || 'LOLER', debugRegimeCycle[2] || 'PSSR'],
+    debugRegimeCycle.slice(0, Math.min(4, debugRegimeCycle.length)),
   ];
   const historyDays = DEBUG_MOCK_HISTORY_DAYS;
   const yearlyTimelineCount = Math.max(historyDays, 365);
@@ -4177,7 +5932,7 @@ function buildDebugMockSnapshot() {
         index,
         'Main Site'
       );
-      asset.regime = cycleDebugValue(['LOLER', 'PUWER', 'PSSR'], index, 'LOLER');
+      asset.regime = cycleDebugValue(debugRegimeCycle, index, 'LOLER');
       asset.nextDue = addDays(today, (index % 60) - 12);
       asset.class = cycleDebugValue(['Lifting Equipment', 'Pressure System', 'Work Equipment'], index, asset.class);
     },
@@ -4806,6 +6561,10 @@ export default function App() {
     return loadStoredAuthRuntimeMode();
   });
   const [supabaseSession, setSupabaseSession] = useState(null);
+  const [primaryOrganizationScope, setPrimaryOrganizationScope] = useState({
+    organizationId: '',
+    organizationName: '',
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const isSupabaseRuntime = authRuntimeMode === 'supabase' && SUPABASE_ENV_CONFIGURED;
 
@@ -4835,6 +6594,11 @@ export default function App() {
       return normalizeUserRole(defaultAuthSession.accountType);
     }
     return loadStoredDebugRole();
+  });
+  const [debugAccountancyScopeOverrides, setDebugAccountancyScopeOverrides] = useState({
+    companyId: '',
+    auditorId: '',
+    auditCompanyId: '',
   });
   const isDebugBypassSession = String(authSession?.email || '').trim().toLowerCase() === 'debug@incert.local';
   const shouldTrackSupabaseSession = Boolean(SUPABASE_ENV_CONFIGURED && supabase && !isDebugBypassSession);
@@ -4879,6 +6643,10 @@ export default function App() {
     setReleaseGateResults(debugSnapshot.releaseGateResults);
     setTenantInvites(debugSnapshot.tenantInvites);
     setEvidenceProvenanceEvents(debugSnapshot.evidenceProvenanceEvents);
+    setPrimaryOrganizationScope({
+      organizationId: '',
+      organizationName: '',
+    });
     if (typeof window !== 'undefined') {
       try {
         window.localStorage.setItem(DEBUG_SNAPSHOT_VERSION_STORAGE_KEY, DEBUG_SNAPSHOT_SCHEMA_VERSION);
@@ -4917,6 +6685,10 @@ export default function App() {
     setEnterpriseSecurityEvents([]);
     setQaHarnessRuns([]);
     setReleaseGateResults([]);
+    setPrimaryOrganizationScope({
+      organizationId: '',
+      organizationName: '',
+    });
   }, []);
 
   useEffect(() => {
@@ -5145,6 +6917,11 @@ export default function App() {
       const organizationNameById = new Map(
         organizations.map((organization) => [String(organization.id), String(organization.name || 'Organization')])
       );
+      const primaryOrganizationId = String(primaryMembership?.organization_id || '').trim();
+      setPrimaryOrganizationScope({
+        organizationId: primaryOrganizationId,
+        organizationName: organizationNameById.get(primaryOrganizationId) || '',
+      });
       const siteNameById = new Map(sites.map((site) => [String(site.id), String(site.name || 'Site')]));
 
       const mappedAssets = assetRows.map((asset) => {
@@ -5199,16 +6976,20 @@ export default function App() {
         const dueDate = String(request.preferred_end_date || '').slice(0, 10);
         const createdAt = jobCreatedAt.slice(0, 10);
 
+        const companyOrgId = String(request.organization_id || '').trim();
+        const companyName =
+          organizationNameById.get(companyOrgId) ||
+          organizationNameById.get(String(primaryMembership?.organization_id || '')) ||
+          'Operator';
         return {
           id: linkedJob?.id
             ? `JOB-${String(linkedJob.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`
             : `REQ-${requestId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
           dbRequestId: requestId,
           dbJobId: linkedJob?.id ? String(linkedJob.id) : '',
-          companyName:
-            organizationNameById.get(String(request.organization_id || '')) ||
-            organizationNameById.get(String(primaryMembership?.organization_id || '')) ||
-            'Operator',
+          companyName,
+          companyId: normalizeCompanyIdentifier(companyName) || `org-${companyOrgId.slice(0, 8)}`,
+          companyOrgId,
           assetId: linkedAsset?.id || fallbackAssetId,
           assetName: linkedAsset?.name || fallbackAssetName,
           site: siteNameById.get(String(request.site_id || '')) || linkedAsset?.site || 'Unassigned site',
@@ -5309,7 +7090,7 @@ export default function App() {
             name: String(organization?.name || `Provider ${organizationId.slice(0, 8)}`),
             tier: mapOrgTypeToProviderTier(organization?.org_type),
             employmentModel: String(organization?.org_type || '').toLowerCase() === 'auditor' ? 'third_party' : 'direct',
-            regimes: regimes.length > 0 ? regimes : ['LOLER', 'PUWER', 'PSSR'],
+            regimes: regimes.length > 0 ? regimes : FALLBACK_PROVIDER_REGIMES,
             activeJobs: Math.max(0, Number(stats.activeJobs || 0)),
             maxConcurrentJobs: Math.max(1, Number(metadata.maxConcurrentJobs || metadata.max_concurrent_jobs || 8)),
             rating: Number(metadata.rating || 4.6),
@@ -5397,10 +7178,17 @@ export default function App() {
           orderNewest('created_at')(scopeByOrg('organization_id')(query))
         ),
         selectRows('inspection_findings', 'id, summary, severity, finding_code, created_at', orderNewest('created_at')),
-        selectRows('InCert-finance_invoices', 'id, invoice_number, status, total_inc_vat, due_at, issued_at, created_at', (query) =>
+        selectRows(
+          'InCert-finance_invoices',
+          'id, organization_id, job_id, invoice_number, status, subtotal_ex_vat, vat_amount, total_inc_vat, paid_at, due_at, issued_at, created_at, metadata',
+          (query) =>
           orderNewest('created_at')(scopeByOrg('organization_id')(query))
         ),
-        selectRows('InCert-finance_payout_batches', 'id, status, reference, scheduled_for, paid_at, total_inc_vat, created_at', orderNewest('created_at')),
+        selectRows(
+          'InCert-finance_payout_batches',
+          'id, provider_organization_id, status, reference, scheduled_for, paid_at, total_inc_vat, created_at, metadata',
+          orderNewest('created_at')
+        ),
         selectRows('InCert-analytics_risk_signals', 'id, organization_id, signal_type, severity, score, detected_at', (query) =>
           orderNewest('detected_at')(scopeByOrg('organization_id')(query))
         ),
@@ -5566,30 +7354,79 @@ export default function App() {
       );
 
       setFinanceInvoices(
-        invoiceRows.map((invoice) => ({
-          id: String(invoice.id || ''),
-          invoiceNumber: String(invoice.invoice_number || ''),
-          status: ['draft', 'issued', 'overdue'].includes(String(invoice.status || '').toLowerCase())
-            ? 'pending_approval'
-            : String(invoice.status || '').toLowerCase() === 'paid'
-              ? 'paid'
-              : 'approved',
-          totalIncVat: Number(invoice.total_inc_vat || 0),
-          issuedAt: String(invoice.issued_at || ''),
-          dueAt: String(invoice.due_at || ''),
-          createdAt: String(invoice.created_at || ''),
-        }))
+        invoiceRows.map((invoice) => {
+          const metadata = invoice?.metadata && typeof invoice.metadata === 'object' ? invoice.metadata : {};
+          const companyOrgId = String(invoice.organization_id || '').trim();
+          const companyName = organizationNameById.get(companyOrgId) || 'Organization';
+          const normalizedStatus = String(invoice.status || '').toLowerCase();
+          const mappedStatus = (() => {
+            if (normalizedStatus === 'paid') {
+              return 'paid';
+            }
+            if (normalizedStatus === 'overdue') {
+              return 'overdue';
+            }
+            if (normalizedStatus === 'issued') {
+              return 'issued';
+            }
+            if (normalizedStatus === 'approved') {
+              return 'approved';
+            }
+            return 'pending_approval';
+          })();
+
+          return {
+            id: String(invoice.id || ''),
+            invoiceNumber: String(invoice.invoice_number || ''),
+            jobId: String(invoice.job_id || ''),
+            status: mappedStatus,
+            subtotalExVat: Number(invoice.subtotal_ex_vat || 0),
+            vatAmount: Number(invoice.vat_amount || 0),
+            totalIncVat: Number(invoice.total_inc_vat || 0),
+            paidAt: String(invoice.paid_at || ''),
+            issuedAt: String(invoice.issued_at || ''),
+            dueAt: String(invoice.due_at || ''),
+            createdAt: String(invoice.created_at || ''),
+            companyId: normalizeCompanyIdentifier(companyName) || '',
+            companyOrgId,
+            billToName: companyName,
+            billToEntityType: String(metadata.billToEntityType || 'company'),
+            billToEntityId: String(metadata.billToEntityId || normalizeCompanyIdentifier(companyName) || ''),
+            billToOrganizationId: String(metadata.billToOrganizationId || companyOrgId),
+            payToEntityType: String(metadata.payToEntityType || ''),
+            payToEntityId: String(metadata.payToEntityId || ''),
+            payToAuditorId: String(metadata.payToAuditorId || metadata.pay_to_auditor_id || ''),
+            payToAuditCompanyId: String(metadata.payToAuditCompanyId || metadata.pay_to_audit_company_id || ''),
+            payToOrganizationId: String(metadata.payToOrganizationId || metadata.pay_to_organization_id || ''),
+            providerName: String(metadata.providerName || metadata.provider_name || ''),
+            payToName: String(metadata.payToName || metadata.pay_to_name || ''),
+          };
+        })
       );
 
       setPayoutRuns(
-        payoutRows.map((batch) => ({
-          id: String(batch.id || ''),
-          status: String(batch.status || 'draft'),
-          scheduledFor: String(batch.scheduled_for || ''),
-          paidAt: String(batch.paid_at || ''),
-          totalIncVat: Number(batch.total_inc_vat || 0),
-          reference: String(batch.reference || ''),
-        }))
+        payoutRows.map((batch) => {
+          const metadata = batch?.metadata && typeof batch.metadata === 'object' ? batch.metadata : {};
+          const providerOrgId = String(batch.provider_organization_id || '').trim();
+          return {
+            id: String(batch.id || ''),
+            invoiceId: String(metadata.invoiceId || metadata.invoice_id || ''),
+            jobId: String(metadata.jobId || metadata.job_id || ''),
+            status: String(batch.status || 'draft'),
+            scheduledFor: String(batch.scheduled_for || ''),
+            paidAt: String(batch.paid_at || ''),
+            totalIncVat: Number(batch.total_inc_vat || 0),
+            reference: String(batch.reference || ''),
+            providerName: String(metadata.providerName || metadata.provider_name || organizationNameById.get(providerOrgId) || ''),
+            payToEntityType: String(metadata.payToEntityType || metadata.pay_to_entity_type || ''),
+            payToEntityId: String(metadata.payToEntityId || metadata.pay_to_entity_id || ''),
+            payToOrganizationId: providerOrgId,
+            payToAuditorId: String(metadata.payToAuditorId || metadata.pay_to_auditor_id || ''),
+            payToAuditCompanyId: String(metadata.payToAuditCompanyId || metadata.pay_to_audit_company_id || providerOrgId),
+            companyId: String(metadata.companyId || metadata.company_id || ''),
+            companyOrgId: String(metadata.companyOrgId || metadata.company_org_id || ''),
+          };
+        })
       );
 
       setAnalyticsRiskSignals(
@@ -5869,6 +7706,583 @@ export default function App() {
     () => USER_ROLE_OPTIONS.find((option) => option.id === effectiveUserRole)?.label || 'Company',
     [effectiveUserRole]
   );
+  const marketplaceJobById = useMemo(
+    () =>
+      new Map(
+        marketplaceJobs
+          .map((job) => [String(job?.id || ''), job])
+          .filter(([jobId]) => Boolean(jobId))
+      ),
+    [marketplaceJobs]
+  );
+  const financeInvoiceById = useMemo(
+    () =>
+      new Map(
+        financeInvoices
+          .map((invoice) => [String(invoice?.id || ''), invoice])
+          .filter(([invoiceId]) => Boolean(invoiceId))
+      ),
+    [financeInvoices]
+  );
+  const providerLookupByIdentity = useMemo(() => {
+    const lookup = new Map();
+    const registerProvider = (key, provider) => {
+      const normalizedKey = normalizeFinanceIdentityKey(key);
+      if (!normalizedKey || lookup.has(normalizedKey)) {
+        return;
+      }
+      lookup.set(normalizedKey, provider);
+    };
+
+    activeProviderRecords.forEach((provider) => {
+      registerProvider(provider?.id, provider);
+      registerProvider(provider?.dbOrganizationId, provider);
+      registerProvider(provider?.name, provider);
+      registerProvider(provider?.providerName, provider);
+      registerProvider(provider?.thirdPartyOrganizationId, provider);
+    });
+    return lookup;
+  }, [activeProviderRecords]);
+  const findProviderForFinancialEntry = useCallback(
+    (entry = {}) => {
+      const lookupCandidates = [
+        entry?.providerId,
+        entry?.auditorId,
+        entry?.payToAuditorId,
+        entry?.providerOrganizationId,
+        entry?.payToOrganizationId,
+        entry?.matchedAuditorId,
+        entry?.providerName,
+        entry?.payToName,
+      ];
+      for (const candidate of lookupCandidates) {
+        const provider = providerLookupByIdentity.get(normalizeFinanceIdentityKey(candidate));
+        if (provider) {
+          return provider;
+        }
+      }
+      return null;
+    },
+    [providerLookupByIdentity]
+  );
+  const authLocalPart = useMemo(
+    () =>
+      String(authSession?.email || '')
+        .split('@')[0]
+        .replace(/[^a-z0-9]+/gi, ' ')
+        .trim()
+        .toLowerCase(),
+    [authSession?.email]
+  );
+  const scopedAuditorProvider = useMemo(() => {
+    const primaryOrgId = normalizeFinanceIdentityKey(primaryOrganizationScope?.organizationId);
+    if (primaryOrgId) {
+      const orgMatch = activeProviderRecords.find((provider) => {
+        const providerId = normalizeFinanceIdentityKey(provider?.id);
+        const providerOrgId = normalizeFinanceIdentityKey(provider?.dbOrganizationId);
+        return providerId === primaryOrgId || providerOrgId === primaryOrgId;
+      });
+      if (orgMatch) {
+        return orgMatch;
+      }
+    }
+
+    if (authLocalPart) {
+      const nameMatch = activeProviderRecords.find((provider) =>
+        normalizeFinanceIdentityKey(provider?.name).includes(authLocalPart)
+      );
+      if (nameMatch) {
+        return nameMatch;
+      }
+    }
+
+    return activeProviderRecords[0] || null;
+  }, [activeProviderRecords, authLocalPart, primaryOrganizationScope?.organizationId]);
+  const scopedAuditCompany = useMemo(() => {
+    const primaryOrgId = String(primaryOrganizationScope?.organizationId || '').trim();
+    if (primaryOrgId) {
+      const directName = String(primaryOrganizationScope?.organizationName || '').trim();
+      return {
+        id: primaryOrgId,
+        name: directName || `Audit Company ${primaryOrgId.slice(0, 8)}`,
+      };
+    }
+
+    const linkedThirdPartyProvider = activeProviderRecords.find((provider) => isThirdPartyProvider(provider)) || null;
+    if (linkedThirdPartyProvider) {
+      const linkedId = String(
+        linkedThirdPartyProvider?.thirdPartyOrganizationId ||
+        linkedThirdPartyProvider?.dbOrganizationId ||
+        linkedThirdPartyProvider?.id ||
+        ''
+      ).trim();
+      if (linkedId) {
+        const linkedName =
+          getThirdPartyOrganizationById(linkedThirdPartyProvider?.thirdPartyOrganizationId)?.name ||
+          String(linkedThirdPartyProvider?.name || '').trim();
+        return {
+          id: linkedId,
+          name: linkedName || 'Audit Company',
+        };
+      }
+    }
+
+    const fallbackOrganization = thirdPartyOrganizations[0] || null;
+    return {
+      id: String(fallbackOrganization?.id || '').trim(),
+      name: String(fallbackOrganization?.name || 'Audit Company'),
+    };
+  }, [activeProviderRecords, primaryOrganizationScope?.organizationId, primaryOrganizationScope?.organizationName]);
+  const companyAccountancyScopeOptions = useMemo(() => {
+    const optionById = new Map();
+    const addOption = (idValue, labelValue, organizationIdValue = '') => {
+      const id = String(idValue || '').trim();
+      const label = String(labelValue || '').trim();
+      if (!id || !label || optionById.has(id)) {
+        return;
+      }
+      optionById.set(id, {
+        id,
+        label,
+        organizationId: String(organizationIdValue || '').trim(),
+      });
+    };
+
+    addOption(activeCompanyContext?.id, activeCompanyContext?.name, primaryOrganizationScope?.organizationId);
+    marketplaceJobs.forEach((job) => {
+      const companyName = String(job?.companyName || '').trim();
+      const companyId =
+        String(job?.companyId || '').trim() ||
+        normalizeCompanyIdentifier(companyName);
+      addOption(companyId, companyName, job?.companyOrgId);
+    });
+    financeInvoices.forEach((invoice) => {
+      const companyName = String(invoice?.billToName || invoice?.companyName || '').trim();
+      const companyId =
+        String(invoice?.companyId || '').trim() ||
+        String(invoice?.billToEntityId || '').trim() ||
+        normalizeCompanyIdentifier(companyName);
+      const organizationId = String(invoice?.companyOrgId || invoice?.billToOrganizationId || '').trim();
+      addOption(companyId, companyName, organizationId);
+    });
+    return Array.from(optionById.values()).sort((first, second) => first.label.localeCompare(second.label));
+  }, [activeCompanyContext?.id, activeCompanyContext?.name, financeInvoices, marketplaceJobs, primaryOrganizationScope?.organizationId]);
+  const auditorAccountancyScopeOptions = useMemo(() => {
+    const optionById = new Map();
+    const addOption = (idValue, labelValue, organizationIdValue = '') => {
+      const id = String(idValue || '').trim();
+      const label = String(labelValue || '').trim();
+      if (!id || !label || optionById.has(id)) {
+        return;
+      }
+      optionById.set(id, {
+        id,
+        label,
+        organizationId: String(organizationIdValue || '').trim(),
+      });
+    };
+
+    activeProviderRecords.forEach((provider) => {
+      addOption(provider?.id, provider?.name, provider?.dbOrganizationId);
+    });
+    financeInvoices.forEach((invoice) => {
+      const fallbackLabel = String(invoice?.providerName || invoice?.payToName || '').trim();
+      addOption(invoice?.payToAuditorId, fallbackLabel, invoice?.payToOrganizationId);
+    });
+    return Array.from(optionById.values()).sort((first, second) => first.label.localeCompare(second.label));
+  }, [activeProviderRecords, financeInvoices]);
+  const auditCompanyAccountancyScopeOptions = useMemo(() => {
+    const optionById = new Map();
+    const addOption = (idValue, labelValue) => {
+      const id = String(idValue || '').trim();
+      const label = String(labelValue || '').trim();
+      if (!id || !label || optionById.has(id)) {
+        return;
+      }
+      optionById.set(id, { id, label, organizationId: id });
+    };
+
+    thirdPartyOrganizations.forEach((organization) => {
+      addOption(organization?.id, organization?.name);
+    });
+    activeProviderRecords.forEach((provider) => {
+      const orgId = String(
+        provider?.thirdPartyOrganizationId ||
+        (isThirdPartyProvider(provider) ? provider?.dbOrganizationId || provider?.id || '' : '')
+      ).trim();
+      if (!orgId) {
+        return;
+      }
+      const orgName =
+        getThirdPartyOrganizationById(provider?.thirdPartyOrganizationId)?.name ||
+        String(provider?.name || '').trim();
+      addOption(orgId, orgName);
+    });
+    financeInvoices.forEach((invoice) => {
+      const orgId = String(invoice?.payToAuditCompanyId || '').trim();
+      const orgName = String(invoice?.providerName || invoice?.payToName || '').trim();
+      addOption(orgId, orgName);
+    });
+    return Array.from(optionById.values()).sort((first, second) => first.label.localeCompare(second.label));
+  }, [activeProviderRecords, financeInvoices, getThirdPartyOrganizationById, isThirdPartyProvider, thirdPartyOrganizations]);
+  const selectedDebugCompanyScopeOption = useMemo(() => {
+    const explicitId = String(debugAccountancyScopeOverrides?.companyId || '').trim();
+    if (explicitId) {
+      return companyAccountancyScopeOptions.find((option) => option.id === explicitId) || null;
+    }
+    return companyAccountancyScopeOptions[0] || null;
+  }, [companyAccountancyScopeOptions, debugAccountancyScopeOverrides?.companyId]);
+  const selectedDebugAuditorScopeOption = useMemo(() => {
+    const explicitId = String(debugAccountancyScopeOverrides?.auditorId || '').trim();
+    if (explicitId) {
+      return auditorAccountancyScopeOptions.find((option) => option.id === explicitId) || null;
+    }
+    return auditorAccountancyScopeOptions[0] || null;
+  }, [auditorAccountancyScopeOptions, debugAccountancyScopeOverrides?.auditorId]);
+  const selectedDebugAuditCompanyScopeOption = useMemo(() => {
+    const explicitId = String(debugAccountancyScopeOverrides?.auditCompanyId || '').trim();
+    if (explicitId) {
+      return auditCompanyAccountancyScopeOptions.find((option) => option.id === explicitId) || null;
+    }
+    return auditCompanyAccountancyScopeOptions[0] || null;
+  }, [auditCompanyAccountancyScopeOptions, debugAccountancyScopeOverrides?.auditCompanyId]);
+  const accountancyScope = useMemo(() => {
+    const normalizedRole = normalizeUserRole(effectiveUserRole, 'company');
+    if (normalizedRole === 'incert') {
+      return {
+        mode: 'incert',
+        label: 'InCert',
+        entityId: '',
+        organizationId: '',
+      };
+    }
+    if (normalizedRole === 'auditor') {
+      const scopedOption = isDebugBypassSession ? selectedDebugAuditorScopeOption : null;
+      return {
+        mode: 'auditor',
+        label: String(scopedOption?.label || scopedAuditorProvider?.name || 'Auditor Account'),
+        entityId: String(scopedOption?.id || scopedAuditorProvider?.id || ''),
+        organizationId:
+          String(scopedOption?.organizationId || '').trim() ||
+          String(scopedAuditorProvider?.dbOrganizationId || '').trim() ||
+          String(primaryOrganizationScope?.organizationId || '').trim(),
+      };
+    }
+    if (normalizedRole === 'third_party') {
+      const scopedOption = isDebugBypassSession ? selectedDebugAuditCompanyScopeOption : null;
+      return {
+        mode: 'auditor_company',
+        label: String(scopedOption?.label || scopedAuditCompany?.name || 'Audit Company Account'),
+        entityId: String(scopedOption?.id || scopedAuditCompany?.id || ''),
+        organizationId: String(scopedOption?.organizationId || scopedAuditCompany?.id || ''),
+      };
+    }
+    const scopedOption = isDebugBypassSession ? selectedDebugCompanyScopeOption : null;
+    return {
+      mode: 'company',
+      label: String(scopedOption?.label || activeCompanyContext?.name || 'Company Account'),
+      entityId: String(scopedOption?.id || activeCompanyContext?.id || ''),
+      organizationId: String(scopedOption?.organizationId || primaryOrganizationScope?.organizationId || '').trim(),
+    };
+  }, [
+    activeCompanyContext?.id,
+    activeCompanyContext?.name,
+    effectiveUserRole,
+    isDebugBypassSession,
+    primaryOrganizationScope?.organizationId,
+    selectedDebugAuditCompanyScopeOption,
+    selectedDebugAuditorScopeOption,
+    selectedDebugCompanyScopeOption,
+    scopedAuditCompany?.id,
+    scopedAuditCompany?.name,
+    scopedAuditorProvider?.dbOrganizationId,
+    scopedAuditorProvider?.id,
+    scopedAuditorProvider?.name,
+  ]);
+  const accountancyDebugScopeConfig = useMemo(() => {
+    if (!isDebugBypassSession || accountancyScope.mode === 'incert') {
+      return null;
+    }
+    if (accountancyScope.mode === 'company') {
+      return {
+        label: 'Company',
+        value: String(selectedDebugCompanyScopeOption?.id || ''),
+        options: companyAccountancyScopeOptions,
+        onChange: (nextId) =>
+          setDebugAccountancyScopeOverrides((previous) => ({
+            ...previous,
+            companyId: String(nextId || ''),
+          })),
+      };
+    }
+    if (accountancyScope.mode === 'auditor') {
+      return {
+        label: 'Auditor',
+        value: String(selectedDebugAuditorScopeOption?.id || ''),
+        options: auditorAccountancyScopeOptions,
+        onChange: (nextId) =>
+          setDebugAccountancyScopeOverrides((previous) => ({
+            ...previous,
+            auditorId: String(nextId || ''),
+          })),
+      };
+    }
+    if (accountancyScope.mode === 'auditor_company') {
+      return {
+        label: 'Audit company',
+        value: String(selectedDebugAuditCompanyScopeOption?.id || ''),
+        options: auditCompanyAccountancyScopeOptions,
+        onChange: (nextId) =>
+          setDebugAccountancyScopeOverrides((previous) => ({
+            ...previous,
+            auditCompanyId: String(nextId || ''),
+          })),
+      };
+    }
+    return null;
+  }, [
+    accountancyScope.mode,
+    auditCompanyAccountancyScopeOptions,
+    auditorAccountancyScopeOptions,
+    companyAccountancyScopeOptions,
+    isDebugBypassSession,
+    selectedDebugAuditCompanyScopeOption?.id,
+    selectedDebugAuditorScopeOption?.id,
+    selectedDebugCompanyScopeOption?.id,
+  ]);
+  const resolveInvoiceOwnershipForScope = useCallback(
+    (invoice) => {
+      const linkedJob = marketplaceJobById.get(String(invoice?.jobId || '')) || null;
+      const resolvedCompanyName = String(
+        invoice?.billToName || invoice?.companyName || linkedJob?.companyName || activeCompanyContext?.name || ''
+      ).trim();
+      const resolvedCompanyId = String(
+        invoice?.companyId ||
+        (String(invoice?.billToEntityType || '').toLowerCase() === 'company' ? invoice?.billToEntityId : '') ||
+        linkedJob?.companyId ||
+        normalizeCompanyIdentifier(resolvedCompanyName) ||
+        activeCompanyContext?.id ||
+        ''
+      ).trim();
+      const resolvedCompanyOrgId = String(
+        invoice?.companyOrgId || invoice?.billToOrganizationId || linkedJob?.companyOrgId || ''
+      ).trim();
+      const linkedProvider = findProviderForFinancialEntry({
+        providerId: invoice?.providerId,
+        auditorId: invoice?.auditorId,
+        payToAuditorId: invoice?.payToAuditorId,
+        providerOrganizationId: invoice?.payToOrganizationId,
+        matchedAuditorId: linkedJob?.matchedAuditorId,
+        providerName: invoice?.providerName || invoice?.payToName || linkedJob?.matchedAuditorName,
+      });
+      const resolvedAuditorId = String(
+        invoice?.payToAuditorId ||
+        invoice?.auditorId ||
+        (String(invoice?.payToEntityType || '').toLowerCase() === 'auditor' ? invoice?.payToEntityId : '') ||
+        linkedProvider?.id ||
+        linkedJob?.matchedAuditorId ||
+        ''
+      ).trim();
+      const resolvedAuditorOrgId = String(
+        invoice?.payToOrganizationId || linkedProvider?.dbOrganizationId || ''
+      ).trim();
+      const resolvedAuditCompanyId = String(
+        invoice?.payToAuditCompanyId ||
+        invoice?.auditCompanyId ||
+        (String(invoice?.payToEntityType || '').toLowerCase() === 'auditor_company' ? invoice?.payToEntityId : '') ||
+        linkedProvider?.thirdPartyOrganizationId ||
+        (isThirdPartyProvider(linkedProvider)
+          ? linkedProvider?.dbOrganizationId || linkedProvider?.id || ''
+          : '')
+      ).trim();
+      return {
+        companyId: resolvedCompanyId,
+        companyOrgId: resolvedCompanyOrgId,
+        auditorId: resolvedAuditorId,
+        auditorOrgId: resolvedAuditorOrgId,
+        auditCompanyId: resolvedAuditCompanyId,
+      };
+    },
+    [activeCompanyContext?.id, activeCompanyContext?.name, findProviderForFinancialEntry, marketplaceJobById]
+  );
+  const resolvePayoutOwnershipForScope = useCallback(
+    (run) => {
+      const linkedInvoice = financeInvoiceById.get(String(run?.invoiceId || '')) || null;
+      const linkedOwnership = linkedInvoice ? resolveInvoiceOwnershipForScope(linkedInvoice) : null;
+      const linkedProvider = findProviderForFinancialEntry({
+        payToAuditorId: run?.payToAuditorId || linkedInvoice?.payToAuditorId,
+        payToOrganizationId: run?.payToOrganizationId || linkedInvoice?.payToOrganizationId,
+        providerName: run?.providerName || linkedInvoice?.providerName || linkedInvoice?.payToName,
+      });
+      const resolvedAuditCompanyId = String(
+        run?.payToAuditCompanyId ||
+        linkedOwnership?.auditCompanyId ||
+        linkedProvider?.thirdPartyOrganizationId ||
+        (isThirdPartyProvider(linkedProvider)
+          ? linkedProvider?.dbOrganizationId || linkedProvider?.id || ''
+          : '')
+      ).trim();
+      const resolvedAuditorId = String(run?.payToAuditorId || linkedOwnership?.auditorId || linkedProvider?.id || '').trim();
+      const resolvedPayToEntityType = String(
+        run?.payToEntityType ||
+        linkedInvoice?.payToEntityType ||
+        (resolvedAuditCompanyId ? 'auditor_company' : resolvedAuditorId ? 'auditor' : '')
+      ).trim().toLowerCase();
+      const resolvedPayToEntityId = String(
+        run?.payToEntityId ||
+        linkedInvoice?.payToEntityId ||
+        (resolvedPayToEntityType === 'auditor_company' ? resolvedAuditCompanyId : resolvedAuditorId) ||
+        ''
+      ).trim();
+      return {
+        companyId: String(run?.companyId || linkedOwnership?.companyId || '').trim(),
+        companyOrgId: String(run?.companyOrgId || linkedOwnership?.companyOrgId || '').trim(),
+        auditorId: resolvedAuditorId,
+        auditorOrgId: String(
+          run?.payToOrganizationId || linkedOwnership?.auditorOrgId || linkedProvider?.dbOrganizationId || ''
+        ).trim(),
+        auditCompanyId: resolvedAuditCompanyId,
+        payToEntityType: resolvedPayToEntityType,
+        payToEntityId: resolvedPayToEntityId,
+      };
+    },
+    [financeInvoiceById, findProviderForFinancialEntry, resolveInvoiceOwnershipForScope]
+  );
+  const accountancyScopeKeySet = useMemo(() => {
+    const keys = new Set();
+    [accountancyScope?.entityId, accountancyScope?.organizationId].forEach((value) => {
+      const normalized = normalizeFinanceIdentityKey(value);
+      if (normalized) {
+        keys.add(normalized);
+      }
+    });
+    return keys;
+  }, [accountancyScope?.entityId, accountancyScope?.organizationId]);
+  const isInvoiceInAccountancyScope = useCallback(
+    (invoice) => {
+      if (accountancyScope?.mode === 'incert') {
+        return true;
+      }
+      if (accountancyScope?.mode === 'auditor' || accountancyScope?.mode === 'auditor_company') {
+        return false;
+      }
+      if (!(accountancyScopeKeySet instanceof Set) || accountancyScopeKeySet.size === 0) {
+        return false;
+      }
+      const ownership = resolveInvoiceOwnershipForScope(invoice);
+      if (accountancyScope?.mode === 'company') {
+        return (
+          accountancyScopeKeySet.has(normalizeFinanceIdentityKey(ownership.companyId)) ||
+          accountancyScopeKeySet.has(normalizeFinanceIdentityKey(ownership.companyOrgId))
+        );
+      }
+      if (accountancyScope?.mode === 'auditor') {
+        return (
+          accountancyScopeKeySet.has(normalizeFinanceIdentityKey(ownership.auditorId)) ||
+          accountancyScopeKeySet.has(normalizeFinanceIdentityKey(ownership.auditorOrgId))
+        );
+      }
+      if (accountancyScope?.mode === 'auditor_company') {
+        return (
+          accountancyScopeKeySet.has(normalizeFinanceIdentityKey(ownership.auditCompanyId)) ||
+          accountancyScopeKeySet.has(normalizeFinanceIdentityKey(ownership.auditorOrgId))
+        );
+      }
+      return false;
+    },
+    [accountancyScope?.mode, accountancyScopeKeySet, resolveInvoiceOwnershipForScope]
+  );
+  const isPayoutInAccountancyScope = useCallback(
+    (run) => {
+      if (accountancyScope?.mode === 'incert') {
+        return true;
+      }
+      if (accountancyScope?.mode === 'company') {
+        return false;
+      }
+      if (!(accountancyScopeKeySet instanceof Set) || accountancyScopeKeySet.size === 0) {
+        return false;
+      }
+      const ownership = resolvePayoutOwnershipForScope(run);
+      const payToEntityType = String(ownership?.payToEntityType || '').trim().toLowerCase();
+      const payToEntityId = String(ownership?.payToEntityId || '').trim();
+      if (accountancyScope?.mode === 'auditor') {
+        if (payToEntityType === 'auditor_company') {
+          return false;
+        }
+        if (payToEntityType === 'auditor') {
+          return accountancyScopeKeySet.has(
+            normalizeFinanceIdentityKey(payToEntityId || ownership.auditorId)
+          );
+        }
+        return accountancyScopeKeySet.has(normalizeFinanceIdentityKey(ownership.auditorId));
+      }
+      if (accountancyScope?.mode === 'auditor_company') {
+        if (payToEntityType === 'auditor') {
+          return false;
+        }
+        if (payToEntityType === 'auditor_company') {
+          return accountancyScopeKeySet.has(
+            normalizeFinanceIdentityKey(payToEntityId || ownership.auditCompanyId)
+          );
+        }
+        return accountancyScopeKeySet.has(normalizeFinanceIdentityKey(ownership.auditCompanyId));
+      }
+      return false;
+    },
+    [accountancyScope?.mode, accountancyScopeKeySet, resolvePayoutOwnershipForScope]
+  );
+  const scopedFinanceInvoices = useMemo(
+    () => financeInvoices.filter((invoice) => isInvoiceInAccountancyScope(invoice)),
+    [financeInvoices, isInvoiceInAccountancyScope]
+  );
+  const scopedPayoutRuns = useMemo(
+    () => payoutRuns.filter((run) => isPayoutInAccountancyScope(run)),
+    [isPayoutInAccountancyScope, payoutRuns]
+  );
+  const scopedInvoiceIdSet = useMemo(
+    () =>
+      new Set(
+        scopedFinanceInvoices
+          .map((invoice) => String(invoice?.id || ''))
+          .filter(Boolean)
+      ),
+    [scopedFinanceInvoices]
+  );
+  const scopedPayoutRunIdSet = useMemo(
+    () =>
+      new Set(
+        scopedPayoutRuns
+          .map((run) => String(run?.id || ''))
+          .filter(Boolean)
+      ),
+    [scopedPayoutRuns]
+  );
+  const canManageInCertAccountancy = accountancyScope.mode === 'incert';
+  const canRolePayInvoices = accountancyScope.mode === 'company';
+  const canViewerPayInvoice = useCallback(
+    (invoice) => {
+      if (canManageInCertAccountancy) {
+        return true;
+      }
+      if (accountancyScope.mode !== 'company' || !canRolePayInvoices) {
+        return false;
+      }
+      const billToType = String(invoice?.billToEntityType || 'company').toLowerCase();
+      return billToType === 'company';
+    },
+    [accountancyScope.mode, canManageInCertAccountancy, canRolePayInvoices]
+  );
+  useEffect(() => {
+    if (isDebugBypassSession) {
+      return;
+    }
+    setDebugAccountancyScopeOverrides({
+      companyId: '',
+      auditorId: '',
+      auditCompanyId: '',
+    });
+  }, [isDebugBypassSession]);
 
   // Initialization & Theme
   useEffect(() => {
@@ -7611,14 +10025,17 @@ export default function App() {
 
     const inProgressRun = auditRuns.find((run) => run.auditJobId === jobId && run.status === 'in_progress');
     if (inProgressRun) {
-      completeAuditRun(inProgressRun.id);
+      completeAuditRun(inProgressRun.id, {
+        auditorId: targetAuditor?.id || '',
+        auditorName,
+      });
     }
 
     addToast('External audit approved and certificate issued', 'success');
     return true;
   };
 
-  const completeMarketplaceAudit = (jobId, auditorId) => {
+  const completeMarketplaceAudit = (jobId, auditorId, completionPayload = null) => {
     const targetJob = marketplaceJobs.find((job) => job.id === jobId);
     const targetAuditor = auditors.find((auditor) => auditor.id === auditorId);
 
@@ -7712,11 +10129,30 @@ export default function App() {
     ]);
 
     const inProgressRun = auditRuns.find((run) => run.auditJobId === jobId && run.status === 'in_progress');
+    let runCompletionResult = true;
     if (inProgressRun) {
-      completeAuditRun(inProgressRun.id);
+      runCompletionResult = completeAuditRun(inProgressRun.id, {
+        completionPayload:
+          completionPayload && typeof completionPayload === 'object'
+            ? {
+                ...completionPayload,
+                completedAt: today.toISOString(),
+                auditorName: targetAuditor.name,
+              }
+            : null,
+        auditorId: targetAuditor.id,
+        auditorName: targetAuditor.name,
+      });
     }
 
     addToast('Audit completed and certificate issued to Evidence Vault', 'success');
+    if (runCompletionResult && typeof runCompletionResult === 'object') {
+      return {
+        ...runCompletionResult,
+        jobId,
+        auditorId,
+      };
+    }
     return true;
   };
 
@@ -7933,14 +10369,41 @@ export default function App() {
       const costCentre = extractStructuredNoteValue(job.notes, 'Cost centre') || 'UNALLOCATED';
       const approver = extractStructuredNoteValue(job.notes, 'Approver') || 'finance@acme-logistics.example';
       const invoiceId = getNextInvoiceId(nextInvoices);
+      const matchedProvider = activeProviderRecords.find((provider) => provider.id === job.matchedAuditorId) || null;
+      const providerName = String(matchedProvider?.name || 'Assigned provider');
+      const companyName = String(job.companyName || activeCompanyContext.name || 'Company');
+      const companyId =
+        String(job.companyId || '').trim() ||
+        normalizeCompanyIdentifier(companyName) ||
+        activeCompanyContext.id ||
+        'company';
+      const companyOrgId = String(job.companyOrgId || '').trim();
+      const payToAuditorId = String(matchedProvider?.id || job.matchedAuditorId || '');
+      const payToOrganizationId = String(matchedProvider?.dbOrganizationId || '');
+      const payToAuditCompanyId = String(
+        matchedProvider?.thirdPartyOrganizationId ||
+        (isThirdPartyProvider(matchedProvider)
+          ? matchedProvider?.dbOrganizationId || matchedProvider?.id || ''
+          : '')
+      );
       const invoice = {
         id: invoiceId,
         jobId: job.id,
         quoteId: pricing.quoteId,
         assetName: job.assetName,
-        providerName: auditors.find((auditor) => auditor.id === job.matchedAuditorId)?.name || 'Assigned provider',
-        billToName: job.companyName || activeCompanyContext.name,
-        payToName: auditors.find((auditor) => auditor.id === job.matchedAuditorId)?.name || 'Assigned provider',
+        providerName,
+        billToName: companyName,
+        payToName: providerName,
+        companyId,
+        companyOrgId,
+        billToEntityType: 'company',
+        billToEntityId: companyId,
+        billToOrganizationId: companyOrgId,
+        payToEntityType: payToAuditCompanyId ? 'auditor_company' : 'auditor',
+        payToEntityId: payToAuditCompanyId || payToAuditorId,
+        payToAuditorId,
+        payToAuditCompanyId,
+        payToOrganizationId,
         issueDate,
         dueDate,
         poNumber,
@@ -8067,7 +10530,14 @@ export default function App() {
     return true;
   };
 
-  const markInvoiceCollected = (invoiceId) => {
+  const markInvoiceCollected = (
+    invoiceId,
+    {
+      payoutStatus = 'scheduled',
+      existingRunStatus = '',
+      successToastMessage = null,
+    } = {}
+  ) => {
     const targetInvoice = financeInvoices.find((invoice) => invoice.id === invoiceId);
     if (!targetInvoice) {
       addToast('Invoice not found for collection posting', 'info');
@@ -8107,11 +10577,26 @@ export default function App() {
       paidAt,
     };
     const collectedInvoicesById = new Map([[String(invoiceId), collectedInvoice]]);
-    setPayoutRuns((previousRuns) => upsertPayoutRunsFromCollectedInvoices(previousRuns, collectedInvoicesById, paidAt));
+    setPayoutRuns((previousRuns) =>
+      upsertPayoutRunsFromCollectedInvoices(previousRuns, collectedInvoicesById, paidAt, {
+        newRunStatus: payoutStatus,
+        existingRunStatus,
+      })
+    );
 
-    addToast(`Cash received for invoice ${invoiceId}. Provider payout queued within 7 days.`, 'success');
+    addToast(
+      successToastMessage || `Cash received for invoice ${invoiceId}. Provider payout queued within 7 days.`,
+      'success'
+    );
     return true;
   };
+
+  const markInvoicePaidByCompany = (invoiceId) =>
+    markInvoiceCollected(invoiceId, {
+      payoutStatus: 'pending_confirmation',
+      existingRunStatus: 'pending_confirmation',
+      successToastMessage: `Payment recorded for invoice ${invoiceId}. Awaiting InCert confirmation before provider payment.`,
+    });
 
   const buildDebugCollectedTimestamp = (invoice, fallbackIso = new Date().toISOString()) => {
     const seedSource = String(invoice?.id || invoice?.jobId || invoice?.quoteId || '');
@@ -8161,15 +10646,23 @@ export default function App() {
     return roundMoney(Math.max(0, payoutBaseExVat));
   };
 
-  const upsertPayoutRunsFromCollectedInvoices = (previousRuns, collectedInvoicesById, fallbackCreatedAtIso = new Date().toISOString()) => {
+  const upsertPayoutRunsFromCollectedInvoices = (
+    previousRuns,
+    collectedInvoicesById,
+    fallbackCreatedAtIso = new Date().toISOString(),
+    { newRunStatus = 'scheduled', existingRunStatus = '' } = {}
+  ) => {
     if (!(collectedInvoicesById instanceof Map) || collectedInvoicesById.size === 0) {
       return previousRuns;
     }
+    const normalizedNewRunStatus = String(newRunStatus || 'scheduled').trim().toLowerCase() || 'scheduled';
+    const normalizedExistingRunStatus = String(existingRunStatus || '').trim().toLowerCase();
 
     let nextRuns = previousRuns.map((run) => {
       const invoiceId = String(run.invoiceId || '');
       const linkedInvoice = collectedInvoicesById.get(invoiceId);
-      if (!linkedInvoice || String(run.status || '').toLowerCase() === 'paid') {
+      const currentStatus = String(run.status || '').toLowerCase();
+      if (!linkedInvoice || currentStatus === 'paid') {
         return run;
       }
       const collectionDate = String(linkedInvoice.paidAt || '').slice(0, 10);
@@ -8184,6 +10677,19 @@ export default function App() {
         ...run,
         scheduledPayoutDate,
         scheduledFor: scheduledPayoutDate,
+        status: normalizedExistingRunStatus || currentStatus || normalizedNewRunStatus,
+        payToEntityType: String(
+          run?.payToEntityType ||
+          linkedInvoice?.payToEntityType ||
+          (linkedInvoice?.payToAuditCompanyId ? 'auditor_company' : 'auditor')
+        ),
+        payToEntityId: String(
+          run?.payToEntityId ||
+          linkedInvoice?.payToEntityId ||
+          linkedInvoice?.payToAuditCompanyId ||
+          linkedInvoice?.payToAuditorId ||
+          ''
+        ),
       };
     });
 
@@ -8209,10 +10715,21 @@ export default function App() {
           invoiceId: normalizedInvoiceId,
           jobId: String(linkedInvoice.jobId || ''),
           providerName: String(linkedInvoice.providerName || linkedInvoice.payToName || 'Assigned provider'),
+          payToEntityType: String(
+            linkedInvoice.payToEntityType || (linkedInvoice.payToAuditCompanyId ? 'auditor_company' : 'auditor')
+          ),
+          payToEntityId: String(
+            linkedInvoice.payToEntityId || linkedInvoice.payToAuditCompanyId || linkedInvoice.payToAuditorId || ''
+          ),
+          payToAuditorId: String(linkedInvoice.payToAuditorId || ''),
+          payToAuditCompanyId: String(linkedInvoice.payToAuditCompanyId || ''),
+          payToOrganizationId: String(linkedInvoice.payToOrganizationId || ''),
+          companyId: String(linkedInvoice.companyId || ''),
+          companyOrgId: String(linkedInvoice.companyOrgId || ''),
           payoutAmount: resolveInvoicePayoutAmount(linkedInvoice),
           scheduledPayoutDate,
           scheduledFor: scheduledPayoutDate,
-          status: 'scheduled',
+          status: normalizedNewRunStatus,
           createdAt: String(linkedInvoice.paidAt || fallbackCreatedAtIso || new Date().toISOString()),
         },
         ...nextRuns,
@@ -8394,6 +10911,17 @@ export default function App() {
         invoiceId,
         jobId: targetInvoice.jobId,
         providerName: targetInvoice.providerName,
+        payToEntityType: String(
+          targetInvoice.payToEntityType || (targetInvoice.payToAuditCompanyId ? 'auditor_company' : 'auditor')
+        ),
+        payToEntityId: String(
+          targetInvoice.payToEntityId || targetInvoice.payToAuditCompanyId || targetInvoice.payToAuditorId || ''
+        ),
+        payToAuditorId: String(targetInvoice.payToAuditorId || ''),
+        payToAuditCompanyId: String(targetInvoice.payToAuditCompanyId || ''),
+        payToOrganizationId: String(targetInvoice.payToOrganizationId || ''),
+        companyId: String(targetInvoice.companyId || ''),
+        companyOrgId: String(targetInvoice.companyOrgId || ''),
         payoutAmount,
         scheduledPayoutDate,
         scheduledFor: scheduledPayoutDate,
@@ -8416,6 +10944,37 @@ export default function App() {
     );
 
     addToast(`Payout run ${runId} scheduled for ${targetInvoice.providerName} (within 7 days of collection)`, 'success');
+    return true;
+  };
+
+  const confirmPayoutRunForPayment = (runId) => {
+    const targetRun = payoutRuns.find((run) => run.id === runId);
+    if (!targetRun) {
+      addToast('Payout run not found', 'info');
+      return false;
+    }
+    const normalizedStatus = String(targetRun.status || '').toLowerCase();
+    if (normalizedStatus === 'paid') {
+      addToast('Payout run is already marked as paid', 'info');
+      return false;
+    }
+    if (normalizedStatus === 'scheduled') {
+      addToast('Payout run is already confirmed and scheduled for payment', 'info');
+      return false;
+    }
+
+    setPayoutRuns((previousRuns) =>
+      previousRuns.map((run) =>
+        run.id === runId
+          ? {
+              ...run,
+              status: 'scheduled',
+            }
+          : run
+      )
+    );
+
+    addToast(`Payout ${runId} confirmed and ready for payment`, 'success');
     return true;
   };
 
@@ -8687,7 +11246,11 @@ export default function App() {
     return true;
   };
 
-  const exportAccountancyCsv = () => {
+  const exportAccountancyCsv = ({
+    invoices = financeInvoices,
+    runs = payoutRuns,
+    filePrefix = 'incert-accountancy',
+  } = {}) => {
     if (typeof window === 'undefined') {
       return false;
     }
@@ -8709,7 +11272,7 @@ export default function App() {
       ],
     ];
 
-    financeInvoices.forEach((invoice) => {
+    invoices.forEach((invoice) => {
       rows.push([
         'Invoice',
         invoice.id || '',
@@ -8725,7 +11288,7 @@ export default function App() {
       ]);
     });
 
-    payoutRuns.forEach((run) => {
+    runs.forEach((run) => {
       rows.push([
         'Payout',
         run.id || '',
@@ -8742,7 +11305,13 @@ export default function App() {
     });
 
     const csvText = rows.map((row) => row.map(escapeCsvCell).join(',')).join('\n');
-    const fileName = `incert-accountancy-${new Date().toISOString().slice(0, 10)}.csv`;
+    const normalizedPrefix =
+      String(filePrefix || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'accountancy';
+    const fileName = `${normalizedPrefix}-${new Date().toISOString().slice(0, 10)}.csv`;
     const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
     const downloadUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -8755,6 +11324,55 @@ export default function App() {
 
     addToast('Accountancy CSV exported', 'success');
     return true;
+  };
+  const ensureScopedInvoiceForAccountancy = (invoiceId, { requirePayable = false } = {}) => {
+    const normalizedInvoiceId = String(invoiceId || '').trim();
+    if (!normalizedInvoiceId) {
+      addToast('Invalid invoice reference', 'info');
+      return null;
+    }
+    if (!scopedInvoiceIdSet.has(normalizedInvoiceId)) {
+      addToast('This invoice is outside your account scope', 'info');
+      return null;
+    }
+    const targetInvoice = financeInvoices.find((invoice) => String(invoice?.id || '') === normalizedInvoiceId) || null;
+    if (!targetInvoice) {
+      addToast('Invoice not found', 'info');
+      return null;
+    }
+    if (requirePayable && !canViewerPayInvoice(targetInvoice)) {
+      addToast('Only bill-to invoices can be paid from this account page', 'info');
+      return null;
+    }
+    return targetInvoice;
+  };
+  const ensureScopedPayoutRunForAccountancy = (runId) => {
+    const normalizedRunId = String(runId || '').trim();
+    if (!normalizedRunId) {
+      addToast('Invalid payout reference', 'info');
+      return null;
+    }
+    if (!scopedPayoutRunIdSet.has(normalizedRunId)) {
+      addToast('This payout run is outside your account scope', 'info');
+      return null;
+    }
+    const targetRun = payoutRuns.find((run) => String(run?.id || '') === normalizedRunId) || null;
+    if (!targetRun) {
+      addToast('Payout run not found', 'info');
+      return null;
+    }
+    return targetRun;
+  };
+  const exportScopedAccountancyCsv = () => {
+    const scopeSlug = normalizeCompanyIdentifier(accountancyScope?.label || accountancyScope?.mode || 'accountancy') || 'accountancy';
+    const prefix = accountancyScope?.mode === 'incert'
+      ? 'incert-accountancy'
+      : `${String(accountancyScope?.mode || 'account')}-accountancy-${scopeSlug}`;
+    return exportAccountancyCsv({
+      invoices: scopedFinanceInvoices,
+      runs: scopedPayoutRuns,
+      filePrefix: prefix,
+    });
   };
 
   const addInspectionTemplate = ({ regime, name, controls, scope = 'company' }) => {
@@ -9059,6 +11677,78 @@ export default function App() {
     return true;
   };
 
+  const updateTemplateBlueprintQuestionBank = ({ templateId, questionBank }) => {
+    const normalizedTemplateId = String(templateId || '').trim();
+    if (!normalizedTemplateId) {
+      addToast('Select a valid template blueprint before saving question changes', 'info');
+      return false;
+    }
+
+    const targetTemplate = templateBlueprints.find((template) => template.id === normalizedTemplateId);
+    if (!targetTemplate) {
+      addToast('Template blueprint not found', 'info');
+      return false;
+    }
+
+    const questionPrefix = String(targetTemplate.category || targetTemplate.id || 'Q');
+    const normalizedQuestions = normalizeTemplateQuestionBank(questionBank, questionPrefix);
+    if (normalizedQuestions.length === 0) {
+      addToast('Question bank must contain at least one question', 'info');
+      return false;
+    }
+
+    const maxScore = normalizedQuestions.reduce((total, question) => total + Math.max(1, Number(question.weight || 1)), 0);
+    const previousPassPercent = Number(targetTemplate?.passThreshold?.passPercent || 0);
+    const passPercent = Number.isFinite(previousPassPercent) && previousPassPercent > 0
+      ? Math.max(1, Math.round(previousPassPercent))
+      : 80;
+    const passScore = Math.max(1, Math.min(maxScore, Math.ceil(maxScore * (passPercent / 100))));
+    const criticalQuestionIds = normalizedQuestions
+      .filter((question) => question.type === 'boolean' && Boolean(question.critical))
+      .map((question) => String(question.id || '').trim())
+      .filter(Boolean);
+    const mandatoryEvidenceBlocks = normalizedQuestions.filter((question) => {
+      const evidence = question.evidence || {};
+      return Boolean(evidence.photo || evidence.comment || evidence.signature || question.required);
+    }).length;
+
+    const nowIso = new Date().toISOString();
+    const nextVersion = incrementTemplateVersion(targetTemplate.currentVersion || '1.0');
+    const versionEntry = {
+      version: nextVersion,
+      changelog: 'Question bank updated from template viewer',
+      publishedAt: nowIso,
+      hash: createPseudoHash(JSON.stringify({ templateId: normalizedTemplateId, version: nextVersion, nowIso })),
+    };
+
+    setTemplateBlueprints((previousTemplates) =>
+      previousTemplates.map((template) => {
+        if (template.id !== normalizedTemplateId) {
+          return template;
+        }
+
+        return {
+          ...template,
+          questionBank: normalizedQuestions,
+          mandatoryEvidenceBlocks,
+          currentVersion: nextVersion,
+          publishedAt: template.status === 'published' ? nowIso : template.publishedAt,
+          versions: [...(Array.isArray(template.versions) ? template.versions : []), versionEntry],
+          passThreshold: {
+            passScore,
+            maxScore,
+            passPercent,
+            criticalQuestionIds,
+          },
+          updatedAt: nowIso,
+        };
+      })
+    );
+
+    addToast(`Template ${normalizedTemplateId} question bank saved as v${nextVersion}`, 'success');
+    return true;
+  };
+
   const createTemplateListing = ({ templateId, priceModel, price, tags, vettingTier }) => {
     const targetTemplate = templateBlueprints.find((template) => template.id === templateId);
     if (!targetTemplate) {
@@ -9172,6 +11862,9 @@ export default function App() {
         gpsPolicy: String(gpsPolicy || 'optional'),
         requiredEvidenceRemaining: Math.max(0, Number(targetTemplate.mandatoryEvidenceBlocks || 0)),
         requiredSignaturesRemaining: targetTemplate.signatures?.operatorRequired ? 2 : 1,
+        reportArtifactId: '',
+        completionPayload: null,
+        completionSummary: null,
       },
       ...previousRuns,
     ]);
@@ -9179,14 +11872,58 @@ export default function App() {
     return runId;
   };
 
-  const createReportArtifactForRun = (auditRunId) => {
+  const createReportArtifactForRun = (auditRunId, completionContext = {}) => {
     const targetRun = auditRuns.find((run) => run.id === auditRunId);
     if (!targetRun) {
       addToast('Audit run not found for report generation', 'info');
       return null;
     }
+    const targetTemplate = templateBlueprints.find((template) => template.id === targetRun.templateId) || null;
+    const targetJob = marketplaceJobs.find((job) => job.id === targetRun.auditJobId) || null;
+    const resolvedAuditorId = String(
+      completionContext?.auditorId ||
+        targetJob?.matchedAuditorId ||
+        ''
+    );
+    const targetAuditor = auditors.find((auditor) => auditor.id === resolvedAuditorId) || null;
+    const completionPayload =
+      completionContext?.completionPayload && typeof completionContext.completionPayload === 'object'
+        ? completionContext.completionPayload
+        : targetRun?.completionPayload && typeof targetRun.completionPayload === 'object'
+          ? targetRun.completionPayload
+          : null;
+
+    const hasActualAnswers = Array.isArray(completionPayload?.answers) && completionPayload.answers.length > 0;
+    const templateIndex = Math.max(
+      0,
+      templateBlueprints.findIndex((template) => template.id === targetRun.templateId)
+    );
+    const fallbackTemplateModel = buildTemplateCompletionReportModel(
+      targetTemplate || {
+        id: targetRun.templateId || 'TPLX-0000',
+        name: completionPayload?.templateName || `${targetJob?.regime || 'General'} Audit Template`,
+        category: completionPayload?.templateCategory || targetJob?.regime || 'HS',
+        currentVersion: targetRun.templateVersion || '1.0',
+        questionBank: [],
+      },
+      templateIndex
+    );
+    const reportModel = hasActualAnswers
+      ? buildCompletedAuditRunReportModel({
+          auditRun: {
+            ...targetRun,
+            completedAt: completionContext?.completedAt || targetRun.completedAt || new Date().toISOString(),
+          },
+          templateBlueprint: targetTemplate,
+          completionPayload,
+          job: targetJob,
+          auditor: targetAuditor,
+          companyContext: activeCompanyContext,
+        })
+      : fallbackTemplateModel;
 
     let artifactId = '';
+    let createdAtIso = '';
     setReportArtifacts((previousArtifacts) => {
       const runArtifacts = previousArtifacts.filter((artifact) => artifact.auditRunId === auditRunId);
       const nextVersion =
@@ -9195,11 +11932,12 @@ export default function App() {
         artifact.auditRunId === auditRunId && artifact.status === 'valid'
           ? {
               ...artifact,
-              status: 'replaced',
-            }
+            status: 'replaced',
+          }
           : artifact
       );
       const createdAt = new Date().toISOString();
+      createdAtIso = createdAt;
       artifactId = getNextEntityId(previousArtifacts, 'RPT');
       const basePath = `storage://incert-reports/${auditRunId}/v${nextVersion}`;
       const artifact = {
@@ -9214,14 +11952,85 @@ export default function App() {
         signedPdfUrl: `https://signed.incert.example/reports/${auditRunId}/v${nextVersion}.pdf`,
         signedHtmlUrl: `https://signed.incert.example/reports/${auditRunId}/v${nextVersion}.html`,
         createdAt,
+        htmlContent: buildTemplateCompletedReportHtml(reportModel, {}),
+        reportSummary: reportModel.summary,
+        reportTemplate: reportModel.template,
+        reportAuditMeta: reportModel.audit,
+        verificationUrl: reportModel.links.verificationUrl,
+        vaultRecordId: reportModel.security.vaultRecordId,
+        tamperSealId: reportModel.security.tamperSealId,
+        vaultStatus: 'pending',
+        vaultStoredAt: '',
       };
       return [artifact, ...replacedArtifacts];
     });
+
+    if (artifactId) {
+      Promise.all([
+        QRCode.toDataURL(reportModel.links.verificationUrl, { width: 540, margin: 1, errorCorrectionLevel: 'H' }),
+        QRCode.toDataURL(reportModel.links.vaultUrl, { width: 540, margin: 1, errorCorrectionLevel: 'H' }),
+        QRCode.toDataURL(reportModel.links.tamperUrl, { width: 540, margin: 1, errorCorrectionLevel: 'H' }),
+      ])
+        .then(([verificationQrDataUrl, vaultQrDataUrl, tamperQrDataUrl]) => {
+          const nextHtml = buildTemplateCompletedReportHtml(reportModel, {
+            verificationQrDataUrl,
+            vaultQrDataUrl,
+            tamperQrDataUrl,
+          });
+          setReportArtifacts((previousArtifacts) =>
+            previousArtifacts.map((artifact) =>
+              artifact.id === artifactId
+                ? {
+                    ...artifact,
+                    htmlContent: nextHtml,
+                    qrAssets: {
+                      verificationQrDataUrl,
+                      vaultQrDataUrl,
+                      tamperQrDataUrl,
+                    },
+                  }
+                : artifact
+            )
+          );
+        })
+        .catch(() => {
+          setReportArtifacts((previousArtifacts) =>
+            previousArtifacts.map((artifact) =>
+              artifact.id === artifactId
+                ? {
+                    ...artifact,
+                    qrAssets: null,
+                  }
+                : artifact
+            )
+          );
+        });
+    }
+
     addToast(`Report artifact ${artifactId} generated`, 'success');
+    if (createdAtIso) {
+      setMarketplaceJobs((previousJobs) =>
+        previousJobs.map((job) =>
+          job.id === targetRun.auditJobId
+            ? {
+                ...job,
+                timeline: [
+                  ...job.timeline,
+                  {
+                    label: `Completed report artifact ${artifactId} generated`,
+                    at: getTimelineStamp(new Date(createdAtIso)),
+                    actor: 'InCert Report Engine',
+                  },
+                ],
+              }
+            : job
+        )
+      );
+    }
     return artifactId;
   };
 
-  const completeAuditRun = (auditRunId) => {
+  const completeAuditRun = (auditRunId, completionContext = {}) => {
     const targetRun = auditRuns.find((run) => run.id === auditRunId);
     if (!targetRun) {
       addToast('Audit run not found', 'info');
@@ -9234,6 +12043,15 @@ export default function App() {
     }
 
     const completedAt = new Date().toISOString();
+    const completionPayload =
+      completionContext?.completionPayload && typeof completionContext.completionPayload === 'object'
+        ? completionContext.completionPayload
+        : null;
+    const completionSummary =
+      completionPayload?.summary && typeof completionPayload.summary === 'object'
+        ? completionPayload.summary
+        : null;
+
     setAuditRuns((previousRuns) =>
       previousRuns.map((run) =>
         run.id === auditRunId
@@ -9244,11 +12062,111 @@ export default function App() {
               offlineSyncState: 'synced',
               requiredEvidenceRemaining: 0,
               requiredSignaturesRemaining: 0,
+              completionPayload,
+              completionSummary,
             }
           : run
       )
     );
-    createReportArtifactForRun(auditRunId);
+    const artifactId = createReportArtifactForRun(auditRunId, {
+      ...completionContext,
+      completedAt,
+    });
+    if (artifactId) {
+      setAuditRuns((previousRuns) =>
+        previousRuns.map((run) =>
+          run.id === auditRunId
+            ? {
+                ...run,
+                reportArtifactId: artifactId,
+              }
+            : run
+        )
+      );
+    }
+    return artifactId ? { runId: auditRunId, artifactId } : true;
+  };
+
+  const downloadReportArtifactHtml = (reportArtifactId) => {
+    const targetArtifact = reportArtifacts.find((artifact) => artifact.id === reportArtifactId);
+    if (!targetArtifact) {
+      addToast('Report artifact not found', 'info');
+      return false;
+    }
+
+    const htmlContent = String(targetArtifact.htmlContent || '').trim();
+    if (!htmlContent) {
+      const fallbackUrl = String(targetArtifact.signedHtmlUrl || '').trim();
+      if (!fallbackUrl) {
+        addToast('No HTML report is available for this artifact', 'info');
+        return false;
+      }
+      window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+      return true;
+    }
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const runId = String(targetArtifact.auditRunId || 'run').toLowerCase();
+    const versionLabel = String(targetArtifact.version || '1');
+    anchor.href = downloadUrl;
+    anchor.download = `incert-${runId}-v${versionLabel}-report.html`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(downloadUrl);
+    addToast(`Downloaded report artifact ${reportArtifactId}`, 'success');
+    return true;
+  };
+
+  const saveReportArtifactToEvidenceVault = (reportArtifactId) => {
+    const targetArtifact = reportArtifacts.find((artifact) => artifact.id === reportArtifactId);
+    if (!targetArtifact) {
+      addToast('Report artifact not found', 'info');
+      return false;
+    }
+
+    const storedAt = new Date().toISOString();
+    const linkedRun = auditRuns.find((run) => run.id === targetArtifact.auditRunId);
+    const linkedJobId = linkedRun?.auditJobId || '';
+
+    setReportArtifacts((previousArtifacts) =>
+      previousArtifacts.map((artifact) =>
+        artifact.id === reportArtifactId
+          ? {
+              ...artifact,
+              vaultStatus: 'stored',
+              vaultStoredAt: storedAt,
+              vaultRecordId: artifact.vaultRecordId || `VLT-${createPseudoDigest(`${reportArtifactId}:vault`, 8).toUpperCase()}`,
+              tamperSealId: artifact.tamperSealId || `SEAL-${createPseudoDigest(`${reportArtifactId}:seal`, 8).toUpperCase()}`,
+            }
+          : artifact
+      )
+    );
+
+    if (linkedJobId) {
+      const timelineAt = getTimelineStamp(new Date(storedAt));
+      setMarketplaceJobs((previousJobs) =>
+        previousJobs.map((job) =>
+          job.id === linkedJobId
+            ? {
+                ...job,
+                timeline: [
+                  ...job.timeline,
+                  {
+                    label: `Completed report ${reportArtifactId} saved to Evidence Vault`,
+                    at: timelineAt,
+                    actor: 'InCert Evidence Vault',
+                  },
+                ],
+              }
+            : job
+        )
+      );
+    }
+
+    addToast(`Report ${reportArtifactId} saved to Evidence Vault`, 'success');
     return true;
   };
 
@@ -10006,6 +12924,10 @@ export default function App() {
       openTab('ops');
       return;
     }
+    if (actionId === 'go-templates') {
+      openTab('templates');
+      return;
+    }
     if (actionId === 'new-asset') {
       setShowCommandPalette(false);
       setShowAddAssetModal(true);
@@ -10249,6 +13171,14 @@ export default function App() {
                 label="Operations"
                 isActive={activeTab === 'ops'}
                 onClick={() => openTab('ops')}
+              />
+            )}
+            {allowedTabsForRole.includes('templates') && (
+              <DesktopNavItem
+                icon={<FileSignature />}
+                label="Templates"
+                isActive={activeTab === 'templates'}
+                onClick={() => openTab('templates')}
               />
             )}
             {allowedTabsForRole.includes('help') && (
@@ -10496,6 +13426,8 @@ export default function App() {
                   assets={enrichedAssets}
                   auditors={activeProviderRecords}
                   jobs={marketplaceJobs}
+                  auditRuns={auditRuns}
+                  reportArtifacts={reportArtifacts}
                   inspectionTemplates={inspectionTemplates}
                   companyContext={activeCompanyContext}
                   debugRole={effectiveUserRole}
@@ -10512,161 +13444,255 @@ export default function App() {
                   onStartAuditRunForJob={startAuditRunForMarketplaceJob}
                   onRecordFinding={recordMarketplaceFinding}
                   onReassignJob={reassignMarketplaceJob}
+                  onDownloadReportArtifact={downloadReportArtifactHtml}
+                  onSaveReportArtifactToVault={saveReportArtifactToEvidenceVault}
                 />
               )}
 
               {activeTab === 'accountancy' && (
                 <AccountancyView
-                  financeInvoices={financeInvoices}
-                  payoutRuns={payoutRuns}
-                  onGenerateInvoices={generateMissingInvoices}
-                  onApproveInvoice={approveInvoice}
-                  onIssueInvoice={issueInvoice}
-                  onSendInvoiceReminder={sendInvoiceReminder}
-                  onMarkInvoiceCollected={markInvoiceCollected}
-                  onRunCollectionsSweep={runInvoiceCollectionsSweep}
-                  onSchedulePayout={schedulePayoutForInvoice}
-                  onMarkPayoutPaid={markPayoutRunPaid}
-                  onExportCsv={exportAccountancyCsv}
-                  showDebugBulkActions={isDebugBypassSession}
-                  onCollectReceivablesMonthDebug={markInvoicesCollectedForMonth}
-                  onPayProvidersMonthDebug={markPayoutRunsPaidForMonth}
-                  onCollectReceivablesYearDebug={markAllInvoicesCollectedDebug}
-                  onPayProvidersYearDebug={markAllPayoutRunsPaidDebug}
-                  onAlignPayoutsToCollectionsDebug={alignDebugPayoutsToCollections}
+                  accountancyMode={accountancyScope.mode}
+                  accountancyEntityLabel={accountancyScope.label}
+                  financeInvoices={scopedFinanceInvoices}
+                  payoutRuns={scopedPayoutRuns}
+                  canPayInvoice={canViewerPayInvoice}
+                  showDebugScopeSelector={Boolean(accountancyDebugScopeConfig)}
+                  debugScopeLabel={accountancyDebugScopeConfig?.label || 'Account'}
+                  debugScopeOptions={accountancyDebugScopeConfig?.options || []}
+                  debugScopeValue={accountancyDebugScopeConfig?.value || ''}
+                  onDebugScopeChange={accountancyDebugScopeConfig?.onChange}
+                  onGenerateInvoices={canManageInCertAccountancy ? generateMissingInvoices : undefined}
+                  onApproveInvoice={canManageInCertAccountancy
+                    ? (invoiceId) => {
+                        const scopedInvoice = ensureScopedInvoiceForAccountancy(invoiceId);
+                        if (!scopedInvoice) {
+                          return false;
+                        }
+                        return approveInvoice(invoiceId);
+                      }
+                    : undefined}
+                  onIssueInvoice={canManageInCertAccountancy
+                    ? (invoiceId) => {
+                        const scopedInvoice = ensureScopedInvoiceForAccountancy(invoiceId);
+                        if (!scopedInvoice) {
+                          return false;
+                        }
+                        return issueInvoice(invoiceId);
+                      }
+                    : undefined}
+                  onSendInvoiceReminder={canManageInCertAccountancy
+                    ? (invoiceId) => {
+                        const scopedInvoice = ensureScopedInvoiceForAccountancy(invoiceId);
+                        if (!scopedInvoice) {
+                          return false;
+                        }
+                        return sendInvoiceReminder(invoiceId);
+                      }
+                    : undefined}
+                  onMarkInvoiceCollected={
+                    canManageInCertAccountancy || canRolePayInvoices
+                      ? (invoiceId) => {
+                          const scopedInvoice = ensureScopedInvoiceForAccountancy(invoiceId, {
+                            requirePayable: !canManageInCertAccountancy,
+                          });
+                          if (!scopedInvoice) {
+                            return false;
+                          }
+                          return canManageInCertAccountancy
+                            ? markInvoiceCollected(invoiceId)
+                            : markInvoicePaidByCompany(invoiceId);
+                        }
+                      : undefined
+                  }
+                  onRunCollectionsSweep={canManageInCertAccountancy ? runInvoiceCollectionsSweep : undefined}
+                  onSchedulePayout={canManageInCertAccountancy
+                    ? (invoiceId) => {
+                        const scopedInvoice = ensureScopedInvoiceForAccountancy(invoiceId);
+                        if (!scopedInvoice) {
+                          return false;
+                        }
+                        return schedulePayoutForInvoice(invoiceId);
+                      }
+                    : undefined}
+                  onConfirmPayoutRun={canManageInCertAccountancy
+                    ? (runId) => {
+                        const scopedRun = ensureScopedPayoutRunForAccountancy(runId);
+                        if (!scopedRun) {
+                          return false;
+                        }
+                        return confirmPayoutRunForPayment(runId);
+                      }
+                    : undefined}
+                  onMarkPayoutPaid={canManageInCertAccountancy
+                    ? (runId) => {
+                        const scopedRun = ensureScopedPayoutRunForAccountancy(runId);
+                        if (!scopedRun) {
+                          return false;
+                        }
+                        return markPayoutRunPaid(runId);
+                      }
+                    : undefined}
+                  onExportCsv={exportScopedAccountancyCsv}
+                  showDebugBulkActions={isDebugBypassSession && canManageInCertAccountancy}
+                  onCollectReceivablesMonthDebug={canManageInCertAccountancy ? markInvoicesCollectedForMonth : undefined}
+                  onPayProvidersMonthDebug={canManageInCertAccountancy ? markPayoutRunsPaidForMonth : undefined}
+                  onCollectReceivablesYearDebug={canManageInCertAccountancy ? markAllInvoicesCollectedDebug : undefined}
+                  onPayProvidersYearDebug={canManageInCertAccountancy ? markAllPayoutRunsPaidDebug : undefined}
+                  onAlignPayoutsToCollectionsDebug={canManageInCertAccountancy ? alignDebugPayoutsToCollections : undefined}
                 />
               )}
 
               {activeTab === 'ops' && (
-                <OperationsCenterView
-                  isSupabaseConfigured={SUPABASE_ENV_CONFIGURED}
-                  authRuntimeMode={authRuntimeMode}
-                  onSetAuthRuntimeMode={setRuntimeAuthMode}
-                  tenantInvites={tenantInvites}
-                  onCreateTenantInvite={createTenantInvite}
-                  onAcceptTenantInvite={acceptNextTenantInvite}
-                  marketplaceBidBoard={marketplaceBidBoard}
-                  dispatchSlaEvents={dispatchSlaEvents}
-                  onSeedBidRound={seedMarketplaceBidRound}
-                  onAwardBestBid={awardBestMarketplaceBid}
+                <div className="space-y-5">
+                  <OperationsCenterView
+                    isSupabaseConfigured={SUPABASE_ENV_CONFIGURED}
+                    authRuntimeMode={authRuntimeMode}
+                    onSetAuthRuntimeMode={setRuntimeAuthMode}
+                    tenantInvites={tenantInvites}
+                    onCreateTenantInvite={createTenantInvite}
+                    onAcceptTenantInvite={acceptNextTenantInvite}
+                    marketplaceBidBoard={marketplaceBidBoard}
+                    dispatchSlaEvents={dispatchSlaEvents}
+                    onSeedBidRound={seedMarketplaceBidRound}
+                    onAwardBestBid={awardBestMarketplaceBid}
+                    templateBlueprints={templateBlueprints}
+                    onPublishTemplateBlueprint={publishTemplateBlueprint}
+                    evidenceAiJobs={evidenceAiJobs}
+                    evidenceProvenanceEvents={evidenceProvenanceEvents}
+                    onQueueEvidenceAiJob={enqueueEvidenceAiExtraction}
+                    onAdvanceEvidenceReview={advanceEvidenceAiReview}
+                    onAppendProvenanceEvent={appendEvidenceProvenanceEvent}
+                    regulatorVerificationRequests={regulatorVerificationRequests}
+                    onCreateVerificationRequest={createRegulatorVerificationRequest}
+                    onResolveVerificationRequest={resolveRegulatorVerificationRequest}
+                    auditFindings={auditFindings}
+                    auditActions={auditActions}
+                    onCreateAuditAction={() => {
+                      const targetFinding = auditFindings[0];
+                      if (!targetFinding) {
+                        addToast('Create a finding first before creating CAPA actions', 'info');
+                        return false;
+                      }
+                      return createAuditAction({
+                        findingId: targetFinding.id,
+                        assignee: 'Site Manager',
+                        dueDate: getDefaultActionDueDate(targetFinding.severity),
+                        evidenceRequired: true,
+                        closureSignoff: 'auditor',
+                      });
+                    }}
+                    onAdvanceAuditActionStatus={advanceAuditActionStatus}
+                    financeInvoices={financeInvoices}
+                    payoutRuns={payoutRuns}
+                    onGenerateInvoices={generateMissingInvoices}
+                    onSchedulePayout={schedulePayoutForInvoice}
+                    analyticsRiskSignals={analyticsRiskSignals}
+                    integrationConnections={integrationConnections}
+                    apiClients={apiClients}
+                    webhookEndpoints={webhookEndpoints}
+                    webhookDeliveryEvents={webhookDeliveryEvents}
+                    onCreateApiClient={createApiClient}
+                    onRotateApiClientSecret={rotateApiClientSecret}
+                    onCreateWebhookEndpoint={upsertWebhookEndpoint}
+                    onTriggerWebhookRetry={triggerWebhookRetry}
+                    mobileAuditSessions={mobileAuditSessions}
+                    onOpenMobileSession={openMobileAuditSession}
+                    enterpriseSsoProviders={enterpriseSsoProviders}
+                    enterpriseAccessPolicies={enterpriseAccessPolicies}
+                    enterpriseSecurityEvents={enterpriseSecurityEvents}
+                    onConfigureSsoProvider={configureEnterpriseSsoProvider}
+                    onToggleEnterprisePolicy={toggleEnterpriseAccessPolicy}
+                    onLogSecurityEvent={logEnterpriseSecurityEvent}
+                    qaHarnessRuns={qaHarnessRuns}
+                    releaseGateResults={releaseGateResults}
+                    onStartQaHarnessRun={startQaHarnessRun}
+                    onFinalizeQaHarnessRun={finalizeLatestQaHarnessRun}
+                    onAdvanceReleaseGateResult={advanceReleaseGateResult}
+                  />
+
+                  <HelpCenterView
+                    onNotify={addToast}
+                    isInCertAdmin={effectiveUserRole === 'incert'}
+                    jobs={marketplaceJobs}
+                    certificates={enrichedCertificates}
+                    publicSiteConfig={publicSiteConfig}
+                    onboardingTasks={onboardingTasks}
+                    financeInvoices={financeInvoices}
+                    payoutRuns={payoutRuns}
+                    inspectionTemplates={inspectionTemplates}
+                    companyContext={activeCompanyContext}
+                    integrationConnections={integrationConnections}
+                    templateBlueprints={templateBlueprints}
+                    templateListings={templateListings}
+                    licenceGrants={licenceGrants}
+                    auditRuns={auditRuns}
+                    auditFindings={auditFindings}
+                    auditActions={auditActions}
+                    reportArtifacts={reportArtifacts}
+                    shareLinks={shareLinks}
+                    marketplaceBidBoard={marketplaceBidBoard}
+                    dispatchSlaEvents={dispatchSlaEvents}
+                    evidenceAiJobs={evidenceAiJobs}
+                    regulatorVerificationRequests={regulatorVerificationRequests}
+                    analyticsRiskSignals={analyticsRiskSignals}
+                    webhookDeliveryEvents={webhookDeliveryEvents}
+                    mobileAuditSessions={mobileAuditSessions}
+                    enterpriseSecurityEvents={enterpriseSecurityEvents}
+                    qaHarnessRuns={qaHarnessRuns}
+                    releaseGateResults={releaseGateResults}
+                    onUpdatePublicSiteConfig={updatePublicSiteConfig}
+                    onToggleOnboardingTask={toggleOnboardingTask}
+                    onRunPilotFulfilmentLoop={runPilotFulfilmentLoop}
+                    onSignCertificate={signCertificateFromTrustLayer}
+                    onGenerateInvoices={generateMissingInvoices}
+                    onApproveInvoice={approveInvoice}
+                    onSchedulePayout={schedulePayoutForInvoice}
+                    onAddTemplate={addInspectionTemplate}
+                    onToggleTemplate={toggleInspectionTemplate}
+                    onConnectIntegration={connectIntegration}
+                    onCreateTemplateBlueprint={createTemplateBlueprint}
+                    onUpdateTemplateBlueprint={updateTemplateBlueprintQuestionBank}
+                    onPublishTemplateBlueprint={publishTemplateBlueprint}
+                    onCreateTemplateListing={createTemplateListing}
+                    onGrantTemplateLicence={grantTemplateLicence}
+                    onStartAuditRun={startAuditRun}
+                    onCompleteAuditRun={completeAuditRun}
+                    onAddAuditFinding={addAuditFinding}
+                    onCreateAuditAction={createAuditAction}
+                    onAdvanceAuditActionStatus={advanceAuditActionStatus}
+                    onCreateShareLink={createShareLinkForArtifact}
+                    onSeedBidRound={seedMarketplaceBidRound}
+                    onAwardBestBid={awardBestMarketplaceBid}
+                    onQueueEvidenceAiJob={enqueueEvidenceAiExtraction}
+                    onAdvanceEvidenceReview={advanceEvidenceAiReview}
+                    onCreateVerificationRequest={createRegulatorVerificationRequest}
+                    onResolveVerificationRequest={resolveRegulatorVerificationRequest}
+                    onTriggerWebhookRetry={triggerWebhookRetry}
+                    onOpenMobileSession={openMobileAuditSession}
+                    onLogSecurityEvent={logEnterpriseSecurityEvent}
+                    onStartQaHarnessRun={startQaHarnessRun}
+                    onFinalizeQaHarnessRun={finalizeLatestQaHarnessRun}
+                    onAdvanceReleaseGateResult={advanceReleaseGateResult}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'templates' && (
+                <TemplateStudioView
+                  onNotify={addToast}
+                  isInCertAdmin={effectiveUserRole === 'incert'}
                   templateBlueprints={templateBlueprints}
                   onPublishTemplateBlueprint={publishTemplateBlueprint}
-                  evidenceAiJobs={evidenceAiJobs}
-                  evidenceProvenanceEvents={evidenceProvenanceEvents}
-                  onQueueEvidenceAiJob={enqueueEvidenceAiExtraction}
-                  onAdvanceEvidenceReview={advanceEvidenceAiReview}
-                  onAppendProvenanceEvent={appendEvidenceProvenanceEvent}
-                  regulatorVerificationRequests={regulatorVerificationRequests}
-                  onCreateVerificationRequest={createRegulatorVerificationRequest}
-                  onResolveVerificationRequest={resolveRegulatorVerificationRequest}
-                  auditFindings={auditFindings}
-                  auditActions={auditActions}
-                  onCreateAuditAction={() => {
-                    const targetFinding = auditFindings[0];
-                    if (!targetFinding) {
-                      addToast('Create a finding first before creating CAPA actions', 'info');
-                      return false;
-                    }
-                    return createAuditAction({
-                      findingId: targetFinding.id,
-                      assignee: 'Site Manager',
-                      dueDate: getDefaultActionDueDate(targetFinding.severity),
-                      evidenceRequired: true,
-                      closureSignoff: 'auditor',
-                    });
-                  }}
-                  onAdvanceAuditActionStatus={advanceAuditActionStatus}
-                  financeInvoices={financeInvoices}
-                  payoutRuns={payoutRuns}
-                  onGenerateInvoices={generateMissingInvoices}
-                  onSchedulePayout={schedulePayoutForInvoice}
-                  analyticsRiskSignals={analyticsRiskSignals}
-                  integrationConnections={integrationConnections}
-                  apiClients={apiClients}
-                  webhookEndpoints={webhookEndpoints}
-                  webhookDeliveryEvents={webhookDeliveryEvents}
-                  onCreateApiClient={createApiClient}
-                  onRotateApiClientSecret={rotateApiClientSecret}
-                  onCreateWebhookEndpoint={upsertWebhookEndpoint}
-                  onTriggerWebhookRetry={triggerWebhookRetry}
-                  mobileAuditSessions={mobileAuditSessions}
-                  onOpenMobileSession={openMobileAuditSession}
-                  enterpriseSsoProviders={enterpriseSsoProviders}
-                  enterpriseAccessPolicies={enterpriseAccessPolicies}
-                  enterpriseSecurityEvents={enterpriseSecurityEvents}
-                  onConfigureSsoProvider={configureEnterpriseSsoProvider}
-                  onToggleEnterprisePolicy={toggleEnterpriseAccessPolicy}
-                  onLogSecurityEvent={logEnterpriseSecurityEvent}
-                  qaHarnessRuns={qaHarnessRuns}
-                  releaseGateResults={releaseGateResults}
-                  onStartQaHarnessRun={startQaHarnessRun}
-                  onFinalizeQaHarnessRun={finalizeLatestQaHarnessRun}
-                  onAdvanceReleaseGateResult={advanceReleaseGateResult}
+                  onUpdateTemplateBlueprint={updateTemplateBlueprintQuestionBank}
                 />
               )}
 
               {activeTab === 'help' && (
-                <HelpCenterView
+                <SupportHelpView
                   onNotify={addToast}
-                  jobs={marketplaceJobs}
-                  certificates={enrichedCertificates}
-                  publicSiteConfig={publicSiteConfig}
-                  onboardingTasks={onboardingTasks}
-                  financeInvoices={financeInvoices}
-                  payoutRuns={payoutRuns}
-                  inspectionTemplates={inspectionTemplates}
-                  companyContext={activeCompanyContext}
-                  integrationConnections={integrationConnections}
-                  templateBlueprints={templateBlueprints}
-                  templateListings={templateListings}
-                  licenceGrants={licenceGrants}
-                  auditRuns={auditRuns}
-                  auditFindings={auditFindings}
-                  auditActions={auditActions}
-                  reportArtifacts={reportArtifacts}
-                  shareLinks={shareLinks}
-                  marketplaceBidBoard={marketplaceBidBoard}
-                  dispatchSlaEvents={dispatchSlaEvents}
-                  evidenceAiJobs={evidenceAiJobs}
-                  regulatorVerificationRequests={regulatorVerificationRequests}
-                  analyticsRiskSignals={analyticsRiskSignals}
-                  webhookDeliveryEvents={webhookDeliveryEvents}
-                  mobileAuditSessions={mobileAuditSessions}
-                  enterpriseSecurityEvents={enterpriseSecurityEvents}
-                  qaHarnessRuns={qaHarnessRuns}
-                  releaseGateResults={releaseGateResults}
-                  onUpdatePublicSiteConfig={updatePublicSiteConfig}
-                  onToggleOnboardingTask={toggleOnboardingTask}
-                  onRunPilotFulfilmentLoop={runPilotFulfilmentLoop}
-                  onSignCertificate={signCertificateFromTrustLayer}
-                  onGenerateInvoices={generateMissingInvoices}
-                  onApproveInvoice={approveInvoice}
-                  onSchedulePayout={schedulePayoutForInvoice}
-                  onAddTemplate={addInspectionTemplate}
-                  onToggleTemplate={toggleInspectionTemplate}
-                  onConnectIntegration={connectIntegration}
-                  onCreateTemplateBlueprint={createTemplateBlueprint}
-                  onPublishTemplateBlueprint={publishTemplateBlueprint}
-                  onCreateTemplateListing={createTemplateListing}
-                  onGrantTemplateLicence={grantTemplateLicence}
-                  onStartAuditRun={startAuditRun}
-                  onCompleteAuditRun={completeAuditRun}
-                  onAddAuditFinding={addAuditFinding}
-                  onCreateAuditAction={createAuditAction}
-                  onAdvanceAuditActionStatus={advanceAuditActionStatus}
-                  onCreateShareLink={createShareLinkForArtifact}
-                  onSeedBidRound={seedMarketplaceBidRound}
-                  onAwardBestBid={awardBestMarketplaceBid}
-                  onQueueEvidenceAiJob={enqueueEvidenceAiExtraction}
-                  onAdvanceEvidenceReview={advanceEvidenceAiReview}
-                  onCreateVerificationRequest={createRegulatorVerificationRequest}
-                  onResolveVerificationRequest={resolveRegulatorVerificationRequest}
-                  onTriggerWebhookRetry={triggerWebhookRetry}
-                  onOpenMobileSession={openMobileAuditSession}
-                  onLogSecurityEvent={logEnterpriseSecurityEvent}
-                  onStartQaHarnessRun={startQaHarnessRun}
-                  onFinalizeQaHarnessRun={finalizeLatestQaHarnessRun}
-                  onAdvanceReleaseGateResult={advanceReleaseGateResult}
+                  isInCertAdmin={effectiveUserRole === 'incert'}
+                  onOpenOps={() => openTab('ops')}
+                  onOpenTemplates={() => openTab('templates')}
                 />
               )}
 
@@ -10764,7 +13790,7 @@ export default function App() {
           style={{
             gridTemplateColumns: `repeat(${Math.max(
               2,
-              ['dashboard', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'ops', 'help'].filter((tab) =>
+              ['dashboard', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'ops', 'templates', 'help'].filter((tab) =>
                 allowedTabsForRole.includes(tab)
               ).length
             )}, minmax(0, 1fr))`,
@@ -10824,6 +13850,14 @@ export default function App() {
               label="Ops"
               isActive={activeTab === 'ops'}
               onClick={() => openTab('ops')}
+            />
+          )}
+          {allowedTabsForRole.includes('templates') && (
+            <MobileNavItem
+              icon={<FileSignature />}
+              label="Tpls"
+              isActive={activeTab === 'templates'}
+              onClick={() => openTab('templates')}
             />
           )}
           {allowedTabsForRole.includes('help') && (
@@ -11121,9 +14155,9 @@ export default function App() {
                         name="regime"
                         className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white"
                       >
-                        <option>LOLER</option>
-                        <option>PUWER</option>
-                        <option>PSSR</option>
+                        {SUPPORTED_REGIMES.map((regime) => (
+                          <option key={`asset-regime-${regime}`}>{regime}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -11527,8 +14561,8 @@ function BookingRequestModal({ isOpen, assets, auditors, initialAuditorId, onClo
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
                   Regimes
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['LOLER', 'PUWER', 'PSSR'].map((regime) => (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {SUPPORTED_REGIMES.map((regime) => (
                     <button
                       key={regime}
                       type="button"
@@ -12121,7 +15155,40 @@ function AppFooter({ onOpenHelp, onPrivacy, onTerms }) {
   );
 }
 
+function usePrefersReducedMotion() {
+  const [prefersReduced, setPrefersReduced] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleChange = () => setPrefersReduced(mediaQuery.matches);
+
+    handleChange();
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', handleChange);
+    } else {
+      mediaQuery.addListener(handleChange);
+    }
+
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', handleChange);
+      } else {
+        mediaQuery.removeListener(handleChange);
+      }
+    };
+  }, []);
+
+  return prefersReduced;
+}
+
 function AnimatedNetworkSvg() {
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   return (
     <svg viewBox="0 0 560 260" className="w-full h-56" role="img" aria-label="Animated network map">
       <defs>
@@ -12132,10 +15199,14 @@ function AnimatedNetworkSvg() {
       </defs>
       <rect x="10" y="10" width="540" height="240" rx="20" fill="rgba(148, 163, 184, 0.06)" />
       <path d="M90 180 C170 70, 270 70, 350 170 S500 230, 520 120" fill="none" stroke="url(#networkStroke)" strokeWidth="3" strokeDasharray="9 9">
-        <animate attributeName="stroke-dashoffset" values="36;0" dur="2.6s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="stroke-dashoffset" values="36;0" dur="2.6s" repeatCount="indefinite" />
+        )}
       </path>
       <path d="M80 80 C180 180, 260 170, 380 70 S500 60, 510 190" fill="none" stroke="#14b8a6" strokeWidth="2.5" strokeDasharray="7 9" opacity="0.8">
-        <animate attributeName="stroke-dashoffset" values="0;32" dur="3.1s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="stroke-dashoffset" values="0;32" dur="3.1s" repeatCount="indefinite" />
+        )}
       </path>
       {[
         { x: 80, y: 80, label: 'Company' },
@@ -12146,7 +15217,7 @@ function AnimatedNetworkSvg() {
       ].map((node) => (
         <g key={node.label}>
           <circle cx={node.x} cy={node.y} r="8" fill="#0ea5e9">
-            <animate attributeName="r" values="8;10;8" dur="2s" repeatCount="indefinite" />
+            {!prefersReducedMotion && <animate attributeName="r" values="8;10;8" dur="2s" repeatCount="indefinite" />}
           </circle>
           <text x={node.x + 12} y={node.y + 4} fill="#334155" fontSize="11" fontWeight="700">
             {node.label}
@@ -12158,11 +15229,15 @@ function AnimatedNetworkSvg() {
 }
 
 function AnimatedWorkflowSvg() {
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   return (
     <svg viewBox="0 0 560 220" className="w-full h-52" role="img" aria-label="Animated workflow timeline">
       <rect x="16" y="26" width="528" height="168" rx="18" fill="rgba(148, 163, 184, 0.06)" />
       <line x1="66" y1="110" x2="494" y2="110" stroke="#0ea5e9" strokeWidth="3" strokeDasharray="8 8">
-        <animate attributeName="stroke-dashoffset" values="32;0" dur="2.2s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="stroke-dashoffset" values="32;0" dur="2.4s" repeatCount="indefinite" />
+        )}
       </line>
       {[
         { x: 66, label: 'Scope' },
@@ -12173,7 +15248,15 @@ function AnimatedWorkflowSvg() {
       ].map((step, index) => (
         <g key={step.label}>
           <circle cx={step.x} cy="110" r="16" fill="#06b6d4" opacity="0.92">
-            <animate attributeName="opacity" values="0.35;1;0.35" dur="2.8s" begin={`${index * 0.25}s`} repeatCount="indefinite" />
+            {!prefersReducedMotion && (
+              <animate
+                attributeName="opacity"
+                values="0.55;1;0.55"
+                dur="3s"
+                begin={`${index * 0.35}s`}
+                repeatCount="indefinite"
+              />
+            )}
           </circle>
           <text x={step.x} y="154" textAnchor="middle" fill="#334155" fontSize="11" fontWeight="700">
             {step.label}
@@ -12181,13 +15264,15 @@ function AnimatedWorkflowSvg() {
         </g>
       ))}
       <rect x="48" y="48" width="36" height="22" rx="6" fill="#0ea5e9">
-        <animate attributeName="x" values="48;462;48" dur="4s" repeatCount="indefinite" />
+        {!prefersReducedMotion && <animate attributeName="x" values="48;462;48" dur="4.4s" repeatCount="indefinite" />}
       </rect>
     </svg>
   );
 }
 
 function AnimatedTrustSvg() {
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   return (
     <svg viewBox="0 0 380 220" className="w-full h-52" role="img" aria-label="Animated trust badge">
       <defs>
@@ -12198,22 +15283,30 @@ function AnimatedTrustSvg() {
       </defs>
       <rect x="16" y="16" width="348" height="188" rx="20" fill="rgba(148, 163, 184, 0.06)" />
       <path d="M190 46 L272 76 V122 C272 156 239 183 190 196 C141 183 108 156 108 122 V76 Z" fill="url(#shieldFill)" opacity="0.92">
-        <animate attributeName="opacity" values="0.75;1;0.75" dur="2.6s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="opacity" values="0.8;1;0.8" dur="3s" repeatCount="indefinite" />
+        )}
       </path>
       <path d="M151 117 L181 145 L233 92" fill="none" stroke="#f8fafc" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="120">
-        <animate attributeName="stroke-dashoffset" values="120;0;0;120" dur="3.8s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="stroke-dashoffset" values="120;0;0;120" dur="4.2s" repeatCount="indefinite" />
+        )}
       </path>
       <circle cx="126" cy="62" r="9" fill="#38bdf8">
-        <animate attributeName="r" values="9;12;9" dur="2.2s" repeatCount="indefinite" />
+        {!prefersReducedMotion && <animate attributeName="r" values="9;12;9" dur="2.4s" repeatCount="indefinite" />}
       </circle>
       <circle cx="254" cy="62" r="9" fill="#38bdf8">
-        <animate attributeName="r" values="9;12;9" dur="2.2s" begin="0.4s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="r" values="9;12;9" dur="2.4s" begin="0.4s" repeatCount="indefinite" />
+        )}
       </circle>
     </svg>
   );
 }
 
 function AnimatedLogoShield({ className = 'h-7 w-7' }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   return (
     <svg viewBox="0 0 28 28" className={className} role="img" aria-label="InCert">
       <defs>
@@ -12227,7 +15320,9 @@ function AnimatedLogoShield({ className = 'h-7 w-7' }) {
         fill="url(#logoShieldGrad)"
         opacity="0.95"
       >
-        <animate attributeName="opacity" values="0.9;1;0.9" dur="2.5s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="opacity" values="0.9;1;0.9" dur="2.5s" repeatCount="indefinite" />
+        )}
       </path>
       <path
         d="M8 12l4 4 8-8"
@@ -12238,53 +15333,67 @@ function AnimatedLogoShield({ className = 'h-7 w-7' }) {
         strokeLinejoin="round"
         strokeDasharray="24"
       >
-        <animate attributeName="stroke-dashoffset" values="24;0" dur="0.6s" fill="freeze" />
+        {!prefersReducedMotion && <animate attributeName="stroke-dashoffset" values="24;0" dur="0.6s" fill="freeze" />}
       </path>
     </svg>
   );
 }
 
 function AnimatedCheckIcon({ className = 'h-5 w-5' }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   return (
     <svg viewBox="0 0 20 20" className={className} role="img" aria-hidden="true">
       <circle cx="10" cy="10" r="9" fill="#0d9488" opacity="0.2">
-        <animate attributeName="r" values="9;10;9" dur="2s" repeatCount="indefinite" />
+        {!prefersReducedMotion && <animate attributeName="r" values="9;10;9" dur="2s" repeatCount="indefinite" />}
       </circle>
       <path d="M6 10l3 3 5-6" fill="none" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="20">
-        <animate attributeName="stroke-dashoffset" values="20;0" dur="0.4s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="stroke-dashoffset" values="20;0" dur="0.4s" repeatCount="indefinite" />
+        )}
       </path>
     </svg>
   );
 }
 
 function AnimatedPortalIcon({ type, className = 'h-10 w-10' }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   const icons = {
     company: (
       <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="5" width="14" height="12" rx="1.5" />
         <path d="M7 5V3a1.5 1.5 0 013 0v2M3 9h18" />
-        <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" repeatCount="indefinite" />
+        )}
       </g>
     ),
     auditor: (
       <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="10" cy="6" r="3.5" />
         <path d="M4 18c0-3.3 2.7-6 6-6s6 2.7 6 6" />
-        <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" begin="0.2s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" begin="0.2s" repeatCount="indefinite" />
+        )}
       </g>
     ),
     admin: (
       <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 14v4M10 10v8M16 6v12" />
         <path d="M2 18h4M8 18h4M14 18h4" />
-        <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" begin="0.4s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" begin="0.4s" repeatCount="indefinite" />
+        )}
       </g>
     ),
     insurer: (
       <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <rect x="4" y="8" width="12" height="8" rx="1" />
         <path d="M8 8V6a2 2 0 014 0v2M10 12h4" />
-        <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" begin="0.6s" repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="opacity" values="0.85;1;0.85" dur="2.2s" begin="0.6s" repeatCount="indefinite" />
+        )}
       </g>
     ),
   };
@@ -12296,6 +15405,8 @@ function AnimatedPortalIcon({ type, className = 'h-10 w-10' }) {
 }
 
 function AnimatedStepIcon({ step, className = 'h-12 w-12' }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   return (
     <svg viewBox="0 0 48 48" className={className} role="img" aria-hidden="true">
       <defs>
@@ -12305,7 +15416,9 @@ function AnimatedStepIcon({ step, className = 'h-12 w-12' }) {
         </linearGradient>
       </defs>
       <circle cx="24" cy="24" r="20" fill={`url(#stepGrad-${step})`} opacity="0.9">
-        <animate attributeName="r" values="20;22;20" dur="2s" begin={`${step * 0.15}s`} repeatCount="indefinite" />
+        {!prefersReducedMotion && (
+          <animate attributeName="r" values="20;22;20" dur="2s" begin={`${step * 0.2}s`} repeatCount="indefinite" />
+        )}
       </circle>
       <text x="24" y="28" textAnchor="middle" fill="white" fontSize="16" fontWeight="bold">
         {step}
@@ -12462,7 +15575,11 @@ function PublicMarketingLanding({
                 </button>
               </div>
               <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/35 p-3">
-                <AnimatedNetworkSvg />
+                <img
+                  src="/illustrations/landing-network-hero.png"
+                  alt="InCert connecting companies, sites, auditors and insurers"
+                  className="w-full h-auto max-w-2xl mx-auto block"
+                />
               </div>
             </section>
 
@@ -12471,8 +15588,12 @@ function PublicMarketingLanding({
               <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
                 Scope once, price instantly, dispatch in waves, and deliver signed evidence packs without manual PDF chasing.
               </p>
-              <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/35 p-3">
-                <AnimatedWorkflowSvg />
+              <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/35 p-4 h-52 sm:h-64 overflow-hidden relative">
+                <img
+                  src="/illustrations/workflow-timeline-hero.png"
+                  alt="Workflow: Scope, Price, Dispatch, Inspect, Verify"
+                  className="absolute inset-0 w-full h-full object-cover object-center"
+                />
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {[
@@ -12626,23 +15747,25 @@ function PublicMarketingLanding({
               <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
                 Evidence integrity and access controls are built into every workflow step.
               </p>
-              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_0.9fr]">
-                <div className="space-y-2">
-                  {PUBLIC_TRUST_MODULES.map((module) => (
-                    <div key={module.id} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3 flex items-start gap-2">
-                      <span className="shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400">
-                        <AnimatedCheckIcon className="h-5 w-5" />
-                      </span>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{module.title}</p>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{module.description}</p>
-                      </div>
+              <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/35 p-3">
+                <img
+                  src="/illustrations/trust-compliance-hero.png"
+                  alt="Trust and compliance: evidence integrity, secure records, credentialed network"
+                  className="w-full h-auto block"
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {PUBLIC_TRUST_MODULES.map((module) => (
+                  <div key={module.id} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3 flex items-start gap-2">
+                    <span className="shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400">
+                      <AnimatedCheckIcon className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{module.title}</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{module.description}</p>
                     </div>
-                  ))}
-                </div>
-                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/35 p-3">
-                  <AnimatedTrustSvg />
-                </div>
+                  </div>
+                ))}
               </div>
             </section>
 
@@ -13230,8 +16353,16 @@ function OnboardingPortalView({ onNotify, onboardingTasks = [], onToggleOnboardi
 }
 
 function AccountancyView({
+  accountancyMode = 'incert',
+  accountancyEntityLabel = '',
   financeInvoices = [],
   payoutRuns = [],
+  canPayInvoice,
+  showDebugScopeSelector = false,
+  debugScopeLabel = 'Account',
+  debugScopeOptions = [],
+  debugScopeValue = '',
+  onDebugScopeChange,
   onGenerateInvoices,
   onApproveInvoice,
   onIssueInvoice,
@@ -13239,6 +16370,7 @@ function AccountancyView({
   onMarkInvoiceCollected,
   onRunCollectionsSweep,
   onSchedulePayout,
+  onConfirmPayoutRun,
   onMarkPayoutPaid,
   onExportCsv,
   showDebugBulkActions = false,
@@ -13373,6 +16505,51 @@ function AccountancyView({
     const [year, month] = String(periodKey).split('-').map(Number);
     return year * 12 + (month - 1);
   };
+  const normalizedAccountancyMode = String(accountancyMode || 'incert').toLowerCase();
+  const isInCertAccountancy = normalizedAccountancyMode === 'incert';
+  const isCompanyAccountancy = normalizedAccountancyMode === 'company';
+  const isAuditorPayoutAccountancy = normalizedAccountancyMode === 'auditor' || normalizedAccountancyMode === 'auditor_company';
+  const canGenerateInvoices = isInCertAccountancy && typeof onGenerateInvoices === 'function';
+  const canRunCollectionsSweep = isInCertAccountancy && typeof onRunCollectionsSweep === 'function';
+  const canApproveInvoices = isInCertAccountancy && typeof onApproveInvoice === 'function';
+  const canIssueInvoices = isInCertAccountancy && typeof onIssueInvoice === 'function';
+  const canSendReminders = isInCertAccountancy && typeof onSendInvoiceReminder === 'function';
+  const canSchedulePayouts = isInCertAccountancy && typeof onSchedulePayout === 'function';
+  const canConfirmPayoutRuns = isInCertAccountancy && typeof onConfirmPayoutRun === 'function';
+  const canMarkPayoutsPaid = isInCertAccountancy && typeof onMarkPayoutPaid === 'function';
+  const canCollectInvoices = typeof onMarkInvoiceCollected === 'function';
+  const resolveCanPayInvoice = (invoice) => (typeof canPayInvoice === 'function' ? canPayInvoice(invoice) : true);
+  const accountancyHeaderKicker = (() => {
+    if (isInCertAccountancy) {
+      return 'InCert Accountancy';
+    }
+    if (normalizedAccountancyMode === 'auditor_company') {
+      return 'Audit Company Accountancy';
+    }
+    if (normalizedAccountancyMode === 'auditor') {
+      return 'Auditor Accountancy';
+    }
+    return 'Company Accountancy';
+  })();
+  const accountancyHeaderTitle = isInCertAccountancy
+    ? 'Invoicing, Collections, and Payables'
+    : isAuditorPayoutAccountancy
+      ? 'Payouts and Remittances'
+      : 'Spend, Invoices, and Payments';
+  const accountancyHeaderSubtitle = isInCertAccountancy
+    ? `Full finance operations view with ${PAYMENT_TERMS_DAYS}-day default terms.`
+    : `${String(accountancyEntityLabel || 'Current account')} ledger is locked to this account scope only.`;
+  const collectActionLabel = isInCertAccountancy ? 'Mark collected' : 'Pay invoice';
+  const receivablesQueueTitle = isCompanyAccountancy ? 'Payables Queue' : 'Receivables Queue';
+  const receivablesQueueSummary = isInCertAccountancy
+    ? 'Approve, issue, chase, collect, and schedule payouts.'
+    : 'Track invoices billed to your company and mark payments in your own scope.';
+  const payoutQueueTitle = isInCertAccountancy ? 'Pay Providers' : 'Your Payouts';
+  const payoutQueueSummary = isInCertAccountancy
+    ? 'Scheduled runs and payment status.'
+    : 'Track what you will be paid for completed jobs.';
+  const showReceivablesSection = isInCertAccountancy || isCompanyAccountancy;
+  const showPayoutSection = isInCertAccountancy || isAuditorPayoutAccountancy;
   const [receivablesMonthFilter, setReceivablesMonthFilter] = useState('');
   const [providerQueueMonthFilter, setProviderQueueMonthFilter] = useState('');
   const [summaryMonthFilter, setSummaryMonthFilter] = useState('');
@@ -13458,14 +16635,23 @@ function AccountancyView({
   const normalizedPayoutRuns = useMemo(
     () =>
       [...payoutRuns]
-        .map((run) => ({
-          ...run,
-          displayId: String(run.id || run.reference || 'PAY-UNKNOWN'),
-          scheduledDate: resolvePayoutScheduleDate(run),
-          payoutAmount: resolvePayoutAmount(run),
-          normalizedStatus: String(run.status || '').toLowerCase() === 'paid' ? 'paid' : 'scheduled',
-          sortDateMs: parseISODate(resolvePayoutScheduleDate(run))?.getTime() || Number.MAX_SAFE_INTEGER,
-        }))
+        .map((run) => {
+          const rawStatus = String(run.status || '').toLowerCase();
+          let normalizedStatus = 'scheduled';
+          if (rawStatus === 'paid') {
+            normalizedStatus = 'paid';
+          } else if (['pending_confirmation', 'pending', 'draft'].includes(rawStatus)) {
+            normalizedStatus = 'pending';
+          }
+          return {
+            ...run,
+            displayId: String(run.id || run.reference || 'PAY-UNKNOWN'),
+            scheduledDate: resolvePayoutScheduleDate(run),
+            payoutAmount: resolvePayoutAmount(run),
+            normalizedStatus,
+            sortDateMs: parseISODate(resolvePayoutScheduleDate(run))?.getTime() || Number.MAX_SAFE_INTEGER,
+          };
+        })
         .sort((first, second) => first.sortDateMs - second.sortDateMs),
     [payoutRuns]
   );
@@ -13795,10 +16981,12 @@ function AccountancyView({
   );
   const overdueValue = overdueInvoices.reduce((sum, invoice) => sum + Number(invoice.totalIncVat || 0), 0);
   const scheduledPayouts = summaryPayoutRuns.filter((run) => run.normalizedStatus === 'scheduled');
+  const pendingConfirmationPayouts = summaryPayoutRuns.filter((run) => run.normalizedStatus === 'pending');
+  const openPayouts = summaryPayoutRuns.filter((run) => run.normalizedStatus !== 'paid');
   const paidPayouts = summaryPayoutRuns.filter(
     (run) => run.normalizedStatus === 'paid' && String(invoicePaidAtById.get(String(run.invoiceId || '')) || '')
   );
-  const scheduledPayoutValue = scheduledPayouts.reduce((sum, run) => sum + Number(run.payoutAmount || 0), 0);
+  const scheduledPayoutValue = openPayouts.reduce((sum, run) => sum + Number(run.payoutAmount || 0), 0);
   const paidPayoutValue = summaryInvoices.reduce((sum, invoice) => {
     if (String(invoice.collectionStatus || '').toLowerCase() !== 'paid') {
       return sum;
@@ -13808,6 +16996,16 @@ function AccountancyView({
     const payoutCap = Math.max(0, resolveInvoiceSubtotalExVat(invoice));
     return sum + Math.min(Math.max(0, payoutRaw), payoutCap);
   }, 0);
+  const totalPayoutExpectedValue = summaryPayoutRuns.reduce((sum, run) => sum + Number(run.payoutAmount || 0), 0);
+  const paidPayoutRunValue = summaryPayoutRuns
+    .filter((run) => run.normalizedStatus === 'paid')
+    .reduce((sum, run) => sum + Number(run.payoutAmount || 0), 0);
+  const scheduledPayoutRunValue = summaryPayoutRuns
+    .filter((run) => run.normalizedStatus !== 'paid')
+    .reduce((sum, run) => sum + Number(run.payoutAmount || 0), 0);
+  const nextScheduledPayoutRun = summaryPayoutRuns
+    .filter((run) => run.normalizedStatus !== 'paid')
+    .sort((first, second) => Number(first.sortDateMs || 0) - Number(second.sortDateMs || 0))[0] || null;
   const totalInvoicedExVat = summaryInvoices.reduce((sum, invoice) => sum + resolveInvoiceSubtotalExVat(invoice), 0);
   const collectedExVat = collectedInvoices.reduce((sum, invoice) => sum + resolveInvoiceSubtotalExVat(invoice), 0);
   const payoutCommittedExVat = summaryPayoutRuns.reduce((sum, run) => sum + Number(run.payoutAmount || 0), 0);
@@ -13918,11 +17116,11 @@ function AccountancyView({
   };
 
   const statusLabels = {
-    pending_approval: 'Needs approval',
-    approved: 'Ready to issue',
-    issued: 'Issued',
-    overdue: 'Overdue',
-    paid: 'Collected',
+    pending_approval: isCompanyAccountancy ? 'Pending' : 'Needs approval',
+    approved: isCompanyAccountancy ? 'Approved' : 'Ready to issue',
+    issued: isCompanyAccountancy ? 'Issued to you' : 'Issued',
+    overdue: isCompanyAccountancy ? 'Overdue to pay' : 'Overdue',
+    paid: isCompanyAccountancy ? 'Paid' : 'Collected',
   };
 
   return (
@@ -13930,10 +17128,10 @@ function AccountancyView({
       <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">InCert Accountancy</p>
-            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mt-1">Invoicing, Collections, and Payables</h2>
+            <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">{accountancyHeaderKicker}</p>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mt-1">{accountancyHeaderTitle}</h2>
             <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-3xl">
-              Full finance operations view with {PAYMENT_TERMS_DAYS}-day default terms.
+              {accountancyHeaderSubtitle}
             </p>
             <label className="mt-3 inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
               Summary period
@@ -13950,90 +17148,181 @@ function AccountancyView({
                 ))}
               </select>
             </label>
+            {showDebugScopeSelector && Array.isArray(debugScopeOptions) && debugScopeOptions.length > 0 && (
+              <label className="mt-2 inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Debug {debugScopeLabel}
+                <select
+                  value={debugScopeValue}
+                  onChange={(event) => onDebugScopeChange?.(event.target.value)}
+                  className="rounded-md border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 text-[11px] font-semibold text-amber-800 dark:text-amber-200"
+                >
+                  {debugScopeOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => onGenerateInvoices?.()}
-              className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold inline-flex items-center gap-2"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              Generate invoices
-            </button>
-            <button
-              onClick={() => onRunCollectionsSweep?.()}
-              className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200 inline-flex items-center gap-2"
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Run overdue sweep
-            </button>
-            <button
-              onClick={() => onExportCsv?.()}
-              className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200 inline-flex items-center gap-2"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export CSV
-            </button>
+            {canGenerateInvoices && (
+              <button
+                onClick={() => onGenerateInvoices?.()}
+                className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold inline-flex items-center gap-2"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Generate invoices
+              </button>
+            )}
+            {canRunCollectionsSweep && (
+              <button
+                onClick={() => onRunCollectionsSweep?.()}
+                className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200 inline-flex items-center gap-2"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Run overdue sweep
+              </button>
+            )}
+            {typeof onExportCsv === 'function' && (
+              <button
+                onClick={() => onExportCsv?.()}
+                className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200 inline-flex items-center gap-2"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export CSV
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total invoiced</p>
-            <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{formatCurrencyGBP(totalInvoicedValue)}</p>
-          </article>
-          <article className="rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/80 dark:bg-emerald-900/15 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Collected</p>
-            <p className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1">{formatCurrencyGBP(collectedValue)}</p>
-          </article>
-          <article className="rounded-xl border border-indigo-200 dark:border-indigo-800/40 bg-indigo-50/80 dark:bg-indigo-900/15 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">Paid out</p>
-            <p className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-1">{formatCurrencyGBP(paidPayoutValue)}</p>
-            <p className="mt-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
-              {formatPercentage(paidOutVsInvoicedPct)} of invoiced
-            </p>
-          </article>
-          <article className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-900/15 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Outstanding</p>
-            <p className="text-xl font-black text-amber-700 dark:text-amber-300 mt-1">{formatCurrencyGBP(outstandingValue)}</p>
-          </article>
-          <article className="rounded-xl border border-rose-200 dark:border-rose-800/40 bg-rose-50/80 dark:bg-rose-900/15 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Overdue</p>
-            <p className="text-xl font-black text-rose-700 dark:text-rose-300 mt-1">{formatCurrencyGBP(overdueValue)}</p>
-          </article>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-600 dark:text-slate-300">
-          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
-            Summary {summaryPeriodLabel}
-          </span>
-          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
-            {pendingApprovalCount} need approval
-          </span>
-          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
-            {awaitingIssueCount} ready to issue
-          </span>
-          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
-            {scheduledPayouts.length} payouts scheduled
-          </span>
-          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
-            {paidPayouts.length} payouts paid
-          </span>
-          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
-            {netWindowLabel} {formatCurrencyGBP(netCashInNetWindow)}
-          </span>
-          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
-            Payout rate {formatPercentage(blendedPayoutRatePct)}
-          </span>
-          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
-            Gross margin {formatPercentage(realizedGrossMarginPct)} ({formatCurrencyGBP(realizedGrossExVat)} ex VAT)
-          </span>
-        </div>
+        {isAuditorPayoutAccountancy ? (
+          <>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total expected payout</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{formatCurrencyGBP(totalPayoutExpectedValue)}</p>
+              </article>
+              <article className="rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/80 dark:bg-emerald-900/15 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Paid to you</p>
+                <p className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1">{formatCurrencyGBP(paidPayoutRunValue)}</p>
+              </article>
+              <article className="rounded-xl border border-indigo-200 dark:border-indigo-800/40 bg-indigo-50/80 dark:bg-indigo-900/15 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">Pending payout</p>
+                <p className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-1">{formatCurrencyGBP(scheduledPayoutRunValue)}</p>
+              </article>
+              <article className="rounded-xl border border-cyan-200 dark:border-cyan-800/40 bg-cyan-50/80 dark:bg-cyan-900/15 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Runs in period</p>
+                <p className="text-xl font-black text-cyan-700 dark:text-cyan-300 mt-1">{summaryPayoutRuns.length}</p>
+              </article>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+              <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                Summary {summaryPeriodLabel}
+              </span>
+              <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                {paidPayouts.length} payout runs paid
+              </span>
+              <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                {openPayouts.length} payout runs pending
+              </span>
+              <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                {pendingConfirmationPayouts.length} awaiting InCert confirmation
+              </span>
+              <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                Next payout {nextScheduledPayoutRun ? formatDateSafe(nextScheduledPayoutRun.scheduledDate) : '-'}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className={`mt-4 grid gap-3 sm:grid-cols-2 ${isCompanyAccountancy ? 'xl:grid-cols-4' : 'xl:grid-cols-5'}`}>
+              <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{isCompanyAccountancy ? 'Total spend' : 'Total invoiced'}</p>
+                <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{formatCurrencyGBP(totalInvoicedValue)}</p>
+              </article>
+              <article className="rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/80 dark:bg-emerald-900/15 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">{isCompanyAccountancy ? 'Paid' : 'Collected'}</p>
+                <p className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1">{formatCurrencyGBP(collectedValue)}</p>
+              </article>
+              {isCompanyAccountancy ? (
+                <article className="rounded-xl border border-indigo-200 dark:border-indigo-800/40 bg-indigo-50/80 dark:bg-indigo-900/15 p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">Invoices paid</p>
+                  <p className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-1">{collectedInvoices.length}</p>
+                </article>
+              ) : (
+                <article className="rounded-xl border border-indigo-200 dark:border-indigo-800/40 bg-indigo-50/80 dark:bg-indigo-900/15 p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">Paid out</p>
+                  <p className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-1">{formatCurrencyGBP(paidPayoutValue)}</p>
+                  <p className="mt-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                    {formatPercentage(paidOutVsInvoicedPct)} of invoiced
+                  </p>
+                </article>
+              )}
+              <article className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-900/15 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">{isCompanyAccountancy ? 'Unpaid invoices' : 'Outstanding'}</p>
+                <p className="text-xl font-black text-amber-700 dark:text-amber-300 mt-1">{formatCurrencyGBP(outstandingValue)}</p>
+              </article>
+              <article className="rounded-xl border border-rose-200 dark:border-rose-800/40 bg-rose-50/80 dark:bg-rose-900/15 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">{isCompanyAccountancy ? 'Overdue to pay' : 'Overdue'}</p>
+                <p className="text-xl font-black text-rose-700 dark:text-rose-300 mt-1">{formatCurrencyGBP(overdueValue)}</p>
+              </article>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+              <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                Summary {summaryPeriodLabel}
+              </span>
+              {isCompanyAccountancy ? (
+                <>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    {collectedInvoices.length} paid
+                  </span>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    {summaryInvoices.length - collectedInvoices.length} unpaid
+                  </span>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    {overdueInvoices.length} overdue to pay
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    {pendingApprovalCount} need approval
+                  </span>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    {awaitingIssueCount} ready to issue
+                  </span>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    {openPayouts.length} payouts pending payment
+                  </span>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    {pendingConfirmationPayouts.length} awaiting confirmation
+                  </span>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    {paidPayouts.length} payouts paid
+                  </span>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    {netWindowLabel} {formatCurrencyGBP(netCashInNetWindow)}
+                  </span>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    Payout rate {formatPercentage(blendedPayoutRatePct)}
+                  </span>
+                  <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+                    Gross margin {formatPercentage(realizedGrossMarginPct)} ({formatCurrencyGBP(realizedGrossExVat)} ex VAT)
+                  </span>
+                </>
+              )}
+            </div>
+          </>
+        )}
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
-        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">Receivables Queue</h3>
+      <section className={`grid gap-4 ${showReceivablesSection && showPayoutSection ? 'xl:grid-cols-2' : ''}`}>
+        {!isAuditorPayoutAccountancy && showReceivablesSection && (
+          <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">{receivablesQueueTitle}</h3>
           <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-slate-600 dark:text-slate-300">Approve, issue, chase, collect, and schedule payouts.</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300">{receivablesQueueSummary}</p>
             <div className="inline-flex items-center gap-2">
               <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
                 Month
@@ -14081,7 +17370,11 @@ function AccountancyView({
           <div className="mt-3 space-y-2 max-h-[560px] overflow-y-auto pr-1">
             {filteredReceivables.length === 0 ? (
               <p className="text-xs text-slate-600 dark:text-slate-300">
-                {receivablesMonthFilter ? 'No invoices for the selected month.' : 'No invoices available yet.'}
+                {receivablesMonthFilter
+                  ? 'No invoices for the selected month.'
+                  : isCompanyAccountancy
+                    ? 'No invoices to pay yet.'
+                    : 'No invoices available yet.'}
               </p>
             ) : (
               filteredReceivables.slice(0, 30).map((invoice) => (
@@ -14092,7 +17385,9 @@ function AccountancyView({
                   <div>
                     <p className="text-xs font-bold text-slate-900 dark:text-white">{invoice.displayId}</p>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Bill to {invoice.customerName} | Pay {invoice.providerName}
+                      {isCompanyAccountancy
+                        ? `From ${invoice.providerName} | Bill to ${invoice.customerName}`
+                        : `Bill to ${invoice.customerName} | Pay ${invoice.providerName}`}
                     </p>
                     <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
                       Issue {formatDateSafe(invoice.issueDate)} | Due {formatDateSafe(invoice.dueDate)} | {formatCurrencyGBP(invoice.totalIncVat)}
@@ -14106,7 +17401,7 @@ function AccountancyView({
                     >
                       {statusLabels[invoice.collectionStatus] || 'Issued'}
                     </span>
-                    {invoice.collectionStatus === 'pending_approval' && (
+                    {canApproveInvoices && invoice.collectionStatus === 'pending_approval' && (
                       <button
                         onClick={() => onApproveInvoice?.(invoice.id)}
                         className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
@@ -14114,7 +17409,7 @@ function AccountancyView({
                         Approve
                       </button>
                     )}
-                    {invoice.collectionStatus === 'approved' && (
+                    {canIssueInvoices && invoice.collectionStatus === 'approved' && (
                       <button
                         onClick={() => onIssueInvoice?.(invoice.id)}
                         className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 text-[11px] font-bold"
@@ -14122,7 +17417,7 @@ function AccountancyView({
                         Issue
                       </button>
                     )}
-                    {(invoice.collectionStatus === 'issued' || invoice.collectionStatus === 'overdue') && (
+                    {canSendReminders && (invoice.collectionStatus === 'issued' || invoice.collectionStatus === 'overdue') && (
                       <button
                         onClick={() => onSendInvoiceReminder?.(invoice.id)}
                         className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 text-[11px] font-bold"
@@ -14130,15 +17425,18 @@ function AccountancyView({
                         Reminder
                       </button>
                     )}
-                    {invoice.collectionStatus !== 'pending_approval' && invoice.collectionStatus !== 'paid' && (
+                    {canCollectInvoices &&
+                      resolveCanPayInvoice(invoice) &&
+                      invoice.collectionStatus !== 'pending_approval' &&
+                      invoice.collectionStatus !== 'paid' && (
                       <button
                         onClick={() => onMarkInvoiceCollected?.(invoice.id)}
                         className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[11px] font-bold"
                       >
-                        Mark collected
+                        {collectActionLabel}
                       </button>
                     )}
-                    {!invoice.payoutScheduled && invoice.collectionStatus !== 'pending_approval' && (
+                    {canSchedulePayouts && !invoice.payoutScheduled && invoice.collectionStatus !== 'pending_approval' && (
                       <button
                         onClick={() => onSchedulePayout?.(invoice.id)}
                         className="px-2.5 py-1 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 text-[11px] font-bold"
@@ -14151,12 +17449,14 @@ function AccountancyView({
               ))
             )}
           </div>
-        </div>
+          </div>
+        )}
 
-        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">Pay Providers</h3>
+        {showPayoutSection && (
+          <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">{payoutQueueTitle}</h3>
           <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-slate-600 dark:text-slate-300">Scheduled runs and payment status.</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300">{payoutQueueSummary}</p>
             <div className="inline-flex items-center gap-2">
               <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
                 Month
@@ -14215,7 +17515,7 @@ function AccountancyView({
                   <div>
                     <p className="text-xs font-bold text-slate-900 dark:text-white">{run.who}</p>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {run.displayId} | Pay {formatDateSafe(run.scheduledDate)} | {formatCurrencyGBP(run.payoutAmount)}
+                      {run.displayId} | {run.normalizedStatus === 'pending' ? 'Pending' : isInCertAccountancy ? 'Pay' : 'Scheduled'} {formatDateSafe(run.scheduledDate)} | {formatCurrencyGBP(run.payoutAmount)}
                     </p>
                     <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">Invoice {run.invoiceId || '-'}</p>
                   </div>
@@ -14224,12 +17524,26 @@ function AccountancyView({
                       className={`text-[11px] font-bold px-2 py-1 rounded-full ${
                         run.normalizedStatus === 'paid'
                           ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                          : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+                          : run.normalizedStatus === 'pending'
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                            : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
                       }`}
                     >
-                      {run.normalizedStatus === 'paid' ? 'Paid' : 'Scheduled'}
+                      {run.normalizedStatus === 'paid'
+                        ? 'Paid'
+                        : run.normalizedStatus === 'pending'
+                          ? 'Pending confirmation'
+                          : 'Scheduled'}
                     </span>
-                    {run.normalizedStatus !== 'paid' && (
+                    {canConfirmPayoutRuns && run.normalizedStatus === 'pending' && (
+                      <button
+                        onClick={() => onConfirmPayoutRun?.(run.id)}
+                        className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 text-[11px] font-bold"
+                      >
+                        Confirm paid
+                      </button>
+                    )}
+                    {canMarkPayoutsPaid && run.normalizedStatus === 'scheduled' && (
                       <button
                         onClick={() => onMarkPayoutPaid?.(run.id)}
                         className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[11px] font-bold"
@@ -14242,9 +17556,12 @@ function AccountancyView({
               ))
             )}
           </div>
-        </div>
+          </div>
+        )}
       </section>
 
+      {isInCertAccountancy && (
+      <>
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
           <h3 className="text-base font-bold text-slate-900 dark:text-white">A/R Aging</h3>
@@ -14558,12 +17875,512 @@ function AccountancyView({
           </div>
         </div>
       </section>
+      </>
+      )}
     </div>
+  );
+}
+
+function SupportHelpView({ onNotify, isInCertAdmin = false, onOpenOps, onOpenTemplates }) {
+  return (
+    <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Help Center</p>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1">Support and Product Guidance</h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-3xl">
+            Use this space for user guidance, support routing, and product walkthrough links.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {isInCertAdmin && (
+            <button
+              type="button"
+              onClick={() => onOpenOps?.()}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+            >
+              <ServerCog className="w-4 h-4" />
+              Open Ops Console
+            </button>
+          )}
+          {isInCertAdmin && (
+            <button
+              type="button"
+              onClick={() => onOpenTemplates?.()}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+            >
+              <FileSignature className="w-4 h-4" />
+              Open Templates
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onNotify?.('Support channel placeholder', 'info')}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200"
+          >
+            <Info className="w-4 h-4" />
+            Contact Support
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TemplateEvidenceReportPreview({ template, templateIndex = 0 }) {
+  const reportModel = useMemo(() => buildTemplateCompletionReportModel(template, templateIndex), [template, templateIndex]);
+  const verificationQrDataUrl = useQrDataUrl(reportModel.links.verificationUrl, 540);
+  const vaultQrDataUrl = useQrDataUrl(reportModel.links.vaultUrl, 540);
+  const tamperQrDataUrl = useQrDataUrl(reportModel.links.tamperUrl, 540);
+
+  const reportHtml = useMemo(
+    () =>
+      buildTemplateCompletedReportHtml(reportModel, {
+        verificationQrDataUrl,
+        vaultQrDataUrl,
+        tamperQrDataUrl,
+      }),
+    [reportModel, verificationQrDataUrl, vaultQrDataUrl, tamperQrDataUrl]
+  );
+
+  return (
+    <article className="rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900/40 shadow-sm">
+      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50/85 dark:bg-slate-900/65 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">HTML Evidence Report Preview</p>
+          <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
+            {reportModel.template.id} · {reportModel.template.name}
+          </p>
+        </div>
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${
+            reportModel.summary.isPass
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+              : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+          }`}
+        >
+          {reportModel.summary.statusLabel} · {reportModel.summary.passPercent}%
+        </span>
+      </div>
+      <iframe
+        title={`${reportModel.template.id} completed evidence report`}
+        srcDoc={reportHtml}
+        className="w-full h-[1120px] bg-white"
+      />
+    </article>
+  );
+}
+
+function TemplateStudioView({
+  onNotify,
+  isInCertAdmin = false,
+  templateBlueprints = [],
+  onPublishTemplateBlueprint,
+  onUpdateTemplateBlueprint,
+}) {
+  const [selectedTemplateId, setSelectedTemplateId] = useState(() => templateBlueprints[0]?.id || '');
+  const [previewTemplateId, setPreviewTemplateId] = useState(() => templateBlueprints[0]?.id || '');
+  const [questionDraft, setQuestionDraft] = useState([]);
+
+  useEffect(() => {
+    setSelectedTemplateId((previous) =>
+      templateBlueprints.some((template) => template.id === previous) ? previous : templateBlueprints[0]?.id || ''
+    );
+  }, [templateBlueprints]);
+
+  useEffect(() => {
+    setPreviewTemplateId((previous) =>
+      templateBlueprints.some((template) => template.id === previous) ? previous : templateBlueprints[0]?.id || ''
+    );
+  }, [templateBlueprints]);
+
+  useEffect(() => {
+    const selectedTemplate = templateBlueprints.find((template) => template.id === selectedTemplateId);
+    const questionPrefix = String(selectedTemplate?.category || selectedTemplate?.id || 'Q');
+    setQuestionDraft(normalizeTemplateQuestionBank(selectedTemplate?.questionBank || [], questionPrefix));
+  }, [selectedTemplateId, templateBlueprints]);
+
+  const selectedTemplate = templateBlueprints.find((template) => template.id === selectedTemplateId) || null;
+  const previewTemplate = templateBlueprints.find((template) => template.id === previewTemplateId) || null;
+  const previewTemplateIndex = Math.max(
+    0,
+    templateBlueprints.findIndex((template) => template.id === previewTemplateId)
+  );
+  const questionCount = questionDraft.length;
+  const criticalCount = questionDraft.filter((question) => question.type === 'boolean' && Boolean(question.critical)).length;
+  const maxScore = questionDraft.reduce((total, question) => total + Math.max(1, Number(question.weight || 1)), 0);
+
+  const updateQuestionDraftAt = (index, patch) => {
+    if (!isInCertAdmin) {
+      return;
+    }
+    setQuestionDraft((previousQuestions) =>
+      previousQuestions.map((question, questionIndex) => {
+        if (questionIndex !== index) {
+          return question;
+        }
+        const nextEvidence = patch?.evidence
+          ? {
+              photo: Boolean(patch.evidence.photo ?? question?.evidence?.photo),
+              comment:
+                patch.evidence.comment !== undefined
+                  ? Boolean(patch.evidence.comment)
+                  : question?.evidence?.comment !== false,
+              signature: Boolean(patch.evidence.signature ?? question?.evidence?.signature),
+            }
+          : question?.evidence || { photo: false, comment: true, signature: false };
+
+        return {
+          ...question,
+          ...patch,
+          evidence: nextEvidence,
+        };
+      })
+    );
+  };
+
+  const addQuestion = () => {
+    if (!isInCertAdmin) {
+      onNotify?.('Only InCert admins can edit templates', 'info');
+      return;
+    }
+    const questionPrefix = String(selectedTemplate?.category || selectedTemplate?.id || 'Q');
+    setQuestionDraft((previousQuestions) =>
+      normalizeTemplateQuestionBank(
+        [
+          ...previousQuestions,
+          {
+            id: '',
+            category: 'General',
+            text: '',
+            type: 'boolean',
+            options: { yes: 1, no: 0 },
+            weight: 1,
+            critical: false,
+            required: false,
+            evidence: { photo: false, comment: true, signature: false },
+            showIf: null,
+          },
+        ],
+        questionPrefix
+      )
+    );
+  };
+
+  const removeQuestion = (index) => {
+    if (!isInCertAdmin) {
+      onNotify?.('Only InCert admins can edit templates', 'info');
+      return;
+    }
+    const questionPrefix = String(selectedTemplate?.category || selectedTemplate?.id || 'Q');
+    setQuestionDraft((previousQuestions) =>
+      normalizeTemplateQuestionBank(previousQuestions.filter((_, questionIndex) => questionIndex !== index), questionPrefix)
+    );
+  };
+
+  const resetDraft = () => {
+    const questionPrefix = String(selectedTemplate?.category || selectedTemplate?.id || 'Q');
+    setQuestionDraft(normalizeTemplateQuestionBank(selectedTemplate?.questionBank || [], questionPrefix));
+  };
+
+  const saveQuestionBank = (event) => {
+    event.preventDefault();
+    if (!isInCertAdmin) {
+      onNotify?.('Only InCert admins can save template updates', 'info');
+      return;
+    }
+    if (!selectedTemplateId) {
+      onNotify?.('Select a template first', 'info');
+      return;
+    }
+    onUpdateTemplateBlueprint?.({
+      templateId: selectedTemplateId,
+      questionBank: questionDraft,
+    });
+  };
+
+  return (
+    <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Template Studio</p>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1">Template Management</h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
+            Edit template question banks, weighting, evidence requirements, and publish updates.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 md:col-span-2">
+          Template
+          <select
+            value={selectedTemplateId}
+            onChange={(event) => setSelectedTemplateId(event.target.value)}
+            className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+          >
+            {templateBlueprints.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.id} - {template.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Questions</p>
+          <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{questionCount}</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Critical / Max score</p>
+          <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+            {criticalCount} / {maxScore}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={addQuestion}
+          disabled={!isInCertAdmin}
+          className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 disabled:opacity-50 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+        >
+          Add question
+        </button>
+        <button
+          type="button"
+          onClick={resetDraft}
+          className="px-2.5 py-1 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 text-[11px] font-bold"
+        >
+          Reset draft
+        </button>
+        <button
+          type="button"
+          disabled={!selectedTemplateId}
+          onClick={() => onPublishTemplateBlueprint?.(selectedTemplateId, 'Published from Template Studio')}
+          className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 disabled:opacity-50 dark:bg-amber-900/40 dark:text-amber-300 text-[11px] font-bold"
+        >
+          Publish update
+        </button>
+      </div>
+      {!isInCertAdmin && (
+        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Read-only mode. InCert admin role required to edit and save templates.</p>
+      )}
+
+      <form onSubmit={saveQuestionBank} className="mt-4 space-y-2">
+        <fieldset disabled={!isInCertAdmin} className={`space-y-2 max-h-[42rem] overflow-y-auto pr-1 ${!isInCertAdmin ? 'opacity-80' : ''}`}>
+          {selectedTemplate ? (
+            questionDraft.map((question, index) => (
+              <article
+                key={`${question.id || 'question'}-${index}`}
+                className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 p-3 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                    Q{index + 1} {question.id ? `• ${question.id}` : ''}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => removeQuestion(index)}
+                    className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 text-[11px] font-bold"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Question ID
+                    <input
+                      value={question.id || ''}
+                      onChange={(event) => updateQuestionDraftAt(index, { id: event.target.value })}
+                      className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Type
+                    <select
+                      value={question.type || 'boolean'}
+                      onChange={(event) => updateQuestionDraftAt(index, { type: event.target.value })}
+                      className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                    >
+                      {TEMPLATE_QUESTION_TYPES.map((typeOption) => (
+                        <option key={`${question.id || index}-${typeOption}`} value={typeOption}>
+                          {typeOption}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Weight
+                    <input
+                      type="number"
+                      min={1}
+                      value={question.weight ?? 1}
+                      onChange={(event) => updateQuestionDraftAt(index, { weight: Math.max(1, Number(event.target.value || 1)) })}
+                      className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Category
+                    <input
+                      value={question.category || ''}
+                      onChange={(event) => updateQuestionDraftAt(index, { category: event.target.value })}
+                      className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                    />
+                  </label>
+                </div>
+
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Question text
+                  <textarea
+                    rows={2}
+                    value={question.text || ''}
+                    onChange={(event) => updateQuestionDraftAt(index, { text: event.target.value })}
+                    className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                  />
+                </label>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Show-if rule
+                    <input
+                      value={question.showIf || ''}
+                      onChange={(event) => updateQuestionDraftAt(index, { showIf: event.target.value })}
+                      className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                    />
+                  </label>
+                  <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Flags and evidence
+                    <div className="mt-1 flex flex-wrap items-center gap-3">
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(question.critical)}
+                          onChange={(event) => updateQuestionDraftAt(index, { critical: event.target.checked })}
+                        />
+                        Critical
+                      </label>
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(question.required)}
+                          onChange={(event) => updateQuestionDraftAt(index, { required: event.target.checked })}
+                        />
+                        Required
+                      </label>
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(question?.evidence?.photo)}
+                          onChange={(event) => updateQuestionDraftAt(index, { evidence: { ...question.evidence, photo: event.target.checked } })}
+                        />
+                        Photo
+                      </label>
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={question?.evidence?.comment !== false}
+                          onChange={(event) => updateQuestionDraftAt(index, { evidence: { ...question.evidence, comment: event.target.checked } })}
+                        />
+                        Comment
+                      </label>
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(question?.evidence?.signature)}
+                          onChange={(event) => updateQuestionDraftAt(index, { evidence: { ...question.evidence, signature: event.target.checked } })}
+                        />
+                        Signature
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            ))
+          ) : (
+            <p className="text-xs text-slate-600 dark:text-slate-300">No template blueprint available yet.</p>
+          )}
+        </fieldset>
+
+        <div className="pt-1">
+          <button
+            type="submit"
+            disabled={!isInCertAdmin || !selectedTemplate}
+            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold transition-colors"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Save Question Bank
+          </button>
+        </div>
+      </form>
+
+      <section className="mt-6 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/75 dark:bg-slate-900/45 p-4 md:p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Report Templates</p>
+            <h3 className="text-base md:text-lg font-bold text-slate-900 dark:text-white mt-1">Completed HTML Report Output (PDF Evidence View)</h3>
+            <p className="text-xs md:text-sm text-slate-600 dark:text-slate-300 mt-1 max-w-3xl">
+              Every template renders a completed report with scoring, recommendations, addresses, contact numbers, evidence ledger, QR verification,
+              and tamper-evident vault metadata.
+            </p>
+          </div>
+          <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+            Preview template
+            <select
+              value={previewTemplateId}
+              onChange={(event) => setPreviewTemplateId(event.target.value)}
+              className="mt-1 w-full min-w-[18rem] px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+            >
+              {templateBlueprints.map((template) => (
+                <option key={`preview-${template.id}`} value={template.id}>
+                  {template.id} - {template.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[19rem_1fr]">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/85 dark:bg-slate-900/35 p-2.5 max-h-[46rem] overflow-y-auto">
+            {templateBlueprints.map((template) => {
+              const isSelected = template.id === previewTemplateId;
+              return (
+                <button
+                  key={`preview-list-${template.id}`}
+                  type="button"
+                  onClick={() => setPreviewTemplateId(template.id)}
+                  className={`w-full text-left rounded-lg border px-3 py-2.5 mb-2 transition-colors ${
+                    isSelected
+                      ? 'border-cyan-300 bg-cyan-50 text-cyan-800 dark:border-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-100'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200'
+                  }`}
+                >
+                  <p className="text-xs font-bold">{template.name}</p>
+                  <p className="text-[11px] mt-0.5 opacity-80">
+                    {template.id} · {template.category} · {(template.questionBank || []).length} questions
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+
+          <div>
+            {previewTemplate ? (
+              <TemplateEvidenceReportPreview template={previewTemplate} templateIndex={previewTemplateIndex} />
+            ) : (
+              <p className="text-xs text-slate-600 dark:text-slate-300">Select a template to preview its completed report output.</p>
+            )}
+          </div>
+        </div>
+      </section>
+    </section>
   );
 }
 
 function HelpCenterView({
   onNotify,
+  isInCertAdmin = false,
   jobs = [],
   certificates = [],
   companyContext = { id: '', name: 'Acme Logistics' },
@@ -14602,6 +18419,7 @@ function HelpCenterView({
   onToggleTemplate,
   onConnectIntegration,
   onCreateTemplateBlueprint,
+  onUpdateTemplateBlueprint,
   onPublishTemplateBlueprint,
   onCreateTemplateListing,
   onGrantTemplateLicence,
@@ -14688,6 +18506,8 @@ function HelpCenterView({
     evidenceRequired: true,
     closureSignoff: 'auditor',
   }));
+  const [selectedBlueprintEditorId, setSelectedBlueprintEditorId] = useState(() => templateBlueprints[0]?.id || '');
+  const [blueprintQuestionDraft, setBlueprintQuestionDraft] = useState([]);
 
   useEffect(() => {
     setSiteForm({
@@ -14724,6 +18544,9 @@ function HelpCenterView({
           ? previous.templateId
           : templateBlueprints[0]?.id || '',
     }));
+    setSelectedBlueprintEditorId((previous) =>
+      templateBlueprints.some((template) => template.id === previous) ? previous : templateBlueprints[0]?.id || ''
+    );
   }, [templateBlueprints]);
 
   useEffect(() => {
@@ -14759,6 +18582,12 @@ function HelpCenterView({
           : auditFindings[0]?.id || '',
     }));
   }, [auditFindings]);
+
+  useEffect(() => {
+    const selectedTemplate = templateBlueprints.find((template) => template.id === selectedBlueprintEditorId);
+    const questionPrefix = String(selectedTemplate?.category || selectedTemplate?.id || 'Q');
+    setBlueprintQuestionDraft(normalizeTemplateQuestionBank(selectedTemplate?.questionBank || [], questionPrefix));
+  }, [selectedBlueprintEditorId, templateBlueprints]);
 
   const onboardingCompleted = onboardingTasks.filter((task) => task.completed).length;
   const onboardingProgress = onboardingTasks.length > 0 ? Math.round((onboardingCompleted / onboardingTasks.length) * 100) : 0;
@@ -14971,6 +18800,106 @@ function HelpCenterView({
     event.preventDefault();
     onCreateAuditAction?.(actionForm);
   };
+
+  const updateQuestionDraftAt = (index, patch) => {
+    if (!isInCertAdmin) {
+      return;
+    }
+    setBlueprintQuestionDraft((previousQuestions) =>
+      previousQuestions.map((question, questionIndex) => {
+        if (questionIndex !== index) {
+          return question;
+        }
+        const nextEvidence = patch?.evidence
+          ? {
+              photo: Boolean(patch.evidence.photo ?? question?.evidence?.photo),
+              comment:
+                patch.evidence.comment !== undefined
+                  ? Boolean(patch.evidence.comment)
+                  : question?.evidence?.comment !== false,
+              signature: Boolean(patch.evidence.signature ?? question?.evidence?.signature),
+            }
+          : question?.evidence || { photo: false, comment: true, signature: false };
+
+        return {
+          ...question,
+          ...patch,
+          evidence: nextEvidence,
+        };
+      })
+    );
+  };
+
+  const addQuestionToDraft = () => {
+    if (!isInCertAdmin) {
+      onNotify?.('Only InCert admins can edit template questions', 'info');
+      return;
+    }
+    const selectedTemplate = templateBlueprints.find((template) => template.id === selectedBlueprintEditorId);
+    const fallbackPrefix = String(selectedTemplate?.category || selectedTemplate?.id || 'Q');
+    setBlueprintQuestionDraft((previousQuestions) => {
+      const nextQuestions = [
+        ...previousQuestions,
+        {
+          id: '',
+          category: 'General',
+          text: '',
+          type: 'boolean',
+          options: { yes: 1, no: 0 },
+          weight: 1,
+          critical: false,
+          required: false,
+          evidence: { photo: false, comment: true, signature: false },
+          showIf: null,
+        },
+      ];
+      return normalizeTemplateQuestionBank(nextQuestions, fallbackPrefix);
+    });
+  };
+
+  const removeQuestionFromDraft = (index) => {
+    if (!isInCertAdmin) {
+      onNotify?.('Only InCert admins can edit template questions', 'info');
+      return;
+    }
+    const selectedTemplate = templateBlueprints.find((template) => template.id === selectedBlueprintEditorId);
+    const fallbackPrefix = String(selectedTemplate?.category || selectedTemplate?.id || 'Q');
+    setBlueprintQuestionDraft((previousQuestions) =>
+      normalizeTemplateQuestionBank(previousQuestions.filter((_, questionIndex) => questionIndex !== index), fallbackPrefix)
+    );
+  };
+
+  const resetQuestionDraft = () => {
+    const selectedTemplate = templateBlueprints.find((template) => template.id === selectedBlueprintEditorId);
+    const fallbackPrefix = String(selectedTemplate?.category || selectedTemplate?.id || 'Q');
+    setBlueprintQuestionDraft(normalizeTemplateQuestionBank(selectedTemplate?.questionBank || [], fallbackPrefix));
+  };
+
+  const handleQuestionBankSave = (event) => {
+    event.preventDefault();
+    if (!isInCertAdmin) {
+      onNotify?.('Only InCert admins can save template changes', 'info');
+      return;
+    }
+    if (!selectedBlueprintEditorId) {
+      onNotify?.('Select a template blueprint first', 'info');
+      return;
+    }
+    onUpdateTemplateBlueprint?.({
+      templateId: selectedBlueprintEditorId,
+      questionBank: blueprintQuestionDraft,
+    });
+  };
+
+  const selectedBlueprintForEditor = templateBlueprints.find((template) => template.id === selectedBlueprintEditorId) || null;
+  const draftQuestionCount = blueprintQuestionDraft.length;
+  const draftCriticalCount = blueprintQuestionDraft.filter(
+    (question) => String(question.type || '') === 'boolean' && Boolean(question.critical)
+  ).length;
+  const draftWeightTotal = blueprintQuestionDraft.reduce(
+    (total, question) => total + Math.max(1, Number(question.weight || 1)),
+    0
+  );
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
@@ -15366,6 +19295,215 @@ function HelpCenterView({
             Months 10-12
           </span>
         </div>
+
+        <form
+          onSubmit={handleQuestionBankSave}
+          className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Template Question Viewer
+              </p>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                View every question in the selected template, edit weighting and controls, then save an updated version.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={addQuestionToDraft}
+                disabled={!isInCertAdmin}
+                className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 disabled:opacity-50 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+              >
+                Add question
+              </button>
+              <button
+                type="button"
+                onClick={resetQuestionDraft}
+                className="px-2.5 py-1 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 text-[11px] font-bold"
+              >
+                Reset draft
+              </button>
+              <button
+                type="submit"
+                disabled={!isInCertAdmin}
+                className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 disabled:opacity-50 dark:bg-emerald-900/40 dark:text-emerald-300 text-[11px] font-bold"
+              >
+                Save question bank
+              </button>
+            </div>
+          </div>
+          {!isInCertAdmin && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              Read-only mode. Switch to the InCert admin role to edit and save template questions.
+            </p>
+          )}
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 md:col-span-2">
+              Blueprint
+              <select
+                value={selectedBlueprintEditorId}
+                onChange={(event) => setSelectedBlueprintEditorId(event.target.value)}
+                className="mt-1 w-full px-3 py-2 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-sm"
+              >
+                {templateBlueprints.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.id} - {template.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Questions</p>
+              <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{draftQuestionCount}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Critical / Max score
+              </p>
+              <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+                {draftCriticalCount} / {draftWeightTotal}
+              </p>
+            </div>
+          </div>
+
+          {selectedBlueprintForEditor ? (
+            <fieldset disabled={!isInCertAdmin} className={`space-y-2 max-h-[38rem] overflow-y-auto pr-1 ${!isInCertAdmin ? 'opacity-80' : ''}`}>
+              {blueprintQuestionDraft.map((question, index) => (
+                <article
+                  key={`${question.id || 'question'}-${index}`}
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 p-3 space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      Q{index + 1} {question.id ? `• ${question.id}` : ''}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => removeQuestionFromDraft(index)}
+                      className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 text-[11px] font-bold"
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Question ID
+                      <input
+                        value={question.id || ''}
+                        onChange={(event) => updateQuestionDraftAt(index, { id: event.target.value })}
+                        className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Type
+                      <select
+                        value={question.type || 'boolean'}
+                        onChange={(event) => updateQuestionDraftAt(index, { type: event.target.value })}
+                        className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                      >
+                        {TEMPLATE_QUESTION_TYPES.map((typeOption) => (
+                          <option key={`${question.id || index}-${typeOption}`} value={typeOption}>
+                            {typeOption}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Weight
+                      <input
+                        type="number"
+                        min={1}
+                        value={question.weight ?? 1}
+                        onChange={(event) => updateQuestionDraftAt(index, { weight: Math.max(1, Number(event.target.value || 1)) })}
+                        className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Category
+                      <input
+                        value={question.category || ''}
+                        onChange={(event) => updateQuestionDraftAt(index, { category: event.target.value })}
+                        className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Question text
+                    <textarea
+                      rows={2}
+                      value={question.text || ''}
+                      onChange={(event) => updateQuestionDraftAt(index, { text: event.target.value })}
+                      className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                    />
+                  </label>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Show-if rule
+                      <input
+                        value={question.showIf || ''}
+                        onChange={(event) => updateQuestionDraftAt(index, { showIf: event.target.value })}
+                        className="mt-1 w-full px-2.5 py-1.5 bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                      />
+                    </label>
+                    <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Flags and evidence
+                      <div className="mt-1 flex flex-wrap items-center gap-3">
+                        <label className="inline-flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(question.critical)}
+                            onChange={(event) => updateQuestionDraftAt(index, { critical: event.target.checked })}
+                          />
+                          Critical
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(question.required)}
+                            onChange={(event) => updateQuestionDraftAt(index, { required: event.target.checked })}
+                          />
+                          Required
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(question?.evidence?.photo)}
+                            onChange={(event) => updateQuestionDraftAt(index, { evidence: { ...question.evidence, photo: event.target.checked } })}
+                          />
+                          Photo
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={question?.evidence?.comment !== false}
+                            onChange={(event) => updateQuestionDraftAt(index, { evidence: { ...question.evidence, comment: event.target.checked } })}
+                          />
+                          Comment
+                        </label>
+                        <label className="inline-flex items-center gap-1.5">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(question?.evidence?.signature)}
+                            onChange={(event) => updateQuestionDraftAt(index, { evidence: { ...question.evidence, signature: event.target.checked } })}
+                          />
+                          Signature
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </fieldset>
+          ) : (
+            <p className="text-xs text-slate-600 dark:text-slate-300">No template blueprint available to edit yet.</p>
+          )}
+        </form>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-2">
           <form onSubmit={handleTemplateSubmit} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
@@ -16620,8 +20758,8 @@ function DashboardView({ assets, urgentAssets, upcomingAssets, complianceTrend, 
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 relative overflow-hidden shadow-sm transition-colors duration-300 hover-lift">
         <div className="absolute inset-x-0 top-0 h-1 shimmer-line" />
-        <div className="absolute -right-10 -top-12 opacity-25 dark:opacity-40 pointer-events-none">
-          <svg width="220" height="220" viewBox="0 0 100 100" className="animate-[spin_14s_linear_infinite]">
+        <div className="absolute -right-10 -top-12 opacity-15 dark:opacity-30 pointer-events-none">
+          <svg width="220" height="220" viewBox="0 0 100 100" className="motion-safe:animate-[spin_18s_linear_infinite]">
             <circle
               cx="50"
               cy="50"
@@ -16890,9 +21028,9 @@ function AssetRegisterView({ assets, searchQuery, onAdd, onViewAsset }) {
                     className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none"
                   >
                     <option>All</option>
-                    <option>LOLER</option>
-                    <option>PUWER</option>
-                    <option>PSSR</option>
+                    {SUPPORTED_REGIMES.map((regime) => (
+                      <option key={`filter-regime-${regime}`}>{regime}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
@@ -17626,6 +21764,8 @@ function MarketplaceExchangeView({
   assets,
   auditors,
   jobs,
+  auditRuns = [],
+  reportArtifacts = [],
   inspectionTemplates = [],
   companyContext = { id: '', name: '' },
   debugRole = 'company',
@@ -17642,6 +21782,8 @@ function MarketplaceExchangeView({
   onStartAuditRunForJob,
   onRecordFinding,
   onReassignJob,
+  onDownloadReportArtifact,
+  onSaveReportArtifactToVault,
 }) {
   const resolveMarketplaceMode = useCallback(
     (role) => {
@@ -17670,6 +21812,8 @@ function MarketplaceExchangeView({
   const [startAuditMode, setStartAuditMode] = useState(AUDIT_EXECUTION_MODES.INCERT_TEMPLATE);
   const [acceptJobId, setAcceptJobId] = useState('');
   const [acceptAuditMode, setAcceptAuditMode] = useState(AUDIT_EXECUTION_MODES.INCERT_TEMPLATE);
+  const [completedReportArtifactId, setCompletedReportArtifactId] = useState('');
+  const [showCompletedReportModal, setShowCompletedReportModal] = useState(false);
   const pageSize = 6;
 
   useEffect(() => {
@@ -17707,6 +21851,49 @@ function MarketplaceExchangeView({
       companyName: workspaceJob.companyName || companyContext?.name,
     });
   }, [workspaceJob, inspectionTemplates, companyContext?.id, companyContext?.name]);
+  const latestArtifactByRunId = useMemo(() => {
+    const artifactMap = new Map();
+    reportArtifacts.forEach((artifact) => {
+      if (!artifact?.auditRunId) {
+        return;
+      }
+      const existingArtifact = artifactMap.get(artifact.auditRunId);
+      const artifactVersion = Number(artifact.version || 0);
+      const existingVersion = Number(existingArtifact?.version || 0);
+      const shouldReplace =
+        !existingArtifact ||
+        artifactVersion > existingVersion ||
+        (artifactVersion === existingVersion &&
+          String(artifact.createdAt || '') > String(existingArtifact.createdAt || ''));
+      if (shouldReplace) {
+        artifactMap.set(artifact.auditRunId, artifact);
+      }
+    });
+    return artifactMap;
+  }, [reportArtifacts]);
+  const latestRunByJobId = useMemo(() => {
+    const runMap = new Map();
+    auditRuns.forEach((run) => {
+      if (!run?.auditJobId) {
+        return;
+      }
+      const existingRun = runMap.get(run.auditJobId);
+      const runCompletedAt = String(run.completedAt || run.startedAt || '');
+      const existingCompletedAt = String(existingRun?.completedAt || existingRun?.startedAt || '');
+      if (!existingRun || runCompletedAt > existingCompletedAt) {
+        runMap.set(run.auditJobId, run);
+      }
+    });
+    return runMap;
+  }, [auditRuns]);
+  const selectedCompletedArtifact =
+    reportArtifacts.find((artifact) => artifact.id === completedReportArtifactId) || null;
+  const selectedCompletedRun = selectedCompletedArtifact
+    ? auditRuns.find((run) => run.id === selectedCompletedArtifact.auditRunId) || null
+    : null;
+  const selectedCompletedJob = selectedCompletedRun
+    ? jobs.find((job) => job.id === selectedCompletedRun.auditJobId) || null
+    : null;
 
   const filteredJobs = useMemo(() => {
     const term = searchQuery.toLowerCase();
@@ -17860,6 +22047,33 @@ function MarketplaceExchangeView({
     return nextAuditor?.id || fallbackAuditorId || '';
   };
 
+  const getLatestArtifactForJob = useCallback(
+    (jobId) => {
+      const linkedRun = latestRunByJobId.get(jobId);
+      if (!linkedRun) {
+        return null;
+      }
+      return latestArtifactByRunId.get(linkedRun.id) || null;
+    },
+    [latestRunByJobId, latestArtifactByRunId]
+  );
+
+  const openCompletedArtifactModal = useCallback(
+    (artifactId) => {
+      if (!artifactId) {
+        return;
+      }
+      setCompletedReportArtifactId(artifactId);
+      setShowCompletedReportModal(true);
+    },
+    []
+  );
+
+  const closeCompletedArtifactModal = useCallback(() => {
+    setShowCompletedReportModal(false);
+    setCompletedReportArtifactId('');
+  }, []);
+
   const openAcceptMethodPicker = (job) => {
     setAcceptJobId(job.id);
     setAcceptAuditMode(
@@ -17935,7 +22149,13 @@ function MarketplaceExchangeView({
           onRecordFinding={(findingPayload) =>
             onRecordFinding?.(workspaceJob.id, selectedAuditor.id, findingPayload)
           }
-          onCompleteAudit={() => onCompleteJob(workspaceJob.id, selectedAuditor.id)}
+          onCompleteAudit={(completionPayload) => {
+            const completionResult = onCompleteJob(workspaceJob.id, selectedAuditor.id, completionPayload);
+            if (completionResult && typeof completionResult === 'object' && completionResult.artifactId) {
+              openCompletedArtifactModal(completionResult.artifactId);
+            }
+            return completionResult;
+          }}
         />
 
         {showAdjustmentModal && selectedAdjustmentJob && (
@@ -18432,6 +22652,7 @@ function MarketplaceExchangeView({
             paginatedJobs.map((job) => {
               const currentMatch = selectedAuditor ? computeAuditorMatch(job, selectedAuditor, nowTick) : null;
               const isOwnedBySelectedAuditor = job.matchedAuditorId === selectedAuditorId;
+              const completedArtifactForJob = getLatestArtifactForJob(job.id);
               const dispatch = getMarketplaceJobDispatch(job);
               const offerExpired = isOfferExpired(job, nowTick);
               const offerMinsRemaining = minutesUntil(dispatch.offerExpiresAt, nowTick);
@@ -18675,10 +22896,10 @@ function MarketplaceExchangeView({
                             />
                           </label>
                           <button
-                            onClick={() => onCompleteJob(job.id, selectedAuditorId)}
+                            onClick={() => setWorkspaceJobId(job.id)}
                             className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
                           >
-                            Mark Complete
+                            Complete in Template
                           </button>
                         </>
                       )
@@ -18690,11 +22911,25 @@ function MarketplaceExchangeView({
                           Awaiting InCert review
                         </span>
                       )}
+                    {job.status === 'completed' && isOwnedBySelectedAuditor && completedArtifactForJob && (
+                      <button
+                        onClick={() => openCompletedArtifactModal(completedArtifactForJob.id)}
+                        className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold"
+                      >
+                        View Completed Report
+                      </button>
+                    )}
                   </div>
 
                   {job.documents.length > 0 && (
                     <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
                       Uploaded docs: {job.documents.join(', ')}
+                    </div>
+                  )}
+                  {job.status === 'completed' && completedArtifactForJob && (
+                    <div className="mt-3 text-xs text-slate-600 dark:text-slate-300">
+                      Report artifact: <span className="font-semibold">{completedArtifactForJob.id}</span> • v
+                      {completedArtifactForJob.version}
                     </div>
                   )}
                   {isOwnedBySelectedAuditor &&
@@ -18929,6 +23164,88 @@ function MarketplaceExchangeView({
         </div>
       )}
 
+      {showCompletedReportModal && selectedCompletedArtifact && (
+        <div className="fixed inset-0 z-[126] bg-slate-900/45 dark:bg-slate-950/70 backdrop-blur-sm p-4 flex items-center justify-center">
+          <div className="w-full max-w-6xl rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 dark:text-white">Completed Audit Report</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Artifact {selectedCompletedArtifact.id} • Run {selectedCompletedArtifact.auditRunId} • Version {selectedCompletedArtifact.version}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {selectedCompletedJob?.id ? `${selectedCompletedJob.id} • ${selectedCompletedJob.assetName}` : 'Audit artifact ready'} • Created{' '}
+                  {formatDateLabel(String(selectedCompletedArtifact.createdAt || '').slice(0, 10))}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCompletedArtifactModal}
+                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 flex flex-wrap items-center gap-2 text-xs">
+              <span
+                className={`px-2.5 py-1 rounded-full font-bold ${
+                  selectedCompletedArtifact.vaultStatus === 'stored'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                }`}
+              >
+                Vault {selectedCompletedArtifact.vaultStatus === 'stored' ? 'stored' : 'pending'}
+              </span>
+              <span className="text-slate-600 dark:text-slate-300">
+                Vault record: {selectedCompletedArtifact.vaultRecordId || 'pending'}
+              </span>
+              <span className="text-slate-600 dark:text-slate-300">
+                Tamper seal: {selectedCompletedArtifact.tamperSealId || 'pending'}
+              </span>
+            </div>
+
+            <div className="p-4">
+              {selectedCompletedArtifact.htmlContent ? (
+                <iframe
+                  title={`completed-report-${selectedCompletedArtifact.id}`}
+                  srcDoc={selectedCompletedArtifact.htmlContent}
+                  className="w-full h-[60vh] border border-slate-200 dark:border-slate-700 rounded-xl bg-white"
+                />
+              ) : (
+                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-6 text-sm text-slate-600 dark:text-slate-300">
+                  Report HTML is still generating. You can close and reopen this view.
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-700 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => onDownloadReportArtifact?.(selectedCompletedArtifact.id)}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white"
+              >
+                Download HTML Report
+              </button>
+              <button
+                type="button"
+                onClick={() => onSaveReportArtifactToVault?.(selectedCompletedArtifact.id)}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                Save to Evidence Vault
+              </button>
+              <button
+                type="button"
+                onClick={closeCompletedArtifactModal}
+                className="px-4 py-2 rounded-lg text-sm font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showComposer && (
         <MarketplaceComposerModal
           assets={assets}
@@ -18972,9 +23289,16 @@ function AuditorTemplateRunModal({
   const auditQuestions = useMemo(() => {
     const normalizeQuestion = (question, fallbackId, fallbackText) => ({
       id: String(question?.id || fallbackId),
+      category: String(question?.category || 'General').trim() || 'General',
       text: String(question?.text || fallbackText).trim(),
       weight: Math.max(1, Number(question?.weight || 1)),
       critical: Boolean(question?.critical),
+      required: Boolean(question?.required),
+      evidence: {
+        photo: Boolean(question?.evidence?.photo),
+        comment: question?.evidence?.comment !== false,
+        signature: Boolean(question?.evidence?.signature),
+      },
     });
 
     const catalogTemplate = getCatalogTemplateByInspectionTemplate(template, job?.regime);
@@ -19110,7 +23434,45 @@ function AuditorTemplateRunModal({
       });
     });
 
-    const didComplete = onCompleteAudit?.();
+    const completionPayload = {
+      templateId: String(template?.id || template?.templateId || job?.inspectionTemplateId || ''),
+      templateName: String(template?.name || `${job?.regime || 'General'} Audit Template`),
+      templateCategory: String(template?.regime || job?.regime || 'HS').toUpperCase(),
+      templateVersion: String(template?.version || template?.templateVersion || '1.0'),
+      startedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+      completedAt: new Date().toISOString(),
+      auditorName: auditor?.name || '',
+      answers: auditQuestions.map((question) => ({
+        questionId: question.id,
+        category: question.category || 'General',
+        text: question.text,
+        weight: question.weight,
+        critical: Boolean(question.critical),
+        required: Boolean(question.required),
+        response: responses[question.id] || 'na',
+        notes: notesByQuestionId[question.id] || '',
+        evidenceFiles: evidenceByQuestionId[question.id] || [],
+      })),
+      summary: {
+        answeredCount,
+        unansweredCount,
+        scoreEarned,
+        scorePossible,
+        scorePercent,
+        effectivePassPercent,
+        isPassing,
+        failedCount: failedQuestions.length,
+        criticalFailedCount: criticalFailedQuestions.length,
+        evidenceTotal,
+      },
+      responsesByQuestionId: responses,
+      notesByQuestionId,
+      evidenceByQuestionId,
+      assetName: job?.assetName || '',
+      regime: job?.regime || '',
+    };
+
+    const didComplete = onCompleteAudit?.(completionPayload);
     if (didComplete === false) {
       return;
     }
@@ -20057,6 +24419,7 @@ function CommandPalette({ isOpen, onClose, onAction }) {
       { id: 'go-marketplace', label: 'Open Audit Marketplace', description: 'Advertise and match audit jobs', icon: ClipboardList },
       { id: 'go-accountancy', label: 'Open Accountancy', description: 'Run invoicing, collections, and payouts', icon: BarChart3 },
       { id: 'go-ops', label: 'Open Operations Console', description: 'Run readiness workflows for items 2-15', icon: ServerCog },
+      { id: 'go-templates', label: 'Open Template Studio', description: 'Edit and publish template question banks', icon: FileSignature },
       { id: 'go-help', label: 'Open Help Center', description: 'View product guides and placeholders', icon: FileText },
       { id: 'new-asset', label: 'Add New Asset', description: 'Create an asset in the register', icon: Plus },
       { id: 'request-inspection', label: 'Request Inspection', description: 'Open dispatch flow', icon: Calendar },

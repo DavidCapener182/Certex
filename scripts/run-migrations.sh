@@ -37,6 +37,7 @@ MIGRATIONS=(
   "20260226220000_capa_finance_analytics.sql"
   "20260226221000_integrations_mobile_enterprise.sql"
   "20260226222000_quality_harness_and_release_readiness.sql"
+  "20260227213000_expand_asset_regime_catalog.sql"
 )
 
 echo "Running ${#MIGRATIONS[@]} migrations..."

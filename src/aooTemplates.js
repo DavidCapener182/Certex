@@ -4908,6 +4908,1537 @@ const aooTemplateCatalogBase = [
         "showIf": "SUP1 == 0 || SUP2 == 0 || SUP3 == 0"
       }
     ]
+  },
+  {
+    "templateId": "MACHINE",
+    "name": "Single Machine Safety & Condition Audit",
+    "category": "MACHINE",
+    "regime": "MACHINE",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "multi_use",
+    "passScore": 17,
+    "maxScore": 21,
+    "passPercent": 81,
+    "criticalQuestionIds": [
+      "MACH1",
+      "MACH2",
+      "MACH4"
+    ],
+    "retentionGuidance": "Keep machine inspection and defect closure records for at least 5 years.",
+    "regulatoryAnchors": [
+      "PUWER 1998",
+      "BS EN ISO 12100"
+    ],
+    "autoActions": [
+      {
+        "questionId": "MACH2",
+        "action": "Restore guards and interlocks before machine release",
+        "assignee": "Engineering Lead",
+        "dueWithinDays": 1
+      },
+      {
+        "questionId": "MACH4",
+        "action": "Quarantine unsafe machine and complete corrective work order",
+        "assignee": "Maintenance Supervisor",
+        "dueWithinDays": 1
+      }
+    ],
+    "auditIdExample": "MACHINE-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "MACH1",
+        "category": "Asset Baseline",
+        "text": "Is the machine uniquely identified and linked to a current inspection record?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MACH2",
+        "category": "Guarding",
+        "text": "Are guards, interlocks, and anti-bypass controls fitted and functioning as designed?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MACH3",
+        "category": "Isolation",
+        "text": "Are emergency stop and isolation points labelled, accessible, and tested in the current cycle?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MACH4",
+        "category": "Defects",
+        "text": "Are defects risk-assessed, actioned, and closed before return to service?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MACH5",
+        "category": "Competence",
+        "text": "Are operators trained, authorised, and briefed on current safe operating limits?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 3,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MACH6",
+        "category": "Action",
+        "text": "List immediate controls and responsible owners for any failed machine safety checks:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "MACH2 == 0 || MACH4 == 0"
+      }
+    ]
+  },
+  {
+    "templateId": "FIREDOOR",
+    "name": "Fire Door Integrity Audit",
+    "category": "FIRE_DOOR",
+    "regime": "FIRE_DOOR",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "multi_use",
+    "passScore": 16,
+    "maxScore": 20,
+    "passPercent": 80,
+    "criticalQuestionIds": [
+      "FDOR1",
+      "FDOR2",
+      "FDOR4"
+    ],
+    "retentionGuidance": "Keep fire door inspection records, photos, and remedial evidence for at least 3 years.",
+    "regulatoryAnchors": [
+      "Regulatory Reform (Fire Safety) Order 2005",
+      "BS 9999"
+    ],
+    "autoActions": [
+      {
+        "questionId": "FDOR2",
+        "action": "Repair or replace damaged seals and door hardware",
+        "assignee": "Facilities Manager",
+        "dueWithinDays": 3
+      },
+      {
+        "questionId": "FDOR4",
+        "action": "Restore compliant self-closing functionality",
+        "assignee": "Fire Safety Lead",
+        "dueWithinDays": 2
+      }
+    ],
+    "auditIdExample": "FDOR-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "FDOR1",
+        "category": "Register",
+        "text": "Is the fire door schedule current and complete for all applicable areas?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "FDOR2",
+        "category": "Door Condition",
+        "text": "Are leaves, frames, hinges, and seals free from damage that compromises fire performance?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "FDOR3",
+        "category": "Signage",
+        "text": "Are fire door signs and labels present, legible, and matched to door function?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 3,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "FDOR4",
+        "category": "Closing Function",
+        "text": "Do fire doors self-close fully and latch without obstruction when tested?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "FDOR5",
+        "category": "Housekeeping",
+        "text": "Are routes around fire doors clear with no wedges or hold-open misuse?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 3,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "FDOR6",
+        "category": "Action",
+        "text": "List failed fire door locations, risk level, and temporary controls:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "FDOR2 == 0 || FDOR4 == 0"
+      }
+    ]
+  },
+  {
+    "templateId": "RETAIL",
+    "name": "Retail Store Operations & Safety Audit",
+    "category": "RETAIL",
+    "regime": "RETAIL",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "subscription",
+    "passScore": 18,
+    "maxScore": 23,
+    "passPercent": 78,
+    "criticalQuestionIds": [
+      "RET1",
+      "RET3",
+      "RET4"
+    ],
+    "retentionGuidance": "Keep safety and customer incident logs for at least 3 years and complaints data per GDPR policy.",
+    "regulatoryAnchors": [
+      "Health and Safety at Work Act 1974",
+      "Food Safety Act 1990 (where applicable)"
+    ],
+    "autoActions": [
+      {
+        "questionId": "RET3",
+        "action": "Restore compliant till and cash-office security controls",
+        "assignee": "Store Manager",
+        "dueWithinDays": 2
+      },
+      {
+        "questionId": "RET4",
+        "action": "Correct slip, trip, and spill controls in customer-facing zones",
+        "assignee": "Duty Manager",
+        "dueWithinDays": 1
+      }
+    ],
+    "auditIdExample": "RETAIL-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "RET1",
+        "category": "Opening Checks",
+        "text": "Are opening checks completed and signed off before customer access?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "RET2",
+        "category": "Merchandising Safety",
+        "text": "Are displays stable with safe stock heights and no blocked egress routes?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "RET3",
+        "category": "Security",
+        "text": "Are key security controls active (cash procedures, CCTV checks, restricted stock access)?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "RET4",
+        "category": "Customer Safety",
+        "text": "Are spill response, wet-floor controls, and hazard isolation actively managed?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "RET5",
+        "category": "Team Standards",
+        "text": "Are customer-service and escalation standards briefed and evidenced in shift handovers?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 3,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "RET6",
+        "category": "Action",
+        "text": "Record immediate remediation and owner for failed retail controls:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "RET3 == 0 || RET4 == 0"
+      }
+    ]
+  },
+  {
+    "templateId": "HOSPITALITY",
+    "name": "Hospitality Venue Audit",
+    "category": "HOSPITALITY",
+    "regime": "HOSPITALITY",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "subscription",
+    "passScore": 18,
+    "maxScore": 22,
+    "passPercent": 82,
+    "criticalQuestionIds": [
+      "HOT1",
+      "HOT2",
+      "HOT4"
+    ],
+    "retentionGuidance": "Retain guest safety, incident, and hygiene records for at least 3 years.",
+    "regulatoryAnchors": [
+      "Food Hygiene Regulations 2013",
+      "Regulatory Reform (Fire Safety) Order 2005"
+    ],
+    "autoActions": [
+      {
+        "questionId": "HOT2",
+        "action": "Restore kitchen food safety controls and retrain team where needed",
+        "assignee": "Head Chef",
+        "dueWithinDays": 1
+      },
+      {
+        "questionId": "HOT4",
+        "action": "Correct guest-area hazards and complete verification walkthrough",
+        "assignee": "Venue Manager",
+        "dueWithinDays": 1
+      }
+    ],
+    "auditIdExample": "HOSPITALITY-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "HOT1",
+        "category": "Pre-Service",
+        "text": "Are pre-service checks completed for safety, cleanliness, and readiness?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HOT2",
+        "category": "Food Safety",
+        "text": "Are food storage, prep, and holding controls compliant with site HACCP procedures?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HOT3",
+        "category": "Guest Experience",
+        "text": "Are service standards, waiting times, and complaint escalation logs actively monitored?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 3,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HOT4",
+        "category": "Premises Safety",
+        "text": "Are guest-access areas free from slips, trips, and unsafe obstructions?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HOT5",
+        "category": "Emergency Readiness",
+        "text": "Are evacuation and emergency first-response arrangements staffed and current?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HOT6",
+        "category": "Action",
+        "text": "Detail actions, owners, and completion windows for non-compliant hospitality checks:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "HOT2 == 0 || HOT4 == 0"
+      }
+    ]
+  },
+  {
+    "templateId": "WAREHOUSE",
+    "name": "Warehouse & Logistics Safety Audit",
+    "category": "WAREHOUSE",
+    "regime": "WAREHOUSE",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "subscription",
+    "passScore": 19,
+    "maxScore": 24,
+    "passPercent": 79,
+    "criticalQuestionIds": [
+      "WAR1",
+      "WAR2",
+      "WAR4"
+    ],
+    "retentionGuidance": "Retain loading bay, vehicle, and near-miss controls evidence for at least 5 years.",
+    "regulatoryAnchors": [
+      "Health and Safety at Work Act 1974",
+      "Workplace (Health, Safety and Welfare) Regulations 1992"
+    ],
+    "autoActions": [
+      {
+        "questionId": "WAR2",
+        "action": "Restore segregation and traffic management controls",
+        "assignee": "Warehouse Manager",
+        "dueWithinDays": 1
+      },
+      {
+        "questionId": "WAR4",
+        "action": "Rectify loading bay safety defects and re-brief affected teams",
+        "assignee": "Logistics Supervisor",
+        "dueWithinDays": 1
+      }
+    ],
+    "auditIdExample": "WAREHOUSE-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "WAR1",
+        "category": "Traffic Management",
+        "text": "Are pedestrian and vehicle routes segregated, marked, and enforced?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "WAR2",
+        "category": "Forklift Operations",
+        "text": "Are forklift controls effective (pre-use checks, licensed operators, speed/route limits)?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "WAR3",
+        "category": "Storage Integrity",
+        "text": "Are pallet racking and stored loads stable, labelled, and within rated limits?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "WAR4",
+        "category": "Loading Bays",
+        "text": "Are loading/unloading areas controlled for falls, vehicle movement, and dock integrity?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "WAR5",
+        "category": "Housekeeping",
+        "text": "Are aisles, exits, and dispatch zones free from unmanaged obstruction?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "WAR6",
+        "category": "Action",
+        "text": "List high-risk logistics issues and immediate containment actions:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "WAR2 == 0 || WAR4 == 0"
+      }
+    ]
+  },
+  {
+    "templateId": "CONSTRUCTION",
+    "name": "Construction Site Safety Audit",
+    "category": "CONSTRUCTION",
+    "regime": "CONSTRUCTION",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "subscription",
+    "passScore": 21,
+    "maxScore": 26,
+    "passPercent": 81,
+    "criticalQuestionIds": [
+      "CST1",
+      "CST2",
+      "CST4"
+    ],
+    "retentionGuidance": "Keep RAMS, permit, and high-risk activity evidence for project plus 6 years.",
+    "regulatoryAnchors": [
+      "Construction (Design and Management) Regulations 2015",
+      "Work at Height Regulations 2005"
+    ],
+    "autoActions": [
+      {
+        "questionId": "CST2",
+        "action": "Suspend uncontrolled high-risk task until permit/RAMS controls are restored",
+        "assignee": "Principal Contractor",
+        "dueWithinDays": 0
+      },
+      {
+        "questionId": "CST4",
+        "action": "Correct access, edge, and exclusion-zone controls",
+        "assignee": "Site Manager",
+        "dueWithinDays": 1
+      }
+    ],
+    "auditIdExample": "CONSTRUCTION-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "CST1",
+        "category": "Inductions",
+        "text": "Are workforce and visitor inductions current, role-specific, and evidenced?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "CST2",
+        "category": "High-Risk Controls",
+        "text": "Are permits and RAMS in place for high-risk work (hot work, confined space, lifting, excavation)?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "CST3",
+        "category": "Temporary Works",
+        "text": "Are temporary works, scaffolds, and support systems signed off and in-date?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "CST4",
+        "category": "Work at Height",
+        "text": "Are edge protection, access systems, and fall prevention controls effective?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "CST5",
+        "category": "Site Welfare",
+        "text": "Are welfare facilities, housekeeping controls, and emergency arrangements adequate?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "CST6",
+        "category": "Action",
+        "text": "Document controls implemented for any immediately unsafe construction activity:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "CST2 == 0 || CST4 == 0"
+      }
+    ]
+  },
+  {
+    "templateId": "EDUCATION",
+    "name": "Education Premises Safety Audit",
+    "category": "EDUCATION",
+    "regime": "EDUCATION",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "subscription",
+    "passScore": 17,
+    "maxScore": 22,
+    "passPercent": 77,
+    "criticalQuestionIds": [
+      "EDU1",
+      "EDU2",
+      "EDU4"
+    ],
+    "retentionGuidance": "Retain safeguarding-sensitive audit records under school trust and GDPR retention policies.",
+    "regulatoryAnchors": [
+      "Health and Safety at Work Act 1974",
+      "Department for Education Health and Safety guidance"
+    ],
+    "autoActions": [
+      {
+        "questionId": "EDU2",
+        "action": "Implement immediate safeguarding controls for uncontrolled access points",
+        "assignee": "School Business Manager",
+        "dueWithinDays": 1
+      },
+      {
+        "questionId": "EDU4",
+        "action": "Restore science/workshop hazardous equipment controls",
+        "assignee": "Premises Manager",
+        "dueWithinDays": 2
+      }
+    ],
+    "auditIdExample": "EDUCATION-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "EDU1",
+        "category": "Premises Checks",
+        "text": "Are pre-opening checks completed for classrooms, corridors, and shared spaces?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "EDU2",
+        "category": "Safeguarding Environment",
+        "text": "Are site access, visitor control, and safeguarding reporting arrangements effective?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "EDU3",
+        "category": "Fire and Evacuation",
+        "text": "Are evacuation routes, assembly points, and drill records current and communicated?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": false,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "EDU4",
+        "category": "Specialist Areas",
+        "text": "Are controls in labs/workshops/sports areas suitable for student and staff use?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "EDU5",
+        "category": "Welfare",
+        "text": "Are first aid, welfare, and medical response arrangements adequately stocked and staffed?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 3,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "EDU6",
+        "category": "Action",
+        "text": "Record priority actions for failed education premises controls:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "EDU2 == 0 || EDU4 == 0"
+      }
+    ]
+  },
+  {
+    "templateId": "HEALTHCARE",
+    "name": "Healthcare & Care Facility Safety Audit",
+    "category": "HEALTHCARE",
+    "regime": "HEALTHCARE",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "subscription",
+    "passScore": 19,
+    "maxScore": 24,
+    "passPercent": 79,
+    "criticalQuestionIds": [
+      "HCR1",
+      "HCR2",
+      "HCR4"
+    ],
+    "retentionGuidance": "Retain healthcare safety and incident data in line with CQC/NHS and GDPR retention policies.",
+    "regulatoryAnchors": [
+      "Health and Social Care Act 2008 (Regulated Activities) Regulations",
+      "Care Quality Commission Fundamental Standards"
+    ],
+    "autoActions": [
+      {
+        "questionId": "HCR2",
+        "action": "Restore medication and controlled-asset governance checks",
+        "assignee": "Clinical Manager",
+        "dueWithinDays": 1
+      },
+      {
+        "questionId": "HCR4",
+        "action": "Implement infection control corrective actions and verification sampling",
+        "assignee": "Infection Control Lead",
+        "dueWithinDays": 1
+      }
+    ],
+    "auditIdExample": "HEALTHCARE-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "HCR1",
+        "category": "Patient Environment",
+        "text": "Are patient/resident areas safe, clean, and suitable for care delivery?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HCR2",
+        "category": "Clinical Governance",
+        "text": "Are medication, controlled assets, and high-risk treatment controls consistently followed?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HCR3",
+        "category": "Safeguarding",
+        "text": "Are safeguarding concerns escalated through current policy with documented follow-up?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HCR4",
+        "category": "Infection Prevention",
+        "text": "Are IPC controls effective across cleaning, PPE use, and contamination segregation?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HCR5",
+        "category": "Emergency Response",
+        "text": "Are emergency response equipment and on-shift competencies validated?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "HCR6",
+        "category": "Action",
+        "text": "List critical care-safety actions raised during this audit:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "HCR2 == 0 || HCR4 == 0"
+      }
+    ]
+  },
+  {
+    "templateId": "MYSTERY",
+    "name": "Mystery Shopper Service Audit",
+    "category": "MYSTERY",
+    "regime": "MYSTERY",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "subscription",
+    "passScore": 15,
+    "maxScore": 20,
+    "passPercent": 75,
+    "criticalQuestionIds": [
+      "MSP1",
+      "MSP3",
+      "MSP4"
+    ],
+    "retentionGuidance": "Keep shopper evidence and service observations for at least 2 years; anonymise personal data.",
+    "regulatoryAnchors": [
+      "Consumer Rights Act 2015",
+      "GDPR and ICO guidance"
+    ],
+    "autoActions": [
+      {
+        "questionId": "MSP3",
+        "action": "Retrain team on service script and escalation standards",
+        "assignee": "Operations Manager",
+        "dueWithinDays": 7
+      },
+      {
+        "questionId": "MSP4",
+        "action": "Correct service delays and queue handling process gaps",
+        "assignee": "Branch Manager",
+        "dueWithinDays": 5
+      }
+    ],
+    "auditIdExample": "MYSTERY-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "MSP1",
+        "category": "Arrival Experience",
+        "text": "Was the customer welcomed promptly and professionally on entry/contact?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MSP2",
+        "category": "Knowledge",
+        "text": "Did staff provide accurate product/service guidance aligned with policy?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MSP3",
+        "category": "Compliance Behaviour",
+        "text": "Were mandatory compliance steps followed (ID checks, disclosure wording, consent points)?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MSP4",
+        "category": "Service Timeliness",
+        "text": "Was service delivered within target time with proactive updates during delays?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MSP5",
+        "category": "Site Standards",
+        "text": "Were cleanliness, presentation, and brand standards maintained throughout the visit?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 3,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": true,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "MSP6",
+        "category": "Action",
+        "text": "Summarise priority service improvements raised by the mystery shopper:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "MSP3 == 0 || MSP4 == 0"
+      }
+    ]
+  },
+  {
+    "templateId": "PENTEST",
+    "name": "Penetration Testing Readiness Audit",
+    "category": "PEN_TEST",
+    "regime": "PEN_TEST",
+    "scoringModel": "weighted_sections",
+    "licenceModel": "multi_use",
+    "passScore": 22,
+    "maxScore": 27,
+    "passPercent": 81,
+    "criticalQuestionIds": [
+      "PET1",
+      "PET2",
+      "PET4"
+    ],
+    "retentionGuidance": "Retain penetration testing scope, approvals, findings, and remediation evidence for at least 6 years.",
+    "regulatoryAnchors": [
+      "NCSC Cyber Assessment Framework",
+      "OWASP Testing Guide",
+      "ISO/IEC 27001:2022"
+    ],
+    "autoActions": [
+      {
+        "questionId": "PET2",
+        "action": "Complete scope and legal approval pack before test execution",
+        "assignee": "Security Manager",
+        "dueWithinDays": 3
+      },
+      {
+        "questionId": "PET4",
+        "action": "Remediate high/critical vulnerabilities and evidence retest",
+        "assignee": "Engineering Security Lead",
+        "dueWithinDays": 14
+      }
+    ],
+    "auditIdExample": "PENTEST-2026-01",
+    "sourceCoverage": [
+      1
+    ],
+    "source2Questions": [],
+    "source3Questions": [],
+    "questions": [
+      {
+        "id": "PET1",
+        "category": "Asset Scope",
+        "text": "Is the penetration testing scope complete, approved, and mapped to business-critical assets?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "PET2",
+        "category": "Rules of Engagement",
+        "text": "Are legal approvals, testing windows, and incident-handling rules documented and signed?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": true
+        },
+        "showIf": null
+      },
+      {
+        "id": "PET3",
+        "category": "Credential and Access Control",
+        "text": "Are test credentials controlled, rotated, and segregated from production privileged accounts?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "PET4",
+        "category": "Vulnerability Lifecycle",
+        "text": "Are high-severity vulnerabilities triaged, owner-assigned, and tracked to verified closure?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 5,
+        "critical": true,
+        "required": true,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "PET5",
+        "category": "Reporting",
+        "text": "Are reports reproducible, risk-ranked, and aligned to accepted severity taxonomy?",
+        "type": "boolean",
+        "options": {
+          "yes": 1,
+          "no": 0
+        },
+        "weight": 4,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": true,
+          "signature": false
+        },
+        "showIf": null
+      },
+      {
+        "id": "PET6",
+        "category": "Action",
+        "text": "List unresolved high-risk vulnerabilities and compensating controls:",
+        "type": "text",
+        "weight": 1,
+        "critical": false,
+        "required": false,
+        "evidence": {
+          "photo": false,
+          "comment": false,
+          "signature": false
+        },
+        "showIf": "PET2 == 0 || PET4 == 0"
+      }
+    ]
   }
 ];
 
@@ -4927,6 +6458,16 @@ const booleanControlTargetByRegime = {
   FOOD: 30,
   WORKPLACE: 26,
   SUPPLEMENTAL: 24,
+  MACHINE: 22,
+  FIRE_DOOR: 24,
+  RETAIL: 28,
+  HOSPITALITY: 28,
+  WAREHOUSE: 32,
+  CONSTRUCTION: 36,
+  EDUCATION: 28,
+  HEALTHCARE: 30,
+  MYSTERY: 24,
+  PEN_TEST: 34,
 };
 
 const templateFocusAreasByRegime = {
@@ -5085,6 +6626,126 @@ const templateFocusAreasByRegime = {
     'management assurance reviews',
     'document retention controls',
     'escalation for overdue checks',
+  ],
+  MACHINE: [
+    'asset identity and baseline records',
+    'guarding and interlock checks',
+    'emergency stop and isolation',
+    'operator authorisation',
+    'preventive maintenance completion',
+    'defect risk ranking',
+    'quarantine and release controls',
+    'spare and tooling condition',
+    'changeover safety checks',
+    'post-maintenance verification',
+  ],
+  FIRE_DOOR: [
+    'door schedule governance',
+    'frame and leaf condition',
+    'intumescent and smoke seals',
+    'closing and latching performance',
+    'hardware maintenance',
+    'signage and labelling',
+    'compartmentation integrity',
+    'obstruction management',
+    'inspection frequency adherence',
+    'remedial closure evidence',
+  ],
+  RETAIL: [
+    'opening and closing checks',
+    'customer area hazard controls',
+    'display and stock stability',
+    'cash and till security',
+    'queue and service management',
+    'incident and complaint escalation',
+    'staff briefing effectiveness',
+    'cleaning and spill response',
+    'emergency procedures',
+    'continuous service improvement',
+  ],
+  HOSPITALITY: [
+    'pre-service readiness',
+    'kitchen hygiene controls',
+    'allergen and dietary safeguards',
+    'guest-area safety',
+    'bar and alcohol compliance',
+    'room and facility standards',
+    'service-time performance',
+    'team briefing consistency',
+    'complaint recovery controls',
+    'post-shift review',
+  ],
+  WAREHOUSE: [
+    'traffic route segregation',
+    'forklift pre-use controls',
+    'loading bay integrity',
+    'racking and storage condition',
+    'pick and dispatch safety',
+    'contractor dock controls',
+    'manual handling controls',
+    'near-miss reporting',
+    'shift handover quality',
+    'emergency response readiness',
+  ],
+  CONSTRUCTION: [
+    'construction phase planning',
+    'permit and rams controls',
+    'temporary works assurance',
+    'working at height controls',
+    'plant and lifting controls',
+    'excavation and services checks',
+    'welfare and housekeeping',
+    'subcontractor coordination',
+    'daily brief and toolbox talks',
+    'incident and close-out governance',
+  ],
+  EDUCATION: [
+    'campus access management',
+    'classroom and corridor safety',
+    'student safeguarding environment',
+    'specialist room controls',
+    'playground and sports checks',
+    'fire and evacuation readiness',
+    'visitor governance',
+    'welfare and first aid',
+    'maintenance and repair controls',
+    'incident learning reviews',
+  ],
+  HEALTHCARE: [
+    'patient environment checks',
+    'clinical governance controls',
+    'safeguarding pathways',
+    'infection prevention controls',
+    'medication and controlled assets',
+    'medical equipment readiness',
+    'staffing and competence checks',
+    'incident and duty-of-candour controls',
+    'emergency and business continuity',
+    'quality review governance',
+  ],
+  MYSTERY: [
+    'arrival and greeting standards',
+    'service journey consistency',
+    'knowledge and advice quality',
+    'compliance script adherence',
+    'queue and response times',
+    'site presentation standards',
+    'complaint handling',
+    'upsell and ethics balance',
+    'handover and closure quality',
+    'service recovery effectiveness',
+  ],
+  PEN_TEST: [
+    'scope governance',
+    'rules of engagement controls',
+    'access and credential controls',
+    'testing methodology quality',
+    'vulnerability prioritisation',
+    'remediation workflow controls',
+    'retest and closure controls',
+    'evidence and chain-of-custody',
+    'executive reporting quality',
+    'continuous security improvement',
   ],
 };
 
@@ -5517,6 +7178,206 @@ const complianceQuestionAdditionsByTemplateId = {
       evidence: { photo: false, comment: true, signature: false },
     },
   ],
+  MACHINE: [
+    {
+      id: 'MACH7',
+      category: 'Lockout Verification',
+      text: 'Is lockout/tagout verification completed and recorded before intrusive maintenance?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+    {
+      id: 'MACH8',
+      category: 'Quarantine',
+      text: 'Are unsafe machine states clearly tagged and physically quarantined until release?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: true, comment: true, signature: false },
+    },
+  ],
+  FIREDOOR: [
+    {
+      id: 'FDOR7',
+      category: 'Certification',
+      text: 'Are replacement fire door components traceable to appropriate certification details?',
+      weight: 3,
+      critical: false,
+      required: false,
+      evidence: { photo: true, comment: true, signature: false },
+    },
+    {
+      id: 'FDOR8',
+      category: 'Compartmentation',
+      text: 'Are gaps, penetrations, and surrounding wall interfaces free from fire-stopping defects?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: true, comment: true, signature: false },
+    },
+  ],
+  RETAIL: [
+    {
+      id: 'RET7',
+      category: 'Incident Recording',
+      text: 'Are customer incidents and near misses recorded with trend review and action ownership?',
+      weight: 3,
+      critical: false,
+      required: false,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+    {
+      id: 'RET8',
+      category: 'Trade Compliance',
+      text: 'Are age-restricted or controlled product sales completed with mandatory verification steps?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+  ],
+  HOSPITALITY: [
+    {
+      id: 'HOT7',
+      category: 'Allergen Safety',
+      text: 'Are allergen controls embedded in ordering, prep, and service communication steps?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+    {
+      id: 'HOT8',
+      category: 'Night Safety',
+      text: 'Where night operations exist, are lone-worker and incident escalation controls effective?',
+      weight: 3,
+      critical: false,
+      required: false,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+  ],
+  WAREHOUSE: [
+    {
+      id: 'WAR7',
+      category: 'Trailer Control',
+      text: 'Are trailer restraint, dock lock, and bay status controls verified during loading?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: true, comment: true, signature: false },
+    },
+    {
+      id: 'WAR8',
+      category: 'Racking Assurance',
+      text: 'Are racking inspections completed by competent persons with defect severity coding?',
+      weight: 3,
+      critical: true,
+      required: false,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+  ],
+  CONSTRUCTION: [
+    {
+      id: 'CST7',
+      category: 'Excavation Control',
+      text: 'Are excavation permits, shoring controls, and service scans complete before digging?',
+      weight: 5,
+      critical: true,
+      required: true,
+      evidence: { photo: true, comment: true, signature: false },
+    },
+    {
+      id: 'CST8',
+      category: 'Subcontractor Oversight',
+      text: 'Are subcontractor RAMS reviewed, approved, and supervised before task start?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+  ],
+  EDUCATION: [
+    {
+      id: 'EDU7',
+      category: 'Visitor Safeguarding',
+      text: 'Are visitor checks, badges, and supervision controls implemented consistently?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+    {
+      id: 'EDU8',
+      category: 'Playground Safety',
+      text: 'Are playground and sports equipment checks recorded with timely defect closure?',
+      weight: 3,
+      critical: false,
+      required: false,
+      evidence: { photo: true, comment: true, signature: false },
+    },
+  ],
+  HEALTHCARE: [
+    {
+      id: 'HCR7',
+      category: 'Clinical Equipment',
+      text: 'Are safety-critical clinical devices maintained, calibrated, and signed off within schedule?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+    {
+      id: 'HCR8',
+      category: 'Escalation Readiness',
+      text: 'Are clinical deterioration and emergency escalation pathways current and rehearsed?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+  ],
+  MYSTERY: [
+    {
+      id: 'MSP7',
+      category: 'Compliance Prompting',
+      text: 'Did staff complete mandatory compliance wording without customer prompting?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+    {
+      id: 'MSP8',
+      category: 'Journey Closure',
+      text: 'Was the customer journey closed with clear next steps and positive service confirmation?',
+      weight: 3,
+      critical: false,
+      required: false,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+  ],
+  PENTEST: [
+    {
+      id: 'PET7',
+      category: 'Pre-Test Assurance',
+      text: 'Are backup, rollback, and incident-response plans validated before testing begins?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+    {
+      id: 'PET8',
+      category: 'Remediation SLA',
+      text: 'Are remediation SLAs defined by severity and tracked to completion with retest evidence?',
+      weight: 4,
+      critical: true,
+      required: true,
+      evidence: { photo: false, comment: true, signature: false },
+    },
+  ],
 };
 
 const generatedGovernanceQuestionCategoryPrefixes = [
@@ -5784,6 +7645,16 @@ export const templateCategoryOptions = [
   { value: 'FOOD', label: 'Food Hygiene' },
   { value: 'WORKPLACE', label: 'Workplace' },
   { value: 'SUPPLEMENTAL', label: 'Supplemental' },
+  { value: 'MACHINE', label: 'Single Machine' },
+  { value: 'FIRE_DOOR', label: 'Fire Door' },
+  { value: 'RETAIL', label: 'Retail' },
+  { value: 'HOSPITALITY', label: 'Hospitality' },
+  { value: 'WAREHOUSE', label: 'Warehouse' },
+  { value: 'CONSTRUCTION', label: 'Construction' },
+  { value: 'EDUCATION', label: 'Education' },
+  { value: 'HEALTHCARE', label: 'Healthcare' },
+  { value: 'MYSTERY', label: 'Mystery Shopper' },
+  { value: 'PEN_TEST', label: 'Penetration Testing' },
   { value: 'RA', label: 'Risk Assessment' },
   { value: 'RAMS', label: 'RAMS' },
 ];
@@ -5877,19 +7748,112 @@ export const defaultTemplateBlueprints = aooTemplateCatalog.map((template, index
   };
 });
 
+const templateListingRegimePremiumByRegime = {
+  HS: 70,
+  FRA: 80,
+  LOLER: 75,
+  PUWER: 70,
+  PSSR: 95,
+  COSHH: 80,
+  ASBESTOS: 95,
+  LEGIONELLA: 85,
+  ELECTRICAL: 80,
+  SCAFFOLD: 78,
+  FOOD: 72,
+  WORKPLACE: 60,
+  SUPPLEMENTAL: 55,
+  MACHINE: 58,
+  FIRE_DOOR: 68,
+  RETAIL: 62,
+  HOSPITALITY: 66,
+  WAREHOUSE: 78,
+  CONSTRUCTION: 92,
+  EDUCATION: 64,
+  HEALTHCARE: 88,
+  MYSTERY: 52,
+  PEN_TEST: 120,
+};
+
+const templateListingVettingTierByRegime = {
+  HS: 'verified',
+  FRA: 'verified',
+  ASBESTOS: 'verified',
+  LEGIONELLA: 'verified',
+  PSSR: 'verified',
+  CONSTRUCTION: 'verified',
+  HEALTHCARE: 'verified',
+  PEN_TEST: 'verified',
+  MYSTERY: 'reviewed',
+};
+
+function roundToNearestFive(value) {
+  return Math.round(Number(value || 0) / 5) * 5;
+}
+
+function countTemplateQuestionsByType(template, type = 'boolean') {
+  return (Array.isArray(template?.questions) ? template.questions : []).filter((question) => {
+    return String(question?.type || '').toLowerCase() === String(type || '').toLowerCase();
+  }).length;
+}
+
+function getTemplateListingPrice(template) {
+  const regimeKey = String(template?.regime || '').toUpperCase();
+  const booleanCount = countTemplateQuestionsByType(template, 'boolean');
+  const criticalCount = (Array.isArray(template?.questions) ? template.questions : []).filter((question) => {
+    return String(question?.type || '').toLowerCase() === 'boolean' && Boolean(question?.critical);
+  }).length;
+  const sourceCoverage = Array.isArray(template?.sourceCoverage) ? template.sourceCoverage : [];
+
+  const basePrice = String(template?.licenceModel || '').toLowerCase() === 'multi_use' ? 109 : 89;
+  const regimePremium = Number(templateListingRegimePremiumByRegime[regimeKey] || 50);
+  const controlsPremium = Math.max(0, booleanCount - 18) * 4;
+  const criticalPremium = criticalCount * 3;
+  const coveragePremium = sourceCoverage.includes(3) ? 35 : sourceCoverage.includes(2) ? 20 : 10;
+  const specialistPremium = regimeKey === 'PEN_TEST' ? 25 : regimeKey === 'MYSTERY' ? 5 : 0;
+  const rawPrice = basePrice + regimePremium + controlsPremium + criticalPremium + coveragePremium + specialistPremium;
+  const minimumPrice = String(template?.licenceModel || '').toLowerCase() === 'multi_use' ? 129 : 109;
+  return Math.max(minimumPrice, roundToNearestFive(rawPrice));
+}
+
+function getTemplateListingVettingTier(template) {
+  const regimeKey = String(template?.regime || '').toUpperCase();
+  if (templateListingVettingTierByRegime[regimeKey]) {
+    return templateListingVettingTierByRegime[regimeKey];
+  }
+  const booleanCount = countTemplateQuestionsByType(template, 'boolean');
+  if (booleanCount >= 34) {
+    return 'verified';
+  }
+  if (booleanCount >= 26) {
+    return 'reviewed';
+  }
+  return 'community';
+}
+
+function getTemplateListingQualityRating(template, index) {
+  const booleanCount = countTemplateQuestionsByType(template, 'boolean');
+  const sourceCoverage = Array.isArray(template?.sourceCoverage) ? template.sourceCoverage : [];
+  const coverageBonus = sourceCoverage.includes(3) ? 0.2 : sourceCoverage.includes(2) ? 0.1 : 0;
+  const depthBonus = Math.min(0.3, Math.max(0, booleanCount - 18) * 0.01);
+  const cadenceBonus = (index % 3) * 0.05;
+  const rating = 4.5 + coverageBonus + depthBonus + cadenceBonus;
+  return Number(Math.min(5, rating).toFixed(1));
+}
+
 export const defaultTemplateListings = aooTemplateCatalog.map((template, index) => ({
   id: `LST-${String(index + 1).padStart(4, '0')}`,
   templateId: `TPLX-${String(index + 1).padStart(4, '0')}`,
-  priceModel: index <= 2 ? 'multi_use' : 'subscription',
-  price: 99 + index * 25,
+  priceModel: String(template.licenceModel || '').toLowerCase() === 'subscription' ? 'subscription' : 'multi_use',
+  price: getTemplateListingPrice(template),
   currency: 'GBP',
   tags: [
     String(template.category || '').toLowerCase(),
+    String(template.regime || '').toLowerCase(),
     'aoo',
     ...(template.sourceCoverage.includes(3) ? ['expanded'] : ['source1']),
   ],
   previewAssets: Math.max(1, Math.floor((template.questions?.length || 1) / 3)),
-  qualityRating: Number((4.6 + (index % 4) * 0.1).toFixed(1)),
-  vettingTier: index <= 2 ? 'verified' : index <= 7 ? 'reviewed' : 'community',
+  qualityRating: getTemplateListingQualityRating(template, index),
+  vettingTier: getTemplateListingVettingTier(template),
   status: 'active',
 }));

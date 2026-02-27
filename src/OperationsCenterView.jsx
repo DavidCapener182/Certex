@@ -124,6 +124,7 @@ export default function OperationsCenterView({
   const [webhookUrl, setWebhookUrl] = useState('');
   const [ssoProviderName, setSsoProviderName] = useState('Microsoft Entra ID');
   const [ssoDomain, setSsoDomain] = useState('');
+  const [activeOpsTab, setActiveOpsTab] = useState('overview');
 
   const openInvites = tenantInvites.filter((invite) => invite.status === 'pending').length;
   const submittedBids = marketplaceBidBoard.filter((bid) => bid.status === 'submitted').length;
@@ -148,6 +149,44 @@ export default function OperationsCenterView({
   const gateSummary = summarizeReleaseGateStatus(releaseGateResults);
   const highRiskSignals = riskSummary.high;
   const publishedTemplates = templateBlueprints.filter((item) => item.status === 'published').length;
+  const operationsTabs = [
+    {
+      id: 'overview',
+      label: 'Overview',
+      helper: 'Readiness status across all delivery tracks.',
+    },
+    {
+      id: 'onboarding',
+      label: 'Onboarding',
+      helper: 'Tenant auth setup and invite flow.',
+      badge: openInvites,
+    },
+    {
+      id: 'marketplace',
+      label: 'Bidding',
+      helper: 'Bid rounds, award decisions, and dispatch telemetry.',
+      badge: submittedBids,
+    },
+    {
+      id: 'evidence',
+      label: 'Evidence',
+      helper: 'Template lifecycle, AI review queue, and verification.',
+      badge: aiPendingReview + openVerification,
+    },
+    {
+      id: 'finance',
+      label: 'CAPA + Finance',
+      helper: 'Corrective actions, invoicing, and payout scheduling.',
+      badge: openActions + pendingInvoices,
+    },
+    {
+      id: 'platform',
+      label: 'Platform + QA',
+      helper: 'Integrations, enterprise controls, and release quality.',
+      badge: failedWebhooks + pendingGates,
+    },
+  ];
+  const activeOpsTabMeta = operationsTabs.find((tab) => tab.id === activeOpsTab) || operationsTabs[0];
 
   const nextInvoiceForPayout = useMemo(
     () => financeInvoices.find((invoice) => invoice.status === 'approved') || null,
@@ -243,6 +282,40 @@ export default function OperationsCenterView({
         <OpsMetricCard title="Pending Gates" value={pendingGates} tone={pendingGates > 0 ? 'amber' : 'emerald'} helper={gateSummary.releaseReadiness} />
       </div>
 
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/75 p-3 shadow-sm">
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Operations dashboard sections">
+          {operationsTabs.map((tab) => {
+            const isActive = activeOpsTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                id={`ops-tab-${tab.id}`}
+                role="tab"
+                aria-selected={isActive}
+                aria-controls="ops-panel"
+                onClick={() => setActiveOpsTab(tab.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
+                  isActive
+                    ? 'bg-cyan-600 border-cyan-600 text-white'
+                    : 'bg-white dark:bg-slate-900/45 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {tab.label}
+                {typeof tab.badge === 'number' ? (
+                  <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${isActive ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'}`}>
+                    {tab.badge}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">{activeOpsTabMeta.helper}</p>
+      </section>
+
+      <div id="ops-panel" role="tabpanel" aria-labelledby={`ops-tab-${activeOpsTab}`} className="space-y-5">
+      {activeOpsTab === 'onboarding' ? (
       <SectionCard
         title="Tenant Auth + Onboarding"
         subtitle="Prepare invite-driven org access while Supabase project is finishing."
@@ -300,7 +373,9 @@ export default function OperationsCenterView({
           </div>
         </div>
       </SectionCard>
+      ) : null}
 
+      {activeOpsTab === 'marketplace' ? (
       <SectionCard
         title="Bidding + Dispatch Intelligence"
         subtitle="Audit-company bid rounds, award decisions, and SLA telemetry."
@@ -348,7 +423,9 @@ export default function OperationsCenterView({
           </div>
         </div>
       </SectionCard>
+      ) : null}
 
+      {activeOpsTab === 'evidence' ? (
       <SectionCard
         title="Template Studio + Evidence Trust"
         subtitle="Template publishing, AI evidence review, provenance chain, and regulator verification."
@@ -447,7 +524,9 @@ export default function OperationsCenterView({
           </div>
         </div>
       </SectionCard>
+      ) : null}
 
+      {activeOpsTab === 'finance' ? (
       <SectionCard
         title="CAPA + Finance Automation"
         subtitle="Finding-driven actions, invoice generation, and payout scheduling."
@@ -494,7 +573,9 @@ export default function OperationsCenterView({
           </button>
         </div>
       </SectionCard>
+      ) : null}
 
+      {activeOpsTab === 'platform' ? (
       <SectionCard
         title="Integrations + Mobile + Enterprise + Quality"
         subtitle="Webhook retries, mobile session hardening, security events, and release gates."
@@ -720,7 +801,9 @@ export default function OperationsCenterView({
           Risk summary: {riskSummary.high} high / {riskSummary.medium} medium / {riskSummary.low} low • Release readiness: {gateSummary.releaseReadiness}
         </p>
       </SectionCard>
+      ) : null}
 
+      {activeOpsTab === 'overview' ? (
       <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/75 p-4 shadow-sm">
         <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">Readiness at a glance</p>
         <div className="grid gap-2 md:grid-cols-3 lg:grid-cols-6">
@@ -757,6 +840,8 @@ export default function OperationsCenterView({
           })}
         </div>
       </section>
+      ) : null}
+      </div>
     </div>
   );
 }
