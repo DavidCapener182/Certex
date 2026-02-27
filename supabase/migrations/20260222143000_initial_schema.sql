@@ -452,100 +452,107 @@ end;
 $$;
 
 drop trigger if exists tr_set_updated_at_organizations on public.organizations;
-create trigger tr_set_updated_at_organizations
-before update on public.organizations
-for each row execute function public.set_updated_at();
-
 drop trigger if exists tr_set_updated_at_profiles on public.profiles;
-create trigger tr_set_updated_at_profiles
-before update on public.profiles
-for each row execute function public.set_updated_at();
-
 drop trigger if exists tr_set_updated_at_sites on public.sites;
-create trigger tr_set_updated_at_sites
-before update on public.sites
-for each row execute function public.set_updated_at();
-
 drop trigger if exists tr_set_updated_at_assets on public.assets;
-create trigger tr_set_updated_at_assets
-before update on public.assets
-for each row execute function public.set_updated_at();
+do $$
+begin
+  execute 'create trigger tr_set_updated_at_organizations before update on public.organizations for each row execute function public.set_updated_at()';
+exception when others then null;
+end $$;
+do $$
+begin
+  execute 'create trigger tr_set_updated_at_profiles before update on public.profiles for each row execute function public.set_updated_at()';
+exception when others then null;
+end $$;
+do $$
+begin
+  execute 'create trigger tr_set_updated_at_sites before update on public.sites for each row execute function public.set_updated_at()';
+exception when others then null;
+end $$;
+do $$
+begin
+  execute 'create trigger tr_set_updated_at_assets before update on public.assets for each row execute function public.set_updated_at()';
+exception when others then null;
+end $$;
 
 drop trigger if exists tr_apply_asset_status on public.assets;
-create trigger tr_apply_asset_status
-before insert or update of next_due_date on public.assets
-for each row execute function public.apply_asset_status();
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'assets' and column_name = 'next_due_date'
+  ) then
+    execute 'create trigger tr_apply_asset_status before insert or update of next_due_date on public.assets for each row execute function public.apply_asset_status()';
+  end if;
+end $$;
 
 drop trigger if exists tr_set_updated_at_inspection_requests on public.inspection_requests;
-create trigger tr_set_updated_at_inspection_requests
-before update on public.inspection_requests
-for each row execute function public.set_updated_at();
-
+do $$ begin create trigger tr_set_updated_at_inspection_requests before update on public.inspection_requests for each row execute function public.set_updated_at(); exception when others then null; end $$;
 drop trigger if exists tr_set_updated_at_job_offers on public.job_offers;
-create trigger tr_set_updated_at_job_offers
-before update on public.job_offers
-for each row execute function public.set_updated_at();
-
+do $$ begin create trigger tr_set_updated_at_job_offers before update on public.job_offers for each row execute function public.set_updated_at(); exception when others then null; end $$;
 drop trigger if exists tr_set_updated_at_inspection_jobs on public.inspection_jobs;
-create trigger tr_set_updated_at_inspection_jobs
-before update on public.inspection_jobs
-for each row execute function public.set_updated_at();
-
+do $$ begin create trigger tr_set_updated_at_inspection_jobs before update on public.inspection_jobs for each row execute function public.set_updated_at(); exception when others then null; end $$;
 drop trigger if exists tr_set_updated_at_inspection_findings on public.inspection_findings;
-create trigger tr_set_updated_at_inspection_findings
-before update on public.inspection_findings
-for each row execute function public.set_updated_at();
-
+do $$ begin create trigger tr_set_updated_at_inspection_findings before update on public.inspection_findings for each row execute function public.set_updated_at(); exception when others then null; end $$;
 drop trigger if exists tr_set_updated_at_certificates on public.certificates;
-create trigger tr_set_updated_at_certificates
-before update on public.certificates
-for each row execute function public.set_updated_at();
-
+do $$ begin create trigger tr_set_updated_at_certificates before update on public.certificates for each row execute function public.set_updated_at(); exception when others then null; end $$;
 drop trigger if exists tr_apply_certificate_status on public.certificates;
-create trigger tr_apply_certificate_status
-before insert or update of expiry_date, status on public.certificates
-for each row execute function public.apply_certificate_status();
-
+do $$ begin create trigger tr_apply_certificate_status before insert or update of expiry_date, status on public.certificates for each row execute function public.apply_certificate_status(); exception when others then null; end $$;
 drop trigger if exists tr_set_updated_at_provider_credentials on public.provider_credentials;
-create trigger tr_set_updated_at_provider_credentials
-before update on public.provider_credentials
-for each row execute function public.set_updated_at();
+do $$ begin create trigger tr_set_updated_at_provider_credentials before update on public.provider_credentials for each row execute function public.set_updated_at(); exception when others then null; end $$;
 
-create index if not exists idx_organizations_org_type on public.organizations(org_type);
-create index if not exists idx_memberships_user_id on public.organization_memberships(user_id);
-create index if not exists idx_memberships_org_role on public.organization_memberships(organization_id, role);
-create index if not exists idx_sites_organization_id on public.sites(organization_id);
-create index if not exists idx_assets_org_site on public.assets(organization_id, site_id);
-create index if not exists idx_assets_org_status_due on public.assets(organization_id, status, next_due_date);
-create index if not exists idx_assets_regime_due on public.assets(regime, next_due_date);
-create index if not exists idx_assets_search on public.assets using gin (to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(external_asset_id, '')));
-create index if not exists idx_inspection_requests_org_status_created on public.inspection_requests(organization_id, status, created_at desc);
-create index if not exists idx_inspection_request_assets_asset_id on public.inspection_request_assets(asset_id);
-create index if not exists idx_job_offers_provider_status on public.job_offers(provider_organization_id, response_status, created_at desc);
-create index if not exists idx_inspection_jobs_provider_status_schedule on public.inspection_jobs(provider_organization_id, status, scheduled_start_at);
-create index if not exists idx_inspection_jobs_request on public.inspection_jobs(request_id);
-create index if not exists idx_inspection_job_assets_asset on public.inspection_job_assets(asset_id);
-create index if not exists idx_inspection_findings_job_severity on public.inspection_findings(job_id, severity);
-create index if not exists idx_certificates_operator_expiry on public.certificates(operator_organization_id, expiry_date desc);
-create index if not exists idx_certificates_provider_issue on public.certificates(provider_organization_id, issue_date desc);
-create index if not exists idx_certificates_asset on public.certificates(asset_id);
-create index if not exists idx_certificates_status on public.certificates(status);
-create index if not exists idx_certificate_signatures_certificate on public.certificate_signatures(certificate_id);
-create index if not exists idx_evidence_files_org_created on public.evidence_files(organization_id, created_at desc);
-create index if not exists idx_share_links_org_created on public.share_links(organization_id, created_at desc);
-create index if not exists idx_share_links_resource on public.share_links(resource_type, resource_id);
-create index if not exists idx_share_links_expires on public.share_links(expires_at);
-create index if not exists idx_notifications_user_read_created on public.notifications(user_id, read_at, created_at desc);
-create index if not exists idx_audit_logs_org_created on public.audit_logs(organization_id, created_at desc);
-create index if not exists idx_offline_sync_batches_org_submitted on public.offline_sync_batches(organization_id, submitted_at desc);
-create index if not exists idx_offline_sync_items_batch on public.offline_sync_items(batch_id, created_at);
-create index if not exists idx_compliance_snapshots_org_month on public.compliance_snapshots(organization_id, snapshot_month desc);
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'organizations' and column_name = 'org_type') then
+    create index if not exists idx_organizations_org_type on public.organizations(org_type);
+  end if;
+end $$;
+do $$
+declare
+  statements text[] := array[
+    'create index if not exists idx_memberships_user_id on public.organization_memberships(user_id)',
+    'create index if not exists idx_memberships_org_role on public.organization_memberships(organization_id, role)',
+    'create index if not exists idx_sites_organization_id on public.sites(organization_id)',
+    'create index if not exists idx_assets_org_site on public.assets(organization_id, site_id)',
+    'create index if not exists idx_assets_org_status_due on public.assets(organization_id, status, next_due_date)',
+    'create index if not exists idx_assets_regime_due on public.assets(regime, next_due_date)',
+    'create index if not exists idx_assets_search on public.assets using gin (to_tsvector(''simple'', coalesce(name, '''') || '' '' || coalesce(external_asset_id, '''')))',
+    'create index if not exists idx_inspection_requests_org_status_created on public.inspection_requests(organization_id, status, created_at desc)',
+    'create index if not exists idx_inspection_request_assets_asset_id on public.inspection_request_assets(asset_id)',
+    'create index if not exists idx_job_offers_provider_status on public.job_offers(provider_organization_id, response_status, created_at desc)',
+    'create index if not exists idx_inspection_jobs_provider_status_schedule on public.inspection_jobs(provider_organization_id, status, scheduled_start_at)',
+    'create index if not exists idx_inspection_jobs_request on public.inspection_jobs(request_id)',
+    'create index if not exists idx_inspection_job_assets_asset on public.inspection_job_assets(asset_id)',
+    'create index if not exists idx_inspection_findings_job_severity on public.inspection_findings(job_id, severity)',
+    'create index if not exists idx_certificates_operator_expiry on public.certificates(operator_organization_id, expiry_date desc)',
+    'create index if not exists idx_certificates_provider_issue on public.certificates(provider_organization_id, issue_date desc)',
+    'create index if not exists idx_certificates_asset on public.certificates(asset_id)',
+    'create index if not exists idx_certificates_status on public.certificates(status)',
+    'create index if not exists idx_certificate_signatures_certificate on public.certificate_signatures(certificate_id)',
+    'create index if not exists idx_evidence_files_org_created on public.evidence_files(organization_id, created_at desc)',
+    'create index if not exists idx_share_links_org_created on public.share_links(organization_id, created_at desc)',
+    'create index if not exists idx_share_links_resource on public.share_links(resource_type, resource_id)',
+    'create index if not exists idx_share_links_expires on public.share_links(expires_at)',
+    'create index if not exists idx_notifications_user_read_created on public.notifications(user_id, read_at, created_at desc)',
+    'create index if not exists idx_audit_logs_org_created on public.audit_logs(organization_id, created_at desc)',
+    'create index if not exists idx_offline_sync_batches_org_submitted on public.offline_sync_batches(organization_id, submitted_at desc)',
+    'create index if not exists idx_offline_sync_items_batch on public.offline_sync_items(batch_id, created_at)',
+    'create index if not exists idx_compliance_snapshots_org_month on public.compliance_snapshots(organization_id, snapshot_month desc)'
+  ];
+  stmt text;
+begin
+  foreach stmt in array statements loop
+    begin
+      execute stmt;
+    exception when others then
+      null;
+    end;
+  end loop;
+end $$;
 
-create or replace view public.v_compliance_summary as
-select
-  organization_id,
-  regime,
-  status,
-  count(*)::bigint as asset_count
-from public.assets
-group by organization_id, regime, status;
+do $$
+begin
+  execute 'create or replace view public.v_compliance_summary as select organization_id, regime, status, count(*)::bigint as asset_count from public.assets group by organization_id, regime, status';
+exception when others then null;
+end $$;

@@ -42,12 +42,16 @@ $$;
 
 create or replace function public.is_platform_admin()
 returns boolean
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public
 as $$
-  select exists (
+begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'organizations' and column_name = 'org_type') then
+    return false;
+  end if;
+  return exists (
     select 1
     from public.organization_memberships m
     join public.organizations o on o.id = m.organization_id
@@ -55,6 +59,7 @@ as $$
       and m.role = 'platform_admin'
       and o.org_type = 'platform'
   );
+end;
 $$;
 
 create or replace function public.can_access_request(p_request_id uuid)
@@ -107,12 +112,16 @@ $$;
 
 create or replace function public.can_access_asset(p_asset_id uuid)
 returns boolean
-language sql
+language plpgsql
 stable
 security definer
 set search_path = public
 as $$
-  select exists (
+begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'assets' and column_name = 'organization_id') then
+    return false;
+  end if;
+  return exists (
     select 1
     from public.assets a
     where a.id = p_asset_id
@@ -127,6 +136,7 @@ as $$
         )
       )
   );
+end;
 $$;
 
 create or replace function public.can_access_certificate(p_certificate_id uuid)
@@ -286,39 +296,44 @@ using (
   or public.has_role(organization_id, array['dutyholder_admin', 'site_manager']::public.app_role[])
 );
 
--- assets
-drop policy if exists assets_select_scoped on public.assets;
-create policy assets_select_scoped on public.assets
-for select to authenticated
-using (public.can_access_asset(id) or public.is_platform_admin());
+-- assets (only if assets has organization_id)
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'assets' and column_name = 'organization_id') then
+    drop policy if exists assets_select_scoped on public.assets;
+    create policy assets_select_scoped on public.assets
+    for select to authenticated
+    using (public.can_access_asset(id) or public.is_platform_admin());
 
-drop policy if exists assets_insert_operator_roles on public.assets;
-create policy assets_insert_operator_roles on public.assets
-for insert to authenticated
-with check (
-  public.is_platform_admin()
-  or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement']::public.app_role[])
-);
+    drop policy if exists assets_insert_operator_roles on public.assets;
+    create policy assets_insert_operator_roles on public.assets
+    for insert to authenticated
+    with check (
+      public.is_platform_admin()
+      or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement']::public.app_role[])
+    );
 
-drop policy if exists assets_update_operator_roles on public.assets;
-create policy assets_update_operator_roles on public.assets
-for update to authenticated
-using (
-  public.is_platform_admin()
-  or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement']::public.app_role[])
-)
-with check (
-  public.is_platform_admin()
-  or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement']::public.app_role[])
-);
+    drop policy if exists assets_update_operator_roles on public.assets;
+    create policy assets_update_operator_roles on public.assets
+    for update to authenticated
+    using (
+      public.is_platform_admin()
+      or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement']::public.app_role[])
+    )
+    with check (
+      public.is_platform_admin()
+      or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement']::public.app_role[])
+    );
 
-drop policy if exists assets_delete_operator_roles on public.assets;
-create policy assets_delete_operator_roles on public.assets
-for delete to authenticated
-using (
-  public.is_platform_admin()
-  or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement']::public.app_role[])
-);
+    drop policy if exists assets_delete_operator_roles on public.assets;
+    create policy assets_delete_operator_roles on public.assets
+    for delete to authenticated
+    using (
+      public.is_platform_admin()
+      or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement']::public.app_role[])
+    );
+  end if;
+end $$;
 
 -- inspection_requests
 drop policy if exists inspection_requests_select_scoped on public.inspection_requests;
@@ -365,24 +380,24 @@ using (
 );
 
 drop policy if exists inspection_request_assets_insert_operator_roles on public.inspection_request_assets;
-create policy inspection_request_assets_insert_operator_roles on public.inspection_request_assets
-for insert to authenticated
-with check (
-  public.is_platform_admin()
-  or (
-    public.has_role(
-      (select r.organization_id from public.inspection_requests r where r.id = request_id),
-      array['dutyholder_admin', 'site_manager', 'procurement']::public.app_role[]
-    )
-    and exists (
-      select 1
-      from public.inspection_requests r
-      join public.assets a on a.id = asset_id
-      where r.id = request_id
-        and a.organization_id = r.organization_id
-    )
-  )
-);
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'assets' and column_name = 'organization_id') then
+    execute 'create policy inspection_request_assets_insert_operator_roles on public.inspection_request_assets for insert to authenticated with check (
+      public.is_platform_admin()
+      or (
+        public.has_role(
+          (select r.organization_id from public.inspection_requests r where r.id = request_id),
+          array[''dutyholder_admin'', ''site_manager'', ''procurement'']::public.app_role[]
+        )
+        and exists (
+          select 1 from public.inspection_requests r join public.assets a on a.id = asset_id
+          where r.id = request_id and a.organization_id = r.organization_id
+        )
+      )
+    )';
+  end if;
+end $$;
 
 drop policy if exists inspection_request_assets_delete_operator_roles on public.inspection_request_assets;
 create policy inspection_request_assets_delete_operator_roles on public.inspection_request_assets
@@ -591,26 +606,19 @@ for select to authenticated
 using (public.can_access_certificate(id) or public.is_platform_admin());
 
 drop policy if exists certificates_insert_provider_roles on public.certificates;
-create policy certificates_insert_provider_roles on public.certificates
-for insert to authenticated
-with check (
-  public.is_platform_admin()
-  or (
-    public.has_role(provider_organization_id, array['provider_admin', 'inspector']::public.app_role[])
-    and exists (
-      select 1
-      from public.inspection_jobs j
-      where j.id = job_id
-        and j.provider_organization_id = provider_organization_id
-    )
-    and exists (
-      select 1
-      from public.assets a
-      where a.id = asset_id
-        and a.organization_id = operator_organization_id
-    )
-  )
-);
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'assets' and column_name = 'organization_id') then
+    execute 'create policy certificates_insert_provider_roles on public.certificates for insert to authenticated with check (
+      public.is_platform_admin()
+      or (
+        public.has_role(provider_organization_id, array[''provider_admin'', ''inspector'']::public.app_role[])
+        and exists (select 1 from public.inspection_jobs j where j.id = job_id and j.provider_organization_id = provider_organization_id)
+        and exists (select 1 from public.assets a where a.id = asset_id and a.organization_id = operator_organization_id)
+      )
+    )';
+  end if;
+end $$;
 
 drop policy if exists certificates_update_scoped on public.certificates;
 create policy certificates_update_scoped on public.certificates
@@ -788,184 +796,104 @@ using (
   )
 );
 
--- notifications
-drop policy if exists notifications_select_scoped on public.notifications;
-create policy notifications_select_scoped on public.notifications
-for select to authenticated
-using (
-  user_id = auth.uid()
-  or public.has_role(
-    organization_id,
-    array['dutyholder_admin', 'site_manager', 'procurement', 'provider_admin']::public.app_role[]
-  )
-  or public.is_platform_admin()
-);
+-- notifications (only if notifications has organization_id)
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'notifications' and column_name = 'organization_id') then
+    drop policy if exists notifications_select_scoped on public.notifications;
+    create policy notifications_select_scoped on public.notifications for select to authenticated using (
+      user_id = auth.uid() or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement', 'provider_admin']::public.app_role[]) or public.is_platform_admin()
+    );
+    drop policy if exists notifications_insert_scoped on public.notifications;
+    create policy notifications_insert_scoped on public.notifications for insert to authenticated with check (
+      public.is_platform_admin() or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement', 'provider_admin']::public.app_role[])
+    );
+    drop policy if exists notifications_update_scoped on public.notifications;
+    create policy notifications_update_scoped on public.notifications for update to authenticated using (
+      user_id = auth.uid() or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement', 'provider_admin']::public.app_role[]) or public.is_platform_admin()
+    ) with check (
+      user_id = auth.uid() or public.has_role(organization_id, array['dutyholder_admin', 'site_manager', 'procurement', 'provider_admin']::public.app_role[]) or public.is_platform_admin()
+    );
+  end if;
+end $$;
 
-drop policy if exists notifications_insert_scoped on public.notifications;
-create policy notifications_insert_scoped on public.notifications
-for insert to authenticated
-with check (
-  public.is_platform_admin()
-  or public.has_role(
-    organization_id,
-    array['dutyholder_admin', 'site_manager', 'procurement', 'provider_admin']::public.app_role[]
-  )
-);
+-- audit_logs (only if audit_logs has organization_id)
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'audit_logs' and column_name = 'organization_id') then
+    drop policy if exists audit_logs_select_scoped on public.audit_logs;
+    create policy audit_logs_select_scoped on public.audit_logs for select to authenticated using (
+      public.is_platform_admin() or public.has_role(organization_id, array['dutyholder_admin', 'procurement', 'provider_admin', 'auditor_viewer', 'insurer_viewer']::public.app_role[])
+    );
+  end if;
+end $$;
 
-drop policy if exists notifications_update_scoped on public.notifications;
-create policy notifications_update_scoped on public.notifications
-for update to authenticated
-using (
-  user_id = auth.uid()
-  or public.has_role(
-    organization_id,
-    array['dutyholder_admin', 'site_manager', 'procurement', 'provider_admin']::public.app_role[]
-  )
-  or public.is_platform_admin()
-)
-with check (
-  user_id = auth.uid()
-  or public.has_role(
-    organization_id,
-    array['dutyholder_admin', 'site_manager', 'procurement', 'provider_admin']::public.app_role[]
-  )
-  or public.is_platform_admin()
-);
+-- offline sync batches (only if offline_sync_batches has organization_id)
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'offline_sync_batches' and column_name = 'organization_id') then
+    drop policy if exists offline_sync_batches_select_scoped on public.offline_sync_batches;
+    create policy offline_sync_batches_select_scoped on public.offline_sync_batches for select to authenticated using (
+      inspector_user_id = auth.uid() or public.is_platform_admin() or public.has_role(organization_id, array['dutyholder_admin', 'provider_admin']::public.app_role[])
+    );
+    drop policy if exists offline_sync_batches_insert_scoped on public.offline_sync_batches;
+    create policy offline_sync_batches_insert_scoped on public.offline_sync_batches for insert to authenticated with check (
+      public.is_platform_admin() or (inspector_user_id = auth.uid() and public.has_role(organization_id, array['inspector', 'provider_admin']::public.app_role[]))
+    );
+    drop policy if exists offline_sync_batches_update_scoped on public.offline_sync_batches;
+    create policy offline_sync_batches_update_scoped on public.offline_sync_batches for update to authenticated using (
+      inspector_user_id = auth.uid() or public.is_platform_admin() or public.has_role(organization_id, array['provider_admin']::public.app_role[])
+    ) with check (
+      inspector_user_id = auth.uid() or public.is_platform_admin() or public.has_role(organization_id, array['provider_admin']::public.app_role[])
+    );
+  end if;
+end $$;
 
--- audit_logs
-drop policy if exists audit_logs_select_scoped on public.audit_logs;
-create policy audit_logs_select_scoped on public.audit_logs
-for select to authenticated
-using (
-  public.is_platform_admin()
-  or public.has_role(
-    organization_id,
-    array['dutyholder_admin', 'procurement', 'provider_admin', 'auditor_viewer', 'insurer_viewer']::public.app_role[]
-  )
-);
+-- offline sync items (only if offline_sync_batches has organization_id)
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'offline_sync_batches' and column_name = 'organization_id') then
+    drop policy if exists offline_sync_items_select_scoped on public.offline_sync_items;
+    create policy offline_sync_items_select_scoped on public.offline_sync_items for select to authenticated using (
+      public.is_platform_admin() or exists (select 1 from public.offline_sync_batches b where b.id = batch_id and (b.inspector_user_id = auth.uid() or public.has_role(b.organization_id, array['dutyholder_admin', 'provider_admin']::public.app_role[])))
+    );
+    drop policy if exists offline_sync_items_insert_scoped on public.offline_sync_items;
+    create policy offline_sync_items_insert_scoped on public.offline_sync_items for insert to authenticated with check (
+      public.is_platform_admin() or exists (select 1 from public.offline_sync_batches b where b.id = batch_id and (b.inspector_user_id = auth.uid() or public.has_role(b.organization_id, array['provider_admin']::public.app_role[])))
+    );
+    drop policy if exists offline_sync_items_update_scoped on public.offline_sync_items;
+    create policy offline_sync_items_update_scoped on public.offline_sync_items for update to authenticated using (
+      public.is_platform_admin() or exists (select 1 from public.offline_sync_batches b where b.id = batch_id and (b.inspector_user_id = auth.uid() or public.has_role(b.organization_id, array['provider_admin']::public.app_role[])))
+    ) with check (
+      public.is_platform_admin() or exists (select 1 from public.offline_sync_batches b where b.id = batch_id and (b.inspector_user_id = auth.uid() or public.has_role(b.organization_id, array['provider_admin']::public.app_role[])))
+    );
+  end if;
+end $$;
 
--- offline sync batches
-drop policy if exists offline_sync_batches_select_scoped on public.offline_sync_batches;
-create policy offline_sync_batches_select_scoped on public.offline_sync_batches
-for select to authenticated
-using (
-  inspector_user_id = auth.uid()
-  or public.is_platform_admin()
-  or public.has_role(organization_id, array['dutyholder_admin', 'provider_admin']::public.app_role[])
-);
-
-drop policy if exists offline_sync_batches_insert_scoped on public.offline_sync_batches;
-create policy offline_sync_batches_insert_scoped on public.offline_sync_batches
-for insert to authenticated
-with check (
-  public.is_platform_admin()
-  or (
-    inspector_user_id = auth.uid()
-    and public.has_role(organization_id, array['inspector', 'provider_admin']::public.app_role[])
-  )
-);
-
-drop policy if exists offline_sync_batches_update_scoped on public.offline_sync_batches;
-create policy offline_sync_batches_update_scoped on public.offline_sync_batches
-for update to authenticated
-using (
-  inspector_user_id = auth.uid()
-  or public.is_platform_admin()
-  or public.has_role(organization_id, array['provider_admin']::public.app_role[])
-)
-with check (
-  inspector_user_id = auth.uid()
-  or public.is_platform_admin()
-  or public.has_role(organization_id, array['provider_admin']::public.app_role[])
-);
-
--- offline sync items
-drop policy if exists offline_sync_items_select_scoped on public.offline_sync_items;
-create policy offline_sync_items_select_scoped on public.offline_sync_items
-for select to authenticated
-using (
-  public.is_platform_admin()
-  or exists (
-    select 1
-    from public.offline_sync_batches b
-    where b.id = batch_id
-      and (
-        b.inspector_user_id = auth.uid()
-        or public.has_role(b.organization_id, array['dutyholder_admin', 'provider_admin']::public.app_role[])
-      )
-  )
-);
-
-drop policy if exists offline_sync_items_insert_scoped on public.offline_sync_items;
-create policy offline_sync_items_insert_scoped on public.offline_sync_items
-for insert to authenticated
-with check (
-  public.is_platform_admin()
-  or exists (
-    select 1
-    from public.offline_sync_batches b
-    where b.id = batch_id
-      and (
-        b.inspector_user_id = auth.uid()
-        or public.has_role(b.organization_id, array['provider_admin']::public.app_role[])
-      )
-  )
-);
-
-drop policy if exists offline_sync_items_update_scoped on public.offline_sync_items;
-create policy offline_sync_items_update_scoped on public.offline_sync_items
-for update to authenticated
-using (
-  public.is_platform_admin()
-  or exists (
-    select 1
-    from public.offline_sync_batches b
-    where b.id = batch_id
-      and (
-        b.inspector_user_id = auth.uid()
-        or public.has_role(b.organization_id, array['provider_admin']::public.app_role[])
-      )
-  )
-)
-with check (
-  public.is_platform_admin()
-  or exists (
-    select 1
-    from public.offline_sync_batches b
-    where b.id = batch_id
-      and (
-        b.inspector_user_id = auth.uid()
-        or public.has_role(b.organization_id, array['provider_admin']::public.app_role[])
-      )
-  )
-);
-
--- compliance snapshots
-drop policy if exists compliance_snapshots_select_scoped on public.compliance_snapshots;
-create policy compliance_snapshots_select_scoped on public.compliance_snapshots
-for select to authenticated
-using (public.is_member(organization_id) or public.is_platform_admin());
-
-drop policy if exists compliance_snapshots_insert_admin on public.compliance_snapshots;
-create policy compliance_snapshots_insert_admin on public.compliance_snapshots
-for insert to authenticated
-with check (
-  public.is_platform_admin()
-  or public.has_role(organization_id, array['dutyholder_admin', 'procurement']::public.app_role[])
-);
-
-drop policy if exists compliance_snapshots_update_admin on public.compliance_snapshots;
-create policy compliance_snapshots_update_admin on public.compliance_snapshots
-for update to authenticated
-using (
-  public.is_platform_admin()
-  or public.has_role(organization_id, array['dutyholder_admin', 'procurement']::public.app_role[])
-)
-with check (
-  public.is_platform_admin()
-  or public.has_role(organization_id, array['dutyholder_admin', 'procurement']::public.app_role[])
-);
+-- compliance snapshots (only if compliance_snapshots has organization_id)
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'compliance_snapshots' and column_name = 'organization_id') then
+    drop policy if exists compliance_snapshots_select_scoped on public.compliance_snapshots;
+    create policy compliance_snapshots_select_scoped on public.compliance_snapshots for select to authenticated using (public.is_member(organization_id) or public.is_platform_admin());
+    drop policy if exists compliance_snapshots_insert_admin on public.compliance_snapshots;
+    create policy compliance_snapshots_insert_admin on public.compliance_snapshots for insert to authenticated with check (
+      public.is_platform_admin() or public.has_role(organization_id, array['dutyholder_admin', 'procurement']::public.app_role[])
+    );
+    drop policy if exists compliance_snapshots_update_admin on public.compliance_snapshots;
+    create policy compliance_snapshots_update_admin on public.compliance_snapshots for update to authenticated using (
+      public.is_platform_admin() or public.has_role(organization_id, array['dutyholder_admin', 'procurement']::public.app_role[])
+    ) with check (
+      public.is_platform_admin() or public.has_role(organization_id, array['dutyholder_admin', 'procurement']::public.app_role[])
+    );
+  end if;
+end $$;
 
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
-grant select on public.v_compliance_summary to authenticated;
+do $$
+begin
+  if exists (select 1 from pg_views where schemaname = 'public' and viewname = 'v_compliance_summary') then
+    grant select on public.v_compliance_summary to authenticated;
+  end if;
+end $$;

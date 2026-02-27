@@ -48,6 +48,8 @@ import {
   Camera,
   CameraOff,
   LogOut,
+  ServerCog,
+  Gauge,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
@@ -59,9 +61,13 @@ import {
   templateCategoryOptions,
   templateRegimeOptions,
 } from './aooTemplates';
+import InCertLogo from './InCertLogo';
+import OperationsCenterView from './OperationsCenterView';
+import { rankBidEntries } from './lib/opsScoring';
+import { isSupabaseConfigured, supabase } from './lib/supabaseClient';
 
 const AUDIT_EXECUTION_MODES = {
-  CERTEX_TEMPLATE: 'certex_template',
+  INCERT_TEMPLATE: 'incert_template',
   AUDITOR_SOFTWARE: 'auditor_software',
 };
 
@@ -76,16 +82,20 @@ const EXTERNAL_AUDIT_REVIEW_STATUSES = {
 const USER_ROLE_OPTIONS = [
   { id: 'company', label: 'Company' },
   { id: 'auditor', label: 'Auditor' },
+  { id: 'third_party', label: 'Audit Company' },
   { id: 'insurer', label: 'Insurer' },
-  { id: 'certex', label: 'Certex' },
+  { id: 'incert', label: 'InCert' },
 ];
 
 const USER_ROLE_TAB_ACCESS = {
-  company: ['dashboard', 'landing', 'onboarding', 'assets', 'vault', 'marketplace', 'help'],
+  company: ['dashboard', 'onboarding', 'assets', 'vault', 'marketplace', 'help'],
   auditor: ['marketplace', 'help'],
+  third_party: ['marketplace', 'help'],
   insurer: ['marketplace', 'help'],
-  certex: ['dashboard', 'landing', 'onboarding', 'assets', 'vault', 'providers', 'marketplace', 'help'],
+  incert: ['dashboard', 'onboarding', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'ops', 'help'],
 };
+
+const SUPABASE_ENV_CONFIGURED = isSupabaseConfigured;
 
 // --- INITIAL MOCK DATA ---
 const initialAssets = [
@@ -179,6 +189,7 @@ const mockProviders = [
     id: 'PRV-1',
     name: 'Bureau Veritas UK',
     tier: 'UKAS Accredited',
+    employmentModel: 'direct',
     regimes: ['LOLER', 'PUWER', 'PSSR'],
     activeJobs: 12,
     maxConcurrentJobs: 16,
@@ -201,6 +212,7 @@ const mockProviders = [
     id: 'PRV-2',
     name: 'Allianz Engineering',
     tier: 'Insurer Network',
+    employmentModel: 'direct',
     regimes: ['LOLER', 'PSSR'],
     activeJobs: 5,
     maxConcurrentJobs: 10,
@@ -222,6 +234,7 @@ const mockProviders = [
     id: 'PRV-3',
     name: 'Zurich Resilience',
     tier: 'Insurer Network',
+    employmentModel: 'direct',
     regimes: ['PSSR'],
     activeJobs: 2,
     maxConcurrentJobs: 8,
@@ -237,6 +250,45 @@ const mockProviders = [
     rateCards: {
       PSSR: { hourlyRate: 108, minimumCallout: 250, travelPerKm: 1.4, platformFeePct: 0.45 },
     },
+  },
+  {
+    id: 'PRV-4',
+    name: 'NorthStar Inspection Partners',
+    tier: 'Audit Company Network',
+    employmentModel: 'third_party',
+    thirdPartyOrganizationId: 'TP-001',
+    thirdPartyMarginPct: 0.1,
+    regimes: ['LOLER', 'PUWER', 'PSSR'],
+    activeJobs: 4,
+    maxConcurrentJobs: 12,
+    rating: 4.8,
+    avgResponseMins: 47,
+    completedAudits: 790,
+    completionRate: 97,
+    baseLocation: 'Leeds',
+    availability: {
+      weekdays: [1, 2, 3, 4, 5, 6],
+      weekend: true,
+    },
+    rateCards: {
+      LOLER: { hourlyRate: 92, minimumCallout: 210, travelPerKm: 1.35, platformFeePct: 0.45 },
+      PUWER: { hourlyRate: 86, minimumCallout: 190, travelPerKm: 1.25, platformFeePct: 0.45 },
+      PSSR: { hourlyRate: 109, minimumCallout: 255, travelPerKm: 1.45, platformFeePct: 0.45 },
+    },
+  },
+];
+
+const thirdPartyOrganizations = [
+  {
+    id: 'TP-001',
+    name: 'NorthStar Inspection Partners',
+    marginPct: 0.1,
+    assignmentLead: 'NorthStar Operations Desk',
+    auditors: [
+      { id: 'TPA-001', name: 'Hannah Briggs', regimes: ['LOLER', 'PUWER'] },
+      { id: 'TPA-002', name: 'Rahul Menon', regimes: ['PSSR', 'PUWER'] },
+      { id: 'TPA-003', name: 'Elaine Carter', regimes: ['LOLER', 'PSSR'] },
+    ],
   },
 ];
 
@@ -298,7 +350,7 @@ function buildAooTemplatePreviewJobs() {
       },
       documents: [],
       timeline: [
-        { label: 'Template preview job created', at: createdAt.toISOString().slice(0, 10), actor: 'Certex Seed Data' },
+        { label: 'Template preview job created', at: createdAt.toISOString().slice(0, 10), actor: 'InCert Seed Data' },
         { label: 'Offer accepted', at: acceptedAt.toISOString().slice(0, 16).replace('T', ' '), actor: 'Bureau Veritas UK' },
         {
           label: `Audit started (${template.templateId})`,
@@ -353,7 +405,7 @@ const initialMarketplaceJobs = [
     documents: [],
     timeline: [
       { label: 'Job advertised', at: '2026-02-20', actor: 'Acme Logistics' },
-      { label: 'Instant quote generated (£387)', at: '2026-02-20', actor: 'Certex Pricing Engine' },
+      { label: 'Instant quote generated (£387)', at: '2026-02-20', actor: 'InCert Pricing Engine' },
     ],
   },
   {
@@ -398,7 +450,7 @@ const initialMarketplaceJobs = [
     documents: [],
     timeline: [
       { label: 'Job advertised', at: '2026-02-18', actor: 'Acme Logistics' },
-      { label: 'Offer sent to Bureau Veritas UK', at: '2026-02-18 10:05', actor: 'Certex Match Engine' },
+      { label: 'Offer sent to Bureau Veritas UK', at: '2026-02-18 10:05', actor: 'InCert Match Engine' },
       { label: 'Auditor accepted offer', at: '2026-02-18 10:38', actor: 'Bureau Veritas UK' },
     ],
   },
@@ -490,33 +542,51 @@ const initialMarketplaceJobs = [
     documents: [],
     timeline: [
       { label: 'Job advertised', at: '2026-02-21', actor: 'Acme Logistics' },
-      { label: 'Offer sent to Bureau Veritas UK', at: '2026-02-21 10:10', actor: 'Certex Match Engine' },
+      { label: 'Offer sent to Bureau Veritas UK', at: '2026-02-21 10:10', actor: 'InCert Match Engine' },
     ],
   },
   ...buildAooTemplatePreviewJobs(),
 ];
 
-const ASSET_STORAGE_KEY = 'certex.assets.v1';
-const MARKETPLACE_JOBS_STORAGE_KEY = 'certex.marketplaceJobs.v2';
-const THEME_STORAGE_KEY = 'certex.theme.v1';
-const INSPECTION_LOG_STORAGE_KEY = 'certex.inspectionLogs.v1';
-const RECURRING_PROGRAMMES_STORAGE_KEY = 'certex.recurringProgrammes.v1';
-const PUBLIC_SITE_CONFIG_STORAGE_KEY = 'certex.publicSiteConfig.v1';
-const ONBOARDING_TASKS_STORAGE_KEY = 'certex.onboardingTasks.v1';
-const FINANCE_INVOICES_STORAGE_KEY = 'certex.financeInvoices.v1';
-const PAYOUT_RUNS_STORAGE_KEY = 'certex.payoutRuns.v1';
-const INSPECTION_TEMPLATES_STORAGE_KEY = 'certex.inspectionTemplates.v2';
-const INTEGRATION_CONNECTIONS_STORAGE_KEY = 'certex.integrationConnections.v1';
-const TEMPLATE_BLUEPRINTS_STORAGE_KEY = 'certex.templateBlueprints.v2';
-const TEMPLATE_LISTINGS_STORAGE_KEY = 'certex.templateListings.v2';
-const LICENCE_GRANTS_STORAGE_KEY = 'certex.licenceGrants.v1';
-const AUDIT_RUNS_STORAGE_KEY = 'certex.auditRuns.v1';
-const AUDIT_FINDINGS_STORAGE_KEY = 'certex.auditFindings.v1';
-const AUDIT_ACTIONS_STORAGE_KEY = 'certex.auditActions.v1';
-const REPORT_ARTIFACTS_STORAGE_KEY = 'certex.reportArtifacts.v1';
-const SHARE_LINKS_STORAGE_KEY = 'certex.shareLinks.v1';
-const AUTH_SESSION_STORAGE_KEY = 'certex.authSession.v1';
-const DEBUG_ROLE_STORAGE_KEY = 'certex.debugRole.v1';
+const ASSET_STORAGE_KEY = 'incert.assets.v1';
+const MARKETPLACE_JOBS_STORAGE_KEY = 'incert.marketplaceJobs.v2';
+const THEME_STORAGE_KEY = 'incert.theme.v1';
+const INSPECTION_LOG_STORAGE_KEY = 'incert.inspectionLogs.v1';
+const RECURRING_PROGRAMMES_STORAGE_KEY = 'incert.recurringProgrammes.v1';
+const PUBLIC_SITE_CONFIG_STORAGE_KEY = 'incert.publicSiteConfig.v1';
+const ONBOARDING_TASKS_STORAGE_KEY = 'incert.onboardingTasks.v1';
+const FINANCE_INVOICES_STORAGE_KEY = 'incert.financeInvoices.v1';
+const PAYOUT_RUNS_STORAGE_KEY = 'incert.payoutRuns.v1';
+const INSPECTION_TEMPLATES_STORAGE_KEY = 'incert.inspectionTemplates.v2';
+const INTEGRATION_CONNECTIONS_STORAGE_KEY = 'incert.integrationConnections.v1';
+const API_CLIENTS_STORAGE_KEY = 'incert.apiClients.v1';
+const WEBHOOK_ENDPOINTS_STORAGE_KEY = 'incert.webhookEndpoints.v1';
+const ENTERPRISE_SSO_PROVIDERS_STORAGE_KEY = 'incert.enterpriseSsoProviders.v1';
+const ENTERPRISE_ACCESS_POLICIES_STORAGE_KEY = 'incert.enterpriseAccessPolicies.v1';
+const TEMPLATE_BLUEPRINTS_STORAGE_KEY = 'incert.templateBlueprints.v2';
+const TEMPLATE_LISTINGS_STORAGE_KEY = 'incert.templateListings.v2';
+const LICENCE_GRANTS_STORAGE_KEY = 'incert.licenceGrants.v1';
+const AUDIT_RUNS_STORAGE_KEY = 'incert.auditRuns.v1';
+const AUDIT_FINDINGS_STORAGE_KEY = 'incert.auditFindings.v1';
+const AUDIT_ACTIONS_STORAGE_KEY = 'incert.auditActions.v1';
+const REPORT_ARTIFACTS_STORAGE_KEY = 'incert.reportArtifacts.v1';
+const SHARE_LINKS_STORAGE_KEY = 'incert.shareLinks.v1';
+const MARKETPLACE_BID_BOARD_STORAGE_KEY = 'incert.marketplaceBidBoard.v1';
+const DISPATCH_SLA_EVENTS_STORAGE_KEY = 'incert.dispatchSlaEvents.v1';
+const EVIDENCE_AI_JOBS_STORAGE_KEY = 'incert.evidenceAiJobs.v1';
+const REGULATOR_VERIFICATION_REQUESTS_STORAGE_KEY = 'incert.regulatorVerificationRequests.v1';
+const ANALYTICS_RISK_SIGNALS_STORAGE_KEY = 'incert.analyticsRiskSignals.v1';
+const WEBHOOK_DELIVERY_EVENTS_STORAGE_KEY = 'incert.webhookDeliveryEvents.v1';
+const MOBILE_AUDIT_SESSIONS_STORAGE_KEY = 'incert.mobileAuditSessions.v1';
+const ENTERPRISE_SECURITY_EVENTS_STORAGE_KEY = 'incert.enterpriseSecurityEvents.v1';
+const QA_HARNESS_RUNS_STORAGE_KEY = 'incert.qaHarnessRuns.v1';
+const RELEASE_GATE_RESULTS_STORAGE_KEY = 'incert.releaseGateResults.v1';
+const TENANT_INVITES_STORAGE_KEY = 'incert.tenantInvites.v1';
+const EVIDENCE_PROVENANCE_EVENTS_STORAGE_KEY = 'incert.evidenceProvenanceEvents.v1';
+const AUTH_RUNTIME_MODE_STORAGE_KEY = 'incert.authRuntimeMode.v1';
+const AUTH_SESSION_STORAGE_KEY = 'incert.authSession.v1';
+const DEBUG_ROLE_STORAGE_KEY = 'incert.debugRole.v1';
+const DEBUG_SNAPSHOT_VERSION_STORAGE_KEY = 'incert.debugSnapshotVersion.v1';
 
 const defaultPublicSiteConfig = {
   siteTitle: 'Acme Logistics Compliance Portal',
@@ -548,7 +618,7 @@ const PUBLIC_SITE_PAGE_BLUEPRINTS = [
   {
     id: 'home',
     label: 'Home',
-    purpose: 'Explain why CertEx and convert operators/auditors quickly.',
+    purpose: 'Explain why InCert and convert operators/auditors quickly.',
     headline: 'Book statutory audits and inspections across your estate in minutes.',
     primaryCta: 'Request a pilot',
     secondaryCta: 'Join as an auditor',
@@ -942,6 +1012,60 @@ const defaultIntegrationConnections = [
   { id: 'INT-EAM-MAINTAINX', name: 'MaintainX', category: 'EAM', status: 'not_connected', endpoint: '', lastSyncAt: '' },
 ];
 
+const defaultApiClients = [
+  {
+    id: 'API-0001',
+    name: 'Acme ERP Integration Client',
+    status: 'active',
+    scopes: ['jobs.read', 'jobs.write', 'evidence.read'],
+    secretFingerprint: 'fp_8f27f1',
+    secretRotatedAt: '2026-02-25T09:14:00Z',
+    createdAt: '2026-02-20T08:10:00Z',
+  },
+];
+
+const defaultWebhookEndpoints = [
+  {
+    id: 'WEP-0001',
+    name: 'Acme ERP Completion Hook',
+    status: 'active',
+    targetUrl: 'https://api.acme-logistics.example/incert/completion',
+    lastDeliveredAt: '2026-02-25T10:15:00Z',
+  },
+  {
+    id: 'WEP-0002',
+    name: 'Insurer Verification Hook',
+    status: 'active',
+    targetUrl: 'https://insurer.example/hooks/verification',
+    lastDeliveredAt: '',
+  },
+];
+
+const defaultEnterpriseSsoProviders = [
+  {
+    id: 'SSO-0001',
+    providerName: 'Microsoft Entra ID',
+    status: 'configured',
+    domain: 'acme-logistics.example',
+    updatedAt: '2026-02-24T12:45:00Z',
+  },
+];
+
+const defaultEnterpriseAccessPolicies = [
+  {
+    id: 'POL-0001',
+    name: 'Require MFA for privileged roles',
+    status: 'enabled',
+    updatedAt: '2026-02-24T12:45:00Z',
+  },
+  {
+    id: 'POL-0002',
+    name: 'Restrict access by verified domain',
+    status: 'enabled',
+    updatedAt: '2026-02-24T12:45:00Z',
+  },
+];
+
 const defaultLicenceGrants = [
   {
     id: 'LIC-0001',
@@ -1006,13 +1130,13 @@ const defaultReportArtifacts = [
     id: 'RPT-0001',
     auditRunId: 'RUN-0001',
     version: 1,
-    pdfUri: 'storage://certex-reports/RUN-0001/v1/report.pdf',
-    htmlUri: 'storage://certex-reports/RUN-0001/v1/report.html',
+    pdfUri: 'storage://incert-reports/RUN-0001/v1/report.pdf',
+    htmlUri: 'storage://incert-reports/RUN-0001/v1/report.html',
     hash: 'sha256:run0001v1',
-    signature: 'sig:certex:run0001:v1',
+    signature: 'sig:incert:run0001:v1',
     status: 'valid',
-    signedPdfUrl: 'https://signed.certex.example/reports/RUN-0001/v1.pdf',
-    signedHtmlUrl: 'https://signed.certex.example/reports/RUN-0001/v1.html',
+    signedPdfUrl: 'https://signed.incert.example/reports/RUN-0001/v1.pdf',
+    signedHtmlUrl: 'https://signed.incert.example/reports/RUN-0001/v1.html',
     createdAt: '2026-02-16T10:45:00Z',
   },
 ];
@@ -1025,9 +1149,226 @@ const defaultShareLinks = [
     expiresAt: '2026-03-16T10:45:00Z',
     accessPolicy: 'read_only',
     auditLogEnabled: true,
-    url: 'https://portal.certex.example/share/SHR-0001',
+    url: 'https://portal.incert.example/share/SHR-0001',
   },
 ];
+
+const defaultMarketplaceBidBoard = [
+  {
+    id: 'BID-0001',
+    requestId: 'JOB-1001',
+    providerOrgName: 'NorthStar Inspection Partners',
+    strategy: 'best_value',
+    totalExVat: 372,
+    vatAmount: 74.4,
+    leadTimeHours: 12,
+    qualityScore: 91,
+    rankScore: 88,
+    status: 'submitted',
+    submittedAt: '2026-02-24T09:20:00Z',
+    assignedAuditor: 'Hannah Briggs',
+    assignmentStatus: 'assigned',
+  },
+  {
+    id: 'BID-0002',
+    requestId: 'JOB-1001',
+    providerOrgName: 'Bureau Veritas UK',
+    strategy: 'best_value',
+    totalExVat: 388,
+    vatAmount: 77.6,
+    leadTimeHours: 9,
+    qualityScore: 95,
+    rankScore: 90,
+    status: 'awarded',
+    submittedAt: '2026-02-24T09:35:00Z',
+    assignedAuditor: 'R. Menon',
+    assignmentStatus: 'accepted',
+  },
+];
+
+const defaultDispatchSlaEvents = [
+  {
+    id: 'SLA-0001',
+    requestId: 'JOB-1001',
+    eventType: 'offer_sent',
+    eventAt: '2026-02-24T09:35:00Z',
+    minutesFromOpen: 18,
+    isBreach: false,
+  },
+  {
+    id: 'SLA-0002',
+    requestId: 'JOB-1001',
+    eventType: 'offer_accepted',
+    eventAt: '2026-02-24T09:48:00Z',
+    minutesFromOpen: 31,
+    isBreach: false,
+  },
+];
+
+const defaultEvidenceAiJobs = [
+  {
+    id: 'EAI-0001',
+    evidenceRef: 'evidence://JOB-1003/pre-checklist.pdf',
+    model: 'gpt-5-mini',
+    status: 'completed',
+    extractionSummary: 'Detected 3 controls with pass/fail outcomes and 1 advisory note.',
+    confidenceScore: 0.93,
+    createdAt: '2026-02-24T10:00:00Z',
+    completedAt: '2026-02-24T10:02:30Z',
+    reviewDecision: 'accepted',
+  },
+  {
+    id: 'EAI-0002',
+    evidenceRef: 'evidence://JOB-1002/compressor-photos.zip',
+    model: 'gpt-5-mini',
+    status: 'queued',
+    extractionSummary: '',
+    confidenceScore: 0,
+    createdAt: '2026-02-25T11:14:00Z',
+    completedAt: '',
+    reviewDecision: 'pending',
+  },
+];
+
+const defaultRegulatorVerificationRequests = [
+  {
+    id: 'VRQ-0001',
+    requestor: 'Insurer Desk',
+    referenceId: 'CERT-2025-9921',
+    status: 'open',
+    requestedAt: '2026-02-25T08:40:00Z',
+    dueAt: '2026-03-01T17:00:00Z',
+    latestEvent: 'Evidence package requested',
+  },
+];
+
+const defaultAnalyticsRiskSignals = [
+  {
+    id: 'RSK-0001',
+    organization: 'Acme Logistics',
+    signal: 'repeat_high_severity_findings',
+    riskLevel: 'high',
+    confidence: 0.86,
+    triggeredAt: '2026-02-25T12:05:00Z',
+  },
+  {
+    id: 'RSK-0002',
+    organization: 'Acme Logistics',
+    signal: 'dispatch_sla_near_breach',
+    riskLevel: 'medium',
+    confidence: 0.74,
+    triggeredAt: '2026-02-25T12:22:00Z',
+  },
+];
+
+const defaultWebhookDeliveryEvents = [
+  {
+    id: 'WEB-0001',
+    endpointLabel: 'SAP Completion Webhook',
+    status: 'delivered',
+    attempts: 1,
+    lastAttemptAt: '2026-02-25T10:15:00Z',
+    latencyMs: 284,
+  },
+  {
+    id: 'WEB-0002',
+    endpointLabel: 'Insurer Verification Hook',
+    status: 'failed',
+    attempts: 3,
+    lastAttemptAt: '2026-02-25T10:42:00Z',
+    latencyMs: 0,
+  },
+];
+
+const defaultMobileAuditSessions = [
+  {
+    id: 'MAS-0001',
+    jobId: 'JOB-1003',
+    deviceName: 'iPhone 15 - BVUK-01',
+    attestationStatus: 'verified',
+    syncStatus: 'synced',
+    startedAt: '2026-02-25T09:00:00Z',
+    closedAt: '',
+  },
+];
+
+const defaultEnterpriseSecurityEvents = [
+  {
+    id: 'SEC-0001',
+    eventType: 'sso_policy_updated',
+    severity: 'low',
+    actor: 'incert.admin@incert.local',
+    occurredAt: '2026-02-25T07:30:00Z',
+  },
+  {
+    id: 'SEC-0002',
+    eventType: 'suspicious_login_blocked',
+    severity: 'high',
+    actor: 'system.guard',
+    occurredAt: '2026-02-25T11:02:00Z',
+  },
+];
+
+const defaultQaHarnessRuns = [
+  {
+    id: 'QAR-0001',
+    suiteName: 'Marketplace Core',
+    status: 'passed',
+    branch: 'main',
+    startedAt: '2026-02-25T06:15:00Z',
+    completedAt: '2026-02-25T06:19:00Z',
+    passRate: 100,
+  },
+];
+
+const defaultReleaseGateResults = [
+  {
+    id: 'RLG-0001',
+    gateName: 'Security checks',
+    status: 'passed',
+    evaluatedAt: '2026-02-25T06:21:00Z',
+    notes: 'No critical findings.',
+  },
+  {
+    id: 'RLG-0002',
+    gateName: 'Data migrations',
+    status: 'pending',
+    evaluatedAt: '2026-02-25T06:22:00Z',
+    notes: 'Waiting for production Supabase project.',
+  },
+];
+
+const defaultTenantInvites = [
+  {
+    id: 'INV-0001',
+    email: 'facilities.manager@acme-logistics.example',
+    role: 'dutyholder_admin',
+    status: 'pending',
+    sentAt: '2026-02-25T14:10:00Z',
+    acceptedAt: '',
+  },
+];
+
+const defaultEvidenceProvenanceEvents = [
+  {
+    id: 'PRV-0001',
+    evidenceRef: 'evidence://JOB-1003/pre-checklist.pdf',
+    eventType: 'file_uploaded',
+    hash: 'sha256:prechecklist1003',
+    deviceMetadata: 'ios:camera:v15',
+    createdAt: '2026-02-25T09:12:00Z',
+  },
+  {
+    id: 'PRV-0002',
+    evidenceRef: 'evidence://JOB-1003/pre-checklist.pdf',
+    eventType: 'ai_extracted',
+    hash: 'sha256:prechecklist1003',
+    deviceMetadata: 'server:ai-pipeline',
+    createdAt: '2026-02-25T09:13:00Z',
+  },
+];
+
+const defaultAuthRuntimeMode = 'mock';
 
 function parseISODate(value) {
   if (!value || typeof value !== 'string') {
@@ -1122,7 +1463,7 @@ function formatRelativeDueLabel(dateString) {
 
 function getAppBaseUrl() {
   if (typeof window === 'undefined') {
-    return 'https://app.certex.local';
+    return 'https://app.incert.local';
   }
   return `${window.location.origin}${window.location.pathname}`;
 }
@@ -1135,7 +1476,7 @@ function buildCertificateDeepLink(certificateId) {
   return `${getAppBaseUrl()}#certificate=${encodeURIComponent(String(certificateId || '').trim())}`;
 }
 
-function parseCertexScanValue(rawValue) {
+function parseInCertScanValue(rawValue) {
   const value = String(rawValue || '').trim();
   if (!value) {
     return null;
@@ -1207,7 +1548,7 @@ function parseCertexScanValue(rawValue) {
 
     const urlHash = parsedUrl.hash.replace(/^#/, '');
     if (urlHash) {
-      const parsedHash = parseCertexScanValue(urlHash);
+      const parsedHash = parseInCertScanValue(urlHash);
       if (parsedHash) {
         return parsedHash;
       }
@@ -1286,7 +1627,7 @@ function downloadAuditPackPdf({ assets, certificates }) {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(22);
   doc.setTextColor(15, 23, 42);
-  doc.text('CertEx Audit Pack', margin, 56);
+  doc.text('InCert Audit Pack', margin, 56);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   doc.setTextColor(51, 65, 85);
@@ -1332,7 +1673,7 @@ function downloadAuditPackPdf({ assets, certificates }) {
     pushRow(`  Hash ${certificate.hash}`, 15);
   });
 
-  doc.save(`CertEx-Audit-Pack-${new Date().toISOString().slice(0, 10)}.pdf`);
+  doc.save(`InCert-Audit-Pack-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 function downloadCertificatePdf(certificate) {
@@ -1355,7 +1696,7 @@ function downloadCertificatePdf(certificate) {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(25);
   doc.setTextColor(15, 23, 42);
-  doc.text('CertEx Certificate', margin + 18, 82);
+  doc.text('InCert Certificate', margin + 18, 82);
   doc.setFontSize(10.5);
   doc.setTextColor(71, 85, 105);
   doc.text('Platform-issued compliance evidence', margin + 18, 102);
@@ -1393,11 +1734,11 @@ function downloadCertificatePdf(certificate) {
   doc.setFontSize(9.5);
   doc.setTextColor(71, 85, 105);
   doc.text('Provider signature', margin + 18, y + 14);
-  doc.text('CertEx verification stamp', width - margin - 210, y + 14);
+  doc.text('InCert verification stamp', width - margin - 210, y + 14);
 
   doc.setFontSize(9);
   doc.text(
-    `Generated ${new Date().toLocaleString('en-GB')} by CertEx`,
+    `Generated ${new Date().toLocaleString('en-GB')} by InCert`,
     margin + 18,
     565
   );
@@ -1508,6 +1849,7 @@ const PRICING_ENGINE_CONFIG = {
   outOfHoursLabourMultiplier: 1.5,
   holdbackPct: 0.05,
   disputeReservePct: 0.015,
+  thirdPartyMarginPct: 0.1,
   externalSoftwareWithholdPct: 0.03,
 };
 
@@ -1536,10 +1878,82 @@ function normalizeUserRole(value, fallback = 'company') {
   return USER_ROLE_OPTIONS.some((option) => option.id === role) ? role : fallback;
 }
 
+function mapSupabaseRoleToUserRole(role) {
+  const normalized = String(role || '').toLowerCase();
+  if (!normalized) {
+    return 'company';
+  }
+
+  if (normalized === 'platform_admin') {
+    return 'incert';
+  }
+  if (normalized === 'insurer_viewer') {
+    return 'insurer';
+  }
+  if (normalized === 'provider_admin' || normalized === 'inspector' || normalized === 'auditor_viewer') {
+    return 'auditor';
+  }
+  return 'company';
+}
+
+function mapRequestStatusToMarketplaceStatus(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'offered') {
+    return 'offered';
+  }
+  if (normalized === 'scheduled') {
+    return 'assigned';
+  }
+  if (normalized === 'completed') {
+    return 'completed';
+  }
+  return 'open';
+}
+
+function mapJobStatusToMarketplaceStatus(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'pending') {
+    return 'offered';
+  }
+  if (normalized === 'accepted') {
+    return 'assigned';
+  }
+  if (normalized === 'in_progress') {
+    return 'in_progress';
+  }
+  if (normalized === 'submitted') {
+    return 'awaiting_review';
+  }
+  if (normalized === 'verified') {
+    return 'completed';
+  }
+  if (normalized === 'rejected') {
+    return 'awaiting_review';
+  }
+  return 'open';
+}
+
+function mapOrgTypeToProviderTier(orgType) {
+  const normalized = String(orgType || '').toLowerCase();
+  if (normalized === 'provider') {
+    return 'Accredited Provider';
+  }
+  if (normalized === 'auditor') {
+    return 'Audit Company Network';
+  }
+  if (normalized === 'insurer') {
+    return 'Insurer Network';
+  }
+  if (normalized === 'platform') {
+    return 'Platform Network';
+  }
+  return 'Provider Network';
+}
+
 function normalizeAuditExecutionMode(value) {
   return String(value || '').toLowerCase() === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
     ? AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
-    : AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE;
+    : AUDIT_EXECUTION_MODES.INCERT_TEMPLATE;
 }
 
 function resolveExternalAuditReviewStatus(job, executionMode = normalizeAuditExecutionMode(job?.auditExecutionMode)) {
@@ -1570,7 +1984,7 @@ function getExternalAuditReviewStatusLabel(value) {
   const labels = {
     [EXTERNAL_AUDIT_REVIEW_STATUSES.NOT_REQUIRED]: 'Not required',
     [EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_EVIDENCE]: 'Awaiting evidence',
-    [EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_REVIEW]: 'Pending Certex review',
+    [EXTERNAL_AUDIT_REVIEW_STATUSES.PENDING_REVIEW]: 'Pending InCert review',
     [EXTERNAL_AUDIT_REVIEW_STATUSES.APPROVED]: 'Approved',
     [EXTERNAL_AUDIT_REVIEW_STATUSES.REJECTED]: 'Changes required',
   };
@@ -1580,7 +1994,64 @@ function getExternalAuditReviewStatusLabel(value) {
 function getAuditExecutionModeLabel(value) {
   return normalizeAuditExecutionMode(value) === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
     ? 'Auditor software'
-    : 'Certex template';
+    : 'InCert template';
+}
+
+function getThirdPartyOrganizationById(organizationId) {
+  const targetId = String(organizationId || '').trim();
+  if (!targetId) {
+    return null;
+  }
+  return (
+    thirdPartyOrganizations.find((organization) => String(organization?.id || '').trim() === targetId) || null
+  );
+}
+
+function isThirdPartyProvider(provider) {
+  return String(provider?.employmentModel || '').toLowerCase() === 'third_party';
+}
+
+function getProviderThirdPartyMarginPct(provider) {
+  if (!isThirdPartyProvider(provider)) {
+    return 0;
+  }
+  const orgMargin = Number(getThirdPartyOrganizationById(provider?.thirdPartyOrganizationId)?.marginPct);
+  const providerMargin = Number(provider?.thirdPartyMarginPct);
+  const resolvedMargin = Number.isFinite(providerMargin)
+    ? providerMargin
+    : Number.isFinite(orgMargin)
+      ? orgMargin
+      : PRICING_ENGINE_CONFIG.thirdPartyMarginPct;
+  return clampNumber(resolvedMargin, 0, 0.25);
+}
+
+function getThirdPartyAssignableAuditors(provider, regime = '') {
+  if (!isThirdPartyProvider(provider)) {
+    return [];
+  }
+  const organization = getThirdPartyOrganizationById(provider?.thirdPartyOrganizationId);
+  if (!organization || !Array.isArray(organization.auditors)) {
+    return [];
+  }
+  const targetRegime = String(regime || '').trim().toUpperCase();
+  return organization.auditors.filter((auditor) => {
+    if (!targetRegime) {
+      return true;
+    }
+    return Array.isArray(auditor?.regimes) && auditor.regimes.includes(targetRegime);
+  });
+}
+
+function resolveJobAssignedAuditorLabel(job, fallbackProviderName = 'Assigned provider') {
+  const fieldAuditor = String(job?.assignedFieldAuditorName || '').trim();
+  const providerName = String(fallbackProviderName || '').trim() || 'Assigned provider';
+  if (!fieldAuditor) {
+    return providerName;
+  }
+  if (fieldAuditor.toLowerCase() === providerName.toLowerCase()) {
+    return providerName;
+  }
+  return `${fieldAuditor} (${providerName})`;
 }
 
 function formatDateTimeLabel(value) {
@@ -1660,6 +2131,48 @@ function addDays(dateString, days) {
   return parsed.toISOString().slice(0, 10);
 }
 
+function buildSeedValue(seedSource) {
+  return String(seedSource || '')
+    .split('')
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+}
+
+function resolveSeededLagDays(seedSource, minDays = 1, maxDays = 7) {
+  const safeMin = Math.max(0, Math.trunc(Number(minDays || 0)));
+  const safeMax = Math.max(safeMin, Math.trunc(Number(maxDays || safeMin)));
+  const range = safeMax - safeMin + 1;
+  if (range <= 1) {
+    return safeMin;
+  }
+  return safeMin + (buildSeedValue(seedSource) % range);
+}
+
+function resolveCollectionBackedPayoutDate(collectionDate, seedSource, fallbackDate = '', fixedLagDays = null) {
+  const normalizedCollectionDate = String(collectionDate || '').slice(0, 10);
+  const normalizedFallbackDate = String(fallbackDate || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+  const anchorDate = parseISODate(normalizedCollectionDate) ? normalizedCollectionDate : normalizedFallbackDate;
+  const lagDays = Number.isFinite(fixedLagDays)
+    ? Math.max(0, Math.trunc(Number(fixedLagDays)))
+    : resolveSeededLagDays(seedSource, 1, 7);
+  return addDays(anchorDate, lagDays);
+}
+
+function buildIsoTimestampFromDate(dateString, seedSource, baseHour = 9, hourRange = 8, minuteFactor = 11) {
+  const normalizedDate = String(dateString || '').slice(0, 10);
+  const parsedDate = parseISODate(normalizedDate);
+  if (!parsedDate) {
+    return '';
+  }
+  const seed = buildSeedValue(seedSource);
+  const safeHourRange = Math.max(1, Math.trunc(Number(hourRange || 1)));
+  const hour = Math.max(0, Math.min(23, Math.trunc(Number(baseHour || 0)) + (seed % safeHourRange)));
+  const minute = (seed * Math.max(1, Math.trunc(Number(minuteFactor || 1)))) % 60;
+  const year = parsedDate.getFullYear();
+  const month = parsedDate.getMonth();
+  const day = parsedDate.getDate();
+  return new Date(Date.UTC(year, month, day, hour, minute, 0, 0)).toISOString();
+}
+
 function buildMarketplacePricingLock({ jobId, quote, lockedAt, lockedBy }) {
   if (!quote) {
     return null;
@@ -1671,7 +2184,7 @@ function buildMarketplacePricingLock({ jobId, quote, lockedAt, lockedBy }) {
     bookingId: `BOOK-${jobId}`,
     quoteId: quote.quoteId,
     lockedAt: lockTimestamp,
-    lockedBy: lockedBy || 'Certex Dispatch Engine',
+    lockedBy: lockedBy || 'InCert Dispatch Engine',
   };
 }
 
@@ -1685,13 +2198,13 @@ function resolveExternalSoftwareWithholdPct(job, fallback = PRICING_ENGINE_CONFI
 }
 
 function getAuditorPayoutOptions(pricing, externalSoftwareWithholdPct = PRICING_ENGINE_CONFIG.externalSoftwareWithholdPct) {
-  const certexTemplateExVat = roundMoney(pricing?.providerPayoutExVat || 0);
-  const ownSoftwareExVat = roundMoney(certexTemplateExVat * (1 - clampNumber(externalSoftwareWithholdPct, 0, 0.25)));
+  const incertTemplateExVat = roundMoney(pricing?.providerPayoutExVat || 0);
+  const ownSoftwareExVat = roundMoney(incertTemplateExVat * (1 - clampNumber(externalSoftwareWithholdPct, 0, 0.25)));
   return {
-    certexTemplateExVat,
+    incertTemplateExVat,
     ownSoftwareExVat,
-    minExVat: Math.min(certexTemplateExVat, ownSoftwareExVat),
-    maxExVat: Math.max(certexTemplateExVat, ownSoftwareExVat),
+    minExVat: Math.min(incertTemplateExVat, ownSoftwareExVat),
+    maxExVat: Math.max(incertTemplateExVat, ownSoftwareExVat),
   };
 }
 
@@ -1870,7 +2383,10 @@ function calculateMarketplaceQuote({ scope, regime, site, auditor = null }) {
   const customerEquipmentCharge = roundMoney(equipmentSurcharge * portfolioSweepMultiplier);
   const auditorEquipmentPayout = roundMoney(customerEquipmentCharge * PRICING_ENGINE_CONFIG.auditorEquipmentPayoutRatio);
   const providerCompCore = auditorLabourPayout + auditorEquipmentPayout;
-  const providerComp = providerCompCore + auditorTravelPayout;
+  const directAuditorPayout = providerCompCore + auditorTravelPayout;
+  const thirdPartyMarginPct = getProviderThirdPartyMarginPct(auditor);
+  const thirdPartyPartnerFee = roundMoney(directAuditorPayout * thirdPartyMarginPct);
+  const providerComp = directAuditorPayout + thirdPartyPartnerFee;
 
   const minimumTakeRate = resolveMinimumTakeRate(normalizedScope);
   const baseTakeRate = clampNumber(
@@ -1933,6 +2449,9 @@ function calculateMarketplaceQuote({ scope, regime, site, auditor = null }) {
     ...(customerEquipmentCharge > 0
       ? [{ code: 'EQUIPMENT', label: 'Equipment surcharge', amountExVat: customerEquipmentCharge }]
       : []),
+    ...(thirdPartyPartnerFee > 0
+      ? [{ code: 'THIRD_PARTY_PARTNER', label: 'Audit company coordination fee', amountExVat: thirdPartyPartnerFee }]
+      : []),
     {
       code: 'SYSTEM_CHARGE',
       label: 'Platform/documentation operations fee',
@@ -1952,6 +2471,13 @@ function calculateMarketplaceQuote({ scope, regime, site, auditor = null }) {
     platformFee,
     platformFeeExVat: platformFee,
     providerPayoutExVat: providerComp,
+    directAuditorPayoutExVat: directAuditorPayout,
+    thirdPartyPartnerFeeExVat: thirdPartyPartnerFee,
+    thirdPartyMarginPct,
+    thirdPartyOrganizationId: String(auditor?.thirdPartyOrganizationId || ''),
+    thirdPartyOrganizationName: String(
+      getThirdPartyOrganizationById(auditor?.thirdPartyOrganizationId)?.name || ''
+    ),
     auditorTravelPayoutExVat: auditorTravelPayout,
     auditorEquipmentPayoutExVat: auditorEquipmentPayout,
     auditorHourlyRate,
@@ -1992,6 +2518,9 @@ function calculateMarketplaceQuote({ scope, regime, site, auditor = null }) {
       `Market benchmark labour £${marketHourlyRate}/hour with ${Math.round(marketOpsPremiumPct * 100)}% ops premium`,
       ...(goingRateAlignment > 0 ? [`Going-rate alignment ${formatCurrencyGBP(goingRateAlignment)} ex VAT`] : []),
       `Mileage margin contribution ${formatCurrencyGBP(travelMargin)} ex VAT`,
+      ...(thirdPartyPartnerFee > 0
+        ? [`Audit company margin ${formatCurrencyGBP(thirdPartyPartnerFee)} ex VAT (${formatPercentage(thirdPartyMarginPct)})`]
+        : []),
       `Travel ${roundMoney(travelMiles)} miles (chargeable ${Number(chargeableTravelHours.toFixed(2))}h)`,
     ],
     lineItems,
@@ -2219,7 +2748,7 @@ function getMarketplaceJobPricingLock(job, currentPricing) {
       bookingId: job.pricingLock.bookingId || `BOOK-${job?.id || 'JOB'}`,
       quoteId: job.pricingLock.quoteId || pricingSnapshot.quoteId,
       lockedAt: job.pricingLock.lockedAt || new Date().toISOString(),
-      lockedBy: job.pricingLock.lockedBy || 'Certex Dispatch Engine',
+      lockedBy: job.pricingLock.lockedBy || 'InCert Dispatch Engine',
     };
   }
 
@@ -3231,6 +3760,22 @@ function loadStoredIntegrationConnections() {
   }
 }
 
+function loadStoredApiClients() {
+  return loadStoredCollection(API_CLIENTS_STORAGE_KEY, defaultApiClients);
+}
+
+function loadStoredWebhookEndpoints() {
+  return loadStoredCollection(WEBHOOK_ENDPOINTS_STORAGE_KEY, defaultWebhookEndpoints);
+}
+
+function loadStoredEnterpriseSsoProviders() {
+  return loadStoredCollection(ENTERPRISE_SSO_PROVIDERS_STORAGE_KEY, defaultEnterpriseSsoProviders);
+}
+
+function loadStoredEnterpriseAccessPolicies() {
+  return loadStoredCollection(ENTERPRISE_ACCESS_POLICIES_STORAGE_KEY, defaultEnterpriseAccessPolicies);
+}
+
 function loadStoredCollection(storageKey, fallback) {
   try {
     const raw = window.localStorage.getItem(storageKey);
@@ -3279,6 +3824,67 @@ function loadStoredShareLinks() {
   return loadStoredCollection(SHARE_LINKS_STORAGE_KEY, defaultShareLinks);
 }
 
+function loadStoredMarketplaceBidBoard() {
+  return loadStoredCollection(MARKETPLACE_BID_BOARD_STORAGE_KEY, defaultMarketplaceBidBoard);
+}
+
+function loadStoredDispatchSlaEvents() {
+  return loadStoredCollection(DISPATCH_SLA_EVENTS_STORAGE_KEY, defaultDispatchSlaEvents);
+}
+
+function loadStoredEvidenceAiJobs() {
+  return loadStoredCollection(EVIDENCE_AI_JOBS_STORAGE_KEY, defaultEvidenceAiJobs);
+}
+
+function loadStoredRegulatorVerificationRequests() {
+  return loadStoredCollection(REGULATOR_VERIFICATION_REQUESTS_STORAGE_KEY, defaultRegulatorVerificationRequests);
+}
+
+function loadStoredAnalyticsRiskSignals() {
+  return loadStoredCollection(ANALYTICS_RISK_SIGNALS_STORAGE_KEY, defaultAnalyticsRiskSignals);
+}
+
+function loadStoredWebhookDeliveryEvents() {
+  return loadStoredCollection(WEBHOOK_DELIVERY_EVENTS_STORAGE_KEY, defaultWebhookDeliveryEvents);
+}
+
+function loadStoredMobileAuditSessions() {
+  return loadStoredCollection(MOBILE_AUDIT_SESSIONS_STORAGE_KEY, defaultMobileAuditSessions);
+}
+
+function loadStoredEnterpriseSecurityEvents() {
+  return loadStoredCollection(ENTERPRISE_SECURITY_EVENTS_STORAGE_KEY, defaultEnterpriseSecurityEvents);
+}
+
+function loadStoredQaHarnessRuns() {
+  return loadStoredCollection(QA_HARNESS_RUNS_STORAGE_KEY, defaultQaHarnessRuns);
+}
+
+function loadStoredReleaseGateResults() {
+  return loadStoredCollection(RELEASE_GATE_RESULTS_STORAGE_KEY, defaultReleaseGateResults);
+}
+
+function loadStoredTenantInvites() {
+  return loadStoredCollection(TENANT_INVITES_STORAGE_KEY, defaultTenantInvites);
+}
+
+function loadStoredEvidenceProvenanceEvents() {
+  return loadStoredCollection(EVIDENCE_PROVENANCE_EVENTS_STORAGE_KEY, defaultEvidenceProvenanceEvents);
+}
+
+function loadStoredAuthRuntimeMode() {
+  try {
+    const raw = window.localStorage.getItem(AUTH_RUNTIME_MODE_STORAGE_KEY);
+    if (!raw) {
+      return defaultAuthRuntimeMode;
+    }
+    const normalized = String(raw || '').toLowerCase();
+    return normalized === 'supabase' || normalized === 'mock' ? normalized : defaultAuthRuntimeMode;
+  } catch {
+    return defaultAuthRuntimeMode;
+  }
+}
+
 function loadStoredAuthSession() {
   try {
     const raw = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
@@ -3320,6 +3926,665 @@ function getLocalDateTimeInputValue(date = new Date()) {
   return target.toISOString().slice(0, 16);
 }
 
+function deepCloneStateValue(value, fallback = []) {
+  try {
+    if (typeof structuredClone === 'function') {
+      return structuredClone(value);
+    }
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return fallback;
+  }
+}
+
+const DEBUG_MOCK_HISTORY_DAYS = 365;
+const DEBUG_SNAPSHOT_SCHEMA_VERSION = `history-${DEBUG_MOCK_HISTORY_DAYS}-v5`;
+
+function getDebugDateByDayOffset(dayOffset = 0, hour = 9, minute = 0) {
+  const safeOffset = Math.max(0, Number(dayOffset || 0));
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  date.setDate(date.getDate() - safeOffset);
+  return date;
+}
+
+function cycleDebugValue(values, index, fallback) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return fallback;
+  }
+  return values[index % values.length];
+}
+
+function expandDebugCollection(source, targetCount, options = {}) {
+  const seeds = deepCloneStateValue(source, []);
+  if (!Array.isArray(seeds) || seeds.length === 0) {
+    return [];
+  }
+
+  const {
+    idPrefix,
+    idPadding = 4,
+    idMinValue = 1,
+    mutate,
+  } = options;
+
+  const inferredPrefix = String(idPrefix || String(seeds[0]?.id || 'DBG').split('-')[0] || 'DBG').toUpperCase();
+  const result = [...seeds];
+
+  while (result.length < targetCount) {
+    const seed = deepCloneStateValue(seeds[result.length % seeds.length], {});
+    if (!seed || typeof seed !== 'object') {
+      break;
+    }
+
+    const sequence = result.length + 1;
+    seed.id = getNextEntityId(result, inferredPrefix, idMinValue, idPadding);
+
+    if (typeof mutate === 'function') {
+      mutate(seed, sequence, result, seeds);
+    }
+
+    result.push(seed);
+  }
+
+  return result;
+}
+
+function buildDebugInspectionLogs(assets, historyDays = DEBUG_MOCK_HISTORY_DAYS) {
+  const totalLogs = Math.max(historyDays, historyDays + 24);
+  return Array.from({ length: totalLogs }, (_, index) => {
+    const asset = assets[index % assets.length] || {};
+    const dayOffset = index % historyDays;
+    const performed = getDebugDateByDayOffset(dayOffset, 7 + (index % 10), (index * 7) % 60);
+    const created = new Date(performed.getTime() + 45 * 60 * 1000);
+    const syncStatus = dayOffset <= 2 && index % 4 === 0 ? 'queued' : 'synced';
+
+    return {
+      id: `INSP-${String(500000 + index).padStart(6, '0')}`,
+      assetId: String(asset.id || ''),
+      assetName: String(asset.name || 'Asset'),
+      performedAt: getLocalDateTimeInputValue(performed),
+      notes: `Debug inspection log ${index + 1} captured for ${asset.name || 'asset'}.`,
+      createdAt: created.toISOString(),
+      syncStatus,
+      syncedAt: syncStatus === 'synced' ? new Date(created.getTime() + 5 * 60 * 1000).toISOString() : null,
+    };
+  });
+}
+
+function buildDebugRecurringProgrammes(auditors, historyDays = DEBUG_MOCK_HISTORY_DAYS) {
+  const cadences = ['monthly', 'quarterly', 'biannual', 'annual'];
+  return Array.from({ length: 12 }, (_, index) => {
+    const preferredAuditor = auditors[index % auditors.length];
+    const createdAt = getDebugDateByDayOffset(index % historyDays, 9, (index * 9) % 60).toISOString();
+    const startDate = getDebugDateByDayOffset((index * 4) % historyDays, 8, 0).toISOString().slice(0, 10);
+    return {
+      id: `PRG-${String(index + 1).padStart(4, '0')}`,
+      name: `Debug Programme ${index + 1}`,
+      cadence: cycleDebugValue(cadences, index, 'quarterly'),
+      leadDays: 14 + index * 3,
+      preferredAuditorId: String(preferredAuditor?.id || ''),
+      budgetCap: roundMoney(420 + index * 55),
+      startDate,
+      approvalChain: index % 2 === 0 ? 'Site Manager > Finance' : 'Ops Lead > HSE > Finance',
+      createdAt,
+    };
+  });
+}
+
+function buildDebugFinanceInvoices(jobs, auditors, historyDays = DEBUG_MOCK_HISTORY_DAYS) {
+  const candidateJobs = jobs.filter((job) => ['completed', 'in_progress', 'awaiting_review'].includes(String(job.status || '')));
+  const invoiceSource = candidateJobs.length > 0 ? candidateJobs : jobs;
+  const totalInvoices = invoiceSource.length > 0 ? Math.max(historyDays, 60) : 0;
+  const statuses = ['pending_approval', 'approved', 'issued', 'overdue', 'paid', 'payout_scheduled'];
+
+  return Array.from({ length: totalInvoices }, (_, index) => {
+    const job = invoiceSource[index % invoiceSource.length] || {};
+    const dayOffset = index % historyDays;
+    const issueDate = getDebugDateByDayOffset(dayOffset + 3, 10, (index * 5) % 60).toISOString().slice(0, 10);
+    const dueDate = addDays(issueDate, 30);
+    const providerName =
+      auditors.find((auditor) => auditor.id === job.matchedAuditorId)?.name ||
+      cycleDebugValue(auditors, index, { name: 'Assigned provider' }).name;
+    const totalIncVat = roundMoney(Number(job.budget || 340) + index * 12);
+    const fallbackSubtotalExVat = roundMoney(totalIncVat / (1 + DEFAULT_VAT_RATE));
+    const subtotalExVat = roundMoney(
+      Number(job?.pricing?.subtotalExVat || fallbackSubtotalExVat)
+    );
+    const providerPayoutRatePct = Number((0.64 + (index % 8) * 0.02).toFixed(4));
+    const providerPayoutExVat = roundMoney(
+      Number(job?.pricing?.providerPayoutExVat || subtotalExVat * providerPayoutRatePct)
+    );
+    const platformGrossExVat = roundMoney(Math.max(0, subtotalExVat - providerPayoutExVat));
+    const effectivePayoutRatePct = subtotalExVat > 0 ? Number((providerPayoutExVat / subtotalExVat).toFixed(4)) : 0;
+    const effectiveGrossRatePct = subtotalExVat > 0 ? Number((platformGrossExVat / subtotalExVat).toFixed(4)) : 0;
+    return {
+      id: `INV-${String(1001 + index).padStart(5, '0')}`,
+      jobId: String(job.id || `JOB-${1000 + index}`),
+      quoteId: String(job?.pricing?.quoteId || `QTE-${String(2000 + index).padStart(4, '0')}`),
+      assetName: String(job.assetName || 'Inspection scope'),
+      providerName,
+      billToName: String(job.companyName || 'Acme Logistics'),
+      payToName: providerName,
+      issueDate,
+      dueDate,
+      poNumber: `PO-${String(3100 + index).padStart(4, '0')}`,
+      costCentre: cycleDebugValue(['OPS', 'HSE', 'MNT', 'CAPEX'], index, 'OPS'),
+      approver: cycleDebugValue(
+        ['finance@acme-logistics.example', 'operations@acme-logistics.example', 'compliance@acme-logistics.example'],
+        index,
+        'finance@acme-logistics.example'
+      ),
+      subtotalExVat,
+      providerPayoutExVat,
+      platformGrossExVat,
+      effectivePayoutRatePct,
+      effectiveGrossRatePct,
+      vatAmount: roundMoney(totalIncVat - subtotalExVat),
+      totalIncVat,
+      settlementReference: `SET-${String(7000 + index).padStart(4, '0')}`,
+      status: cycleDebugValue(statuses, index, 'pending_approval'),
+      approvedAt: index % 3 === 0 ? getDebugDateByDayOffset(Math.max(0, dayOffset - 1), 11, 0).toISOString() : '',
+      payoutScheduledAt: index % 4 === 0 ? getDebugDateByDayOffset(Math.max(0, dayOffset - 6), 14, 0).toISOString() : '',
+      paidAt: index % 6 === 0 ? getDebugDateByDayOffset(Math.max(0, dayOffset - 12), 16, 15).toISOString() : '',
+      reminderCount: index % 3,
+      lastReminderAt: index % 3 > 0 ? getDebugDateByDayOffset(Math.max(0, dayOffset - (8 + (index % 5))), 9, 45).toISOString() : '',
+    };
+  });
+}
+
+function buildDebugPayoutRuns(invoices, historyDays = DEBUG_MOCK_HISTORY_DAYS) {
+  const payoutEligible = invoices.filter((invoice) =>
+    ['approved', 'issued', 'overdue', 'paid', 'payout_scheduled'].includes(String(invoice.status || '').toLowerCase())
+  );
+  const payoutSource = payoutEligible.length > 0 ? payoutEligible : invoices;
+  if (payoutSource.length === 0) {
+    return [];
+  }
+
+  return payoutSource.map((invoice, index) => {
+    const collectionDate = String(invoice.paidAt || '').slice(0, 10);
+    const fallbackAnchorDate =
+      String(invoice.dueDate || '').slice(0, 10) ||
+      String(invoice.issueDate || '').slice(0, 10) ||
+      new Date().toISOString().slice(0, 10);
+    const scheduledPayoutDate = resolveCollectionBackedPayoutDate(
+      collectionDate,
+      `${String(invoice.id || invoice.jobId || 'PAY')}-${index}`,
+      fallbackAnchorDate
+    );
+    const hasCollectionDate = Boolean(parseISODate(collectionDate));
+    const status = hasCollectionDate && index % 5 !== 0 ? 'paid' : 'scheduled';
+    const payoutBaseExVat = Number(
+      invoice.providerPayoutExVat ||
+      invoice.subtotalExVat ||
+      roundMoney(Number(invoice.totalIncVat || 0) / (1 + DEFAULT_VAT_RATE))
+    );
+    const createdAtDate = addDays(scheduledPayoutDate, -1);
+    const createdAt = buildIsoTimestampFromDate(createdAtDate, `${String(invoice.id || '')}-${index}-created`, 9, 6, 7);
+    const paidAt = status === 'paid'
+      ? buildIsoTimestampFromDate(scheduledPayoutDate, `${String(invoice.id || '')}-${index}-paid`, 10, 7, 13)
+      : '';
+
+    return {
+      id: `PAY-${String(501 + index).padStart(5, '0')}`,
+      invoiceId: String(invoice.id || ''),
+      jobId: String(invoice.jobId || ''),
+      providerName: String(invoice.providerName || 'Assigned provider'),
+      payoutAmount: roundMoney(Math.max(0, payoutBaseExVat)),
+      scheduledPayoutDate,
+      status,
+      createdAt: createdAt || new Date().toISOString(),
+      paidAt,
+    };
+  });
+}
+
+function buildDebugMockSnapshot() {
+  const providerLocations = ['London', 'Birmingham', 'Manchester', 'Leeds', 'Glasgow', 'Bristol', 'Cardiff', 'Sheffield'];
+  const providerRegimes = [
+    ['LOLER', 'PUWER'],
+    ['PSSR', 'PUWER'],
+    ['LOLER', 'PSSR'],
+    ['LOLER', 'PUWER', 'PSSR'],
+  ];
+  const historyDays = DEBUG_MOCK_HISTORY_DAYS;
+  const yearlyTimelineCount = Math.max(historyDays, 365);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const auditors = expandDebugCollection(mockProviders, 12, {
+    idPrefix: 'PRV',
+    idPadding: 4,
+    mutate: (auditor, index) => {
+      auditor.name = `${String(auditor.name || 'Provider')} ${index}`;
+      auditor.activeJobs = Math.max(1, Number(auditor.activeJobs || 0) + (index % 5));
+      auditor.maxConcurrentJobs = Math.max(auditor.activeJobs + 2, Number(auditor.maxConcurrentJobs || 10));
+      auditor.baseLocation = cycleDebugValue(providerLocations, index, 'UK');
+      auditor.regimes = cycleDebugValue(providerRegimes, index, ['LOLER']);
+      auditor.rating = Math.min(5, Number(auditor.rating || 4.4) + ((index % 3) * 0.1));
+      auditor.avgResponseMins = Math.max(18, Number(auditor.avgResponseMins || 60) - (index % 4) * 6);
+    },
+  });
+  const providerDirectory = deepCloneStateValue(auditors, []);
+
+  const assets = expandDebugCollection(initialAssets, 36, {
+    idPrefix: 'AST',
+    idPadding: 3,
+    mutate: (asset, index) => {
+      asset.name = `${String(asset.name || 'Asset')} ${index}`;
+      asset.site = cycleDebugValue(
+        ['Birmingham Warehouse', 'Leeds Plant', 'Manchester Depot', 'London Hub', 'Bristol Distribution'],
+        index,
+        'Main Site'
+      );
+      asset.regime = cycleDebugValue(['LOLER', 'PUWER', 'PSSR'], index, 'LOLER');
+      asset.nextDue = addDays(today, (index % 60) - 12);
+      asset.class = cycleDebugValue(['Lifting Equipment', 'Pressure System', 'Work Equipment'], index, asset.class);
+    },
+  });
+
+  const marketplaceStatuses = ['open', 'offered', 'assigned', 'in_progress', 'awaiting_review', 'completed'];
+  const marketplaceJobs = expandDebugCollection(initialMarketplaceJobs, yearlyTimelineCount, {
+    idPrefix: 'JOB',
+    idPadding: 4,
+    mutate: (job, index) => {
+      const linkedAsset = assets[index % assets.length];
+      const linkedAuditor = auditors[index % auditors.length];
+      const status = cycleDebugValue(marketplaceStatuses, index, 'open');
+      job.companyName = cycleDebugValue(
+        ['Acme Logistics', 'Meridian Facilities', 'Northpoint Estates', 'Harbour Industrial'],
+        index,
+        'Acme Logistics'
+      );
+      job.assetId = String(linkedAsset?.id || job.assetId || `AST-${String(index).padStart(3, '0')}`);
+      job.assetName = String(linkedAsset?.name || job.assetName || 'Asset');
+      job.site = String(linkedAsset?.site || job.site || 'Site');
+      job.regime = String(linkedAsset?.regime || job.regime || 'LOLER');
+      job.status = status;
+      const dayOffset = index % historyDays;
+      job.createdAt = getDebugDateByDayOffset(dayOffset, 8 + (index % 9), (index * 11) % 60).toISOString().slice(0, 10);
+      job.dueDate = addDays(today, 4 + (index % 40));
+      job.budget = roundMoney(Number(job.budget || 320) + index * 18);
+      job.matchedAuditorId = status === 'open' ? null : String(linkedAuditor?.id || null);
+      job.matchedAuditorName = status === 'open' ? '' : String(linkedAuditor?.name || '');
+      job.notes = `PO: PO-${String(5000 + index).padStart(4, '0')} | Cost centre: ${cycleDebugValue(['OPS', 'HSE', 'CAPEX'], index, 'OPS')}`;
+    },
+  });
+
+  const certificates = expandDebugCollection(initialCertificates, yearlyTimelineCount, {
+    idPrefix: 'CERT',
+    idPadding: 5,
+    idMinValue: 2000,
+    mutate: (certificate, index) => {
+      const linkedAsset = assets[index % assets.length];
+      const linkedAuditor = auditors[index % auditors.length];
+      certificate.assetId = String(linkedAsset?.id || certificate.assetId || '');
+      certificate.assetName = String(linkedAsset?.name || certificate.assetName || 'Asset');
+      certificate.provider = String(linkedAuditor?.name || certificate.provider || 'Provider');
+      certificate.regime = String(linkedAsset?.regime || certificate.regime || 'LOLER');
+      const dayOffset = index % historyDays;
+      certificate.issueDate = getDebugDateByDayOffset(dayOffset + 5, 10, (index * 13) % 60).toISOString().slice(0, 10);
+      certificate.expiryDate = addDays(today, 90 - index * 3);
+      certificate.status = cycleDebugValue(['valid', 'expiring', 'expired'], index, 'valid');
+    },
+  });
+
+  const inspectionTemplates = hydrateInspectionTemplates(defaultInspectionTemplates);
+  const inspectionLogs = buildDebugInspectionLogs(assets, historyDays);
+  const recurringProgrammes = buildDebugRecurringProgrammes(auditors, historyDays);
+  const financeInvoices = buildDebugFinanceInvoices(marketplaceJobs, auditors, historyDays);
+  const payoutRuns = buildDebugPayoutRuns(financeInvoices, historyDays);
+
+  const integrationConnections = expandDebugCollection(defaultIntegrationConnections, 12, {
+    idPrefix: 'INT',
+    mutate: (integration, index) => {
+      integration.name = `${String(integration.name || 'Integration')} ${index}`;
+      integration.status = index % 2 === 0 ? 'connected' : 'not_connected';
+      integration.endpoint =
+        integration.status === 'connected'
+          ? `https://api.integration-${index}.example/incert/sync`
+          : '';
+      const dayOffset = index % historyDays;
+      integration.lastSyncAt =
+        integration.status === 'connected'
+          ? getDebugDateByDayOffset(dayOffset, 7 + (index % 10), (index * 6) % 60).toISOString()
+          : '';
+    },
+  });
+  const apiClients = expandDebugCollection(defaultApiClients, 12, {
+    idPrefix: 'API',
+    mutate: (client, index) => {
+      client.name = `${String(client.name || 'API Client')} ${index}`;
+      client.status = index % 3 === 0 ? 'inactive' : 'active';
+      client.secretFingerprint = `fp_${String(8200 + index).padStart(6, '0')}`;
+      client.createdAt = getDebugDateByDayOffset((index + 5) % historyDays, 9, 15).toISOString();
+      client.secretRotatedAt = getDebugDateByDayOffset(index % historyDays, 9, 30).toISOString();
+    },
+  });
+  const webhookEndpoints = expandDebugCollection(defaultWebhookEndpoints, 12, {
+    idPrefix: 'WEP',
+    mutate: (endpoint, index) => {
+      endpoint.name = `${String(endpoint.name || 'Webhook')} ${index}`;
+      endpoint.status = index % 4 === 0 ? 'inactive' : 'active';
+      endpoint.targetUrl = `https://hooks-${index}.example/incert/events`;
+      endpoint.lastDeliveredAt = endpoint.status === 'active'
+        ? getDebugDateByDayOffset(index % historyDays, 10 + (index % 8), (index * 5) % 60).toISOString()
+        : '';
+    },
+  });
+  const enterpriseSsoProviders = expandDebugCollection(defaultEnterpriseSsoProviders, 8, {
+    idPrefix: 'SSO',
+    mutate: (provider, index) => {
+      provider.providerName = cycleDebugValue(['Microsoft Entra ID', 'Okta Workforce', 'Google Workspace'], index, 'SSO');
+      provider.status = index % 4 === 0 ? 'disabled' : 'configured';
+      provider.domain = `tenant-${index}.example`;
+      provider.updatedAt = getDebugDateByDayOffset(index % historyDays, 6 + (index % 12), (index * 7) % 60).toISOString();
+    },
+  });
+  const enterpriseAccessPolicies = expandDebugCollection(defaultEnterpriseAccessPolicies, 12, {
+    idPrefix: 'POL',
+    mutate: (policy, index) => {
+      policy.name = `${String(policy.name || 'Access policy')} ${index}`;
+      policy.status = index % 3 === 0 ? 'disabled' : 'enabled';
+      policy.updatedAt = getDebugDateByDayOffset(index % historyDays, 8 + (index % 10), (index * 9) % 60).toISOString();
+    },
+  });
+  const templateBlueprints = expandDebugCollection(defaultTemplateBlueprints, 24, {
+    idPrefix: 'TPLX',
+    mutate: (template, index) => {
+      template.name = `${String(template.name || 'Template')} ${index}`;
+      template.status = index % 5 === 0 ? 'draft' : 'published';
+      template.currentVersion = `${1 + (index % 3)}.0`;
+    },
+  });
+  const templateListings = expandDebugCollection(defaultTemplateListings, 16, {
+    idPrefix: 'LST',
+    mutate: (listing, index) => {
+      listing.status = index % 4 === 0 ? 'paused' : 'active';
+      listing.templateId = String(templateBlueprints[index % templateBlueprints.length]?.id || listing.templateId || '');
+    },
+  });
+  const licenceGrants = expandDebugCollection(defaultLicenceGrants, 18, {
+    idPrefix: 'LIC',
+    mutate: (grant, index) => {
+      grant.listingId = String(templateListings[index % templateListings.length]?.id || grant.listingId || '');
+      grant.buyerOrgId = cycleDebugValue(['acme-logistics', 'northpoint-estates', 'meridian-fm'], index, 'acme-logistics');
+      grant.seats = 10 + index * 2;
+      grant.startAt = getDebugDateByDayOffset((index + 30) % historyDays, 9, 0).toISOString();
+      grant.endAt = addDays(today, 180 + index * 12);
+    },
+  });
+  const auditRuns = expandDebugCollection(defaultAuditRuns, yearlyTimelineCount, {
+    idPrefix: 'RUN',
+    mutate: (run, index) => {
+      run.auditJobId = String(marketplaceJobs[index % marketplaceJobs.length]?.id || run.auditJobId || '');
+      run.templateId = String(templateBlueprints[index % templateBlueprints.length]?.id || run.templateId || '');
+      run.status = cycleDebugValue(['completed', 'in_progress', 'queued'], index, 'completed');
+      const dayOffset = index % historyDays;
+      run.startedAt = getDebugDateByDayOffset(dayOffset, 7 + (index % 10), (index * 8) % 60).toISOString();
+      run.completedAt = run.status === 'completed'
+        ? getDebugDateByDayOffset(dayOffset, 10 + (index % 8), (index * 8 + 35) % 60).toISOString()
+        : '';
+    },
+  });
+  const auditFindings = expandDebugCollection(defaultAuditFindings, yearlyTimelineCount, {
+    idPrefix: 'FND',
+    mutate: (finding, index) => {
+      finding.auditRunId = String(auditRuns[index % auditRuns.length]?.id || finding.auditRunId || '');
+      finding.severity = cycleDebugValue(['low', 'medium', 'high'], index, 'medium');
+      finding.riskScore = 4 + (index % 16);
+      finding.status = index % 4 === 0 ? 'closed' : 'open';
+      finding.taxonomyCode = cycleDebugValue(['HS-EGRESS', 'ELEC-LOCKOUT', 'PSSR-SAFETYVALVE', 'PUWER-GUARDING'], index, 'GENERAL');
+      finding.description = `Debug finding ${index}: ${finding.description || 'Inspection observation recorded.'}`;
+    },
+  });
+  const auditActions = expandDebugCollection(defaultAuditActions, yearlyTimelineCount, {
+    idPrefix: 'ACT',
+    mutate: (action, index) => {
+      action.findingId = String(auditFindings[index % auditFindings.length]?.id || action.findingId || '');
+      action.assignee = cycleDebugValue(['Site Manager', 'HSE Lead', 'Maintenance Team', 'Audit Coordinator'], index, 'Site Manager');
+      action.status = cycleDebugValue(['open', 'in_progress', 'closed'], index, 'open');
+      action.dueDate = addDays(today, 5 + index);
+      action.closureEvidenceCount = Math.max(0, index % 3);
+    },
+  });
+  const reportArtifacts = expandDebugCollection(defaultReportArtifacts, yearlyTimelineCount, {
+    idPrefix: 'RPT',
+    mutate: (artifact, index) => {
+      artifact.auditRunId = String(auditRuns[index % auditRuns.length]?.id || artifact.auditRunId || '');
+      artifact.version = 1 + (index % 3);
+      artifact.status = index % 5 === 0 ? 'superseded' : 'valid';
+      artifact.createdAt = getDebugDateByDayOffset(index % historyDays, 11 + (index % 6), (index * 10) % 60).toISOString();
+      artifact.pdfUri = `storage://incert-reports/${artifact.auditRunId}/v${artifact.version}/report.pdf`;
+      artifact.htmlUri = `storage://incert-reports/${artifact.auditRunId}/v${artifact.version}/report.html`;
+      artifact.signedPdfUrl = `https://signed.incert.example/reports/${artifact.auditRunId}/v${artifact.version}.pdf`;
+      artifact.signedHtmlUrl = `https://signed.incert.example/reports/${artifact.auditRunId}/v${artifact.version}.html`;
+    },
+  });
+  const shareLinks = expandDebugCollection(defaultShareLinks, yearlyTimelineCount, {
+    idPrefix: 'SHR',
+    mutate: (link, index) => {
+      link.reportArtifactId = String(reportArtifacts[index % reportArtifacts.length]?.id || link.reportArtifactId || '');
+      link.expiresAt = addDays(today, 7 + index);
+      link.url = `https://portal.incert.example/share/${link.id}`;
+      link.auditLogEnabled = index % 4 !== 0;
+    },
+  });
+  const marketplaceBidBoard = expandDebugCollection(defaultMarketplaceBidBoard, yearlyTimelineCount, {
+    idPrefix: 'BID',
+    mutate: (bid, index) => {
+      const linkedJob = marketplaceJobs[index % marketplaceJobs.length];
+      const linkedAuditor = auditors[index % auditors.length];
+      bid.requestId = String(linkedJob?.id || bid.requestId || '');
+      bid.providerOrgName = String(linkedAuditor?.name || bid.providerOrgName || 'Provider');
+      bid.status = cycleDebugValue(['submitted', 'awarded', 'submitted', 'declined'], index, 'submitted');
+      bid.totalExVat = roundMoney(340 + index * 19);
+      bid.vatAmount = roundMoney(bid.totalExVat * 0.2);
+      bid.rankScore = 75 + (index % 20);
+      bid.qualityScore = 72 + (index % 25);
+      bid.leadTimeHours = 6 + (index % 18);
+      bid.assignedAuditor = String(linkedAuditor?.name || 'Auditor');
+      bid.assignmentStatus = cycleDebugValue(['assigned', 'accepted', 'pending'], index, 'pending');
+      bid.submittedAt = getDebugDateByDayOffset(index % historyDays, 8 + (index % 9), (index * 14) % 60).toISOString();
+    },
+  });
+  const dispatchSlaEvents = expandDebugCollection(defaultDispatchSlaEvents, yearlyTimelineCount, {
+    idPrefix: 'SLA',
+    mutate: (event, index) => {
+      const linkedJob = marketplaceJobs[index % marketplaceJobs.length];
+      event.requestId = String(linkedJob?.id || event.requestId || '');
+      event.eventType = cycleDebugValue(['offer_sent', 'offer_accepted', 'offer_expired', 'reoffered'], index, 'offer_sent');
+      event.minutesFromOpen = 8 + index * 4;
+      event.isBreach = index % 7 === 0;
+      event.eventAt = getDebugDateByDayOffset(index % historyDays, 9 + (index % 8), (index * 11) % 60).toISOString();
+    },
+  });
+  const evidenceAiJobs = expandDebugCollection(defaultEvidenceAiJobs, yearlyTimelineCount, {
+    idPrefix: 'EAI',
+    mutate: (job, index) => {
+      const linkedJob = marketplaceJobs[index % marketplaceJobs.length];
+      job.evidenceRef = `evidence://${String(linkedJob?.id || 'JOB-0000')}/bundle-${String(index + 1).padStart(3, '0')}.pdf`;
+      job.status = cycleDebugValue(['queued', 'running', 'completed', 'failed'], index, 'queued');
+      job.reviewDecision = job.status === 'completed' ? cycleDebugValue(['accepted', 'pending', 'rejected'], index, 'pending') : 'pending';
+      job.confidenceScore = job.status === 'completed' ? Number((0.72 + (index % 20) * 0.01).toFixed(2)) : 0;
+      const dayOffset = index % historyDays;
+      job.createdAt = getDebugDateByDayOffset(dayOffset, 7 + (index % 11), (index * 9) % 60).toISOString();
+      job.completedAt =
+        job.status === 'completed'
+          ? getDebugDateByDayOffset(dayOffset, 10 + (index % 10), (index * 9 + 22) % 60).toISOString()
+          : '';
+    },
+  });
+  const regulatorVerificationRequests = expandDebugCollection(defaultRegulatorVerificationRequests, yearlyTimelineCount, {
+    idPrefix: 'VRQ',
+    mutate: (request, index) => {
+      request.referenceId = String(certificates[index % certificates.length]?.id || request.referenceId || '');
+      request.status = cycleDebugValue(['open', 'in_review', 'resolved'], index, 'open');
+      request.requestor = cycleDebugValue(['Insurer Desk', 'HSE Liaison', 'Client Compliance Desk'], index, 'Insurer Desk');
+      request.requestedAt = getDebugDateByDayOffset(index % historyDays, 9 + (index % 8), (index * 13) % 60).toISOString();
+      request.dueAt = addDays(today, 2 + index);
+    },
+  });
+  const analyticsRiskSignals = expandDebugCollection(defaultAnalyticsRiskSignals, yearlyTimelineCount, {
+    idPrefix: 'RSK',
+    mutate: (signal, index) => {
+      signal.organization = cycleDebugValue(['Acme Logistics', 'Northpoint Estates', 'Meridian Facilities'], index, 'Acme Logistics');
+      signal.signal = cycleDebugValue(
+        ['repeat_high_severity_findings', 'dispatch_sla_near_breach', 'overdue_actions_cluster', 'evidence_gap_alert'],
+        index,
+        'dispatch_sla_near_breach'
+      );
+      signal.riskLevel = cycleDebugValue(['high', 'medium', 'low'], index, 'medium');
+      signal.confidence = Number((0.62 + (index % 28) * 0.01).toFixed(2));
+      signal.triggeredAt = getDebugDateByDayOffset(index % historyDays, 8 + (index % 11), (index * 5) % 60).toISOString();
+    },
+  });
+  const webhookDeliveryEvents = expandDebugCollection(defaultWebhookDeliveryEvents, yearlyTimelineCount, {
+    idPrefix: 'WEB',
+    mutate: (event, index) => {
+      const linkedEndpoint = webhookEndpoints[index % webhookEndpoints.length];
+      event.endpointLabel = String(linkedEndpoint?.name || event.endpointLabel || 'Webhook');
+      event.status = cycleDebugValue(['delivered', 'failed', 'retrying'], index, 'delivered');
+      event.attempts = 1 + (index % 4);
+      event.lastAttemptAt = getDebugDateByDayOffset(index % historyDays, 10 + (index % 8), (index * 12) % 60).toISOString();
+      event.latencyMs = event.status === 'failed' ? 0 : 120 + (index % 8) * 35;
+    },
+  });
+  const mobileAuditSessions = expandDebugCollection(defaultMobileAuditSessions, yearlyTimelineCount, {
+    idPrefix: 'MAS',
+    mutate: (session, index) => {
+      const linkedJob = marketplaceJobs[index % marketplaceJobs.length];
+      session.jobId = String(linkedJob?.id || session.jobId || '');
+      session.deviceName = cycleDebugValue(
+        ['iPhone 15 - BVUK-01', 'Pixel 9 - NSP-03', 'iPad Air - ACME-07', 'Galaxy Tab - ALL-02'],
+        index,
+        'Mobile Device'
+      );
+      session.syncStatus = cycleDebugValue(['synced', 'queued', 'syncing'], index, 'synced');
+      session.attestationStatus = cycleDebugValue(['verified', 'pending', 'verified'], index, 'verified');
+      const dayOffset = index % historyDays;
+      session.startedAt = getDebugDateByDayOffset(dayOffset, 7 + (index % 12), (index * 6) % 60).toISOString();
+      session.closedAt =
+        index % 3 === 0
+          ? getDebugDateByDayOffset(dayOffset, 11 + (index % 8), (index * 6 + 18) % 60).toISOString()
+          : '';
+    },
+  });
+  const enterpriseSecurityEvents = expandDebugCollection(defaultEnterpriseSecurityEvents, yearlyTimelineCount, {
+    idPrefix: 'SEC',
+    mutate: (event, index) => {
+      event.eventType = cycleDebugValue(
+        ['sso_policy_updated', 'suspicious_login_blocked', 'webhook_signature_invalid', 'mfa_challenge_enforced'],
+        index,
+        'sso_policy_updated'
+      );
+      event.severity = cycleDebugValue(['low', 'medium', 'high'], index, 'medium');
+      event.actor = cycleDebugValue(
+        ['system.guard', 'incert.admin@incert.local', 'security.bot', 'audit.ops@incert.local'],
+        index,
+        'system.guard'
+      );
+      event.occurredAt = getDebugDateByDayOffset(index % historyDays, 6 + (index % 13), (index * 10) % 60).toISOString();
+    },
+  });
+  const qaHarnessRuns = expandDebugCollection(defaultQaHarnessRuns, yearlyTimelineCount, {
+    idPrefix: 'QAR',
+    mutate: (run, index) => {
+      run.suiteName = cycleDebugValue(
+        ['Marketplace Core', 'Ops Console', 'Evidence Pipeline', 'Mobile Session Sync'],
+        index,
+        'Marketplace Core'
+      );
+      run.status = cycleDebugValue(['passed', 'running', 'failed', 'queued'], index, 'passed');
+      run.branch = cycleDebugValue(['main', 'release/ops', 'feature/evidence'], index, 'main');
+      run.passRate = run.status === 'failed' ? 68 + (index % 8) : 84 + (index % 16);
+      const dayOffset = index % historyDays;
+      run.startedAt = getDebugDateByDayOffset(dayOffset, 5 + (index % 12), (index * 7) % 60).toISOString();
+      run.completedAt = run.status === 'running' || run.status === 'queued'
+        ? ''
+        : getDebugDateByDayOffset(dayOffset, 8 + (index % 10), (index * 7 + 25) % 60).toISOString();
+    },
+  });
+  const releaseGateResults = expandDebugCollection(defaultReleaseGateResults, yearlyTimelineCount, {
+    idPrefix: 'RLG',
+    mutate: (gate, index) => {
+      gate.gateName = cycleDebugValue(
+        ['Security checks', 'Data migrations', 'Performance budget', 'Rollback readiness'],
+        index,
+        'Security checks'
+      );
+      gate.status = cycleDebugValue(['passed', 'pending', 'failed'], index, 'pending');
+      gate.evaluatedAt = getDebugDateByDayOffset(index % historyDays, 9 + (index % 8), (index * 9) % 60).toISOString();
+      gate.notes = gate.status === 'passed' ? 'Checks completed.' : gate.status === 'failed' ? 'Action required before release.' : 'Awaiting run completion.';
+    },
+  });
+  const tenantInvites = expandDebugCollection(defaultTenantInvites, yearlyTimelineCount, {
+    idPrefix: 'INV',
+    idPadding: 4,
+    mutate: (invite, index) => {
+      invite.email = `ops.team+${index}@acme-logistics.example`;
+      invite.role = cycleDebugValue(['dutyholder_admin', 'site_manager', 'provider_admin', 'insurer_viewer'], index, 'site_manager');
+      invite.status = cycleDebugValue(['pending', 'accepted', 'pending'], index, 'pending');
+      invite.sentAt = getDebugDateByDayOffset(index % historyDays, 9 + (index % 7), (index * 8) % 60).toISOString();
+      invite.acceptedAt =
+        invite.status === 'accepted'
+          ? getDebugDateByDayOffset(index % historyDays, 13 + (index % 5), (index * 8 + 20) % 60).toISOString()
+          : '';
+    },
+  });
+  const evidenceProvenanceEvents = expandDebugCollection(defaultEvidenceProvenanceEvents, yearlyTimelineCount, {
+    idPrefix: 'PRV',
+    mutate: (event, index) => {
+      const linkedJob = marketplaceJobs[index % marketplaceJobs.length];
+      event.evidenceRef = `evidence://${String(linkedJob?.id || 'JOB-0000')}/evidence-${String(index + 1).padStart(3, '0')}.jpg`;
+      event.eventType = cycleDebugValue(['file_uploaded', 'ai_extracted', 'manual_reviewed', 'hash_verified'], index, 'file_uploaded');
+      event.hash = `sha256:dbg${String(100000 + index)}`;
+      event.deviceMetadata = cycleDebugValue(['ios:camera:v15', 'android:camera:v14', 'server:ai-pipeline', 'web:portal-upload'], index, 'web:portal-upload');
+      event.createdAt = getDebugDateByDayOffset(index % historyDays, 8 + (index % 10), (index * 7) % 60).toISOString();
+    },
+  });
+
+  return {
+    assets,
+    certificates,
+    auditors,
+    providerDirectory,
+    marketplaceJobs,
+    inspectionLogs,
+    recurringProgrammes,
+    publicSiteConfig: deepCloneStateValue(defaultPublicSiteConfig, defaultPublicSiteConfig),
+    onboardingTasks: deepCloneStateValue(defaultOnboardingTasks, []),
+    financeInvoices,
+    payoutRuns,
+    inspectionTemplates,
+    integrationConnections,
+    apiClients,
+    webhookEndpoints,
+    enterpriseSsoProviders,
+    enterpriseAccessPolicies,
+    templateBlueprints,
+    templateListings,
+    licenceGrants,
+    auditRuns,
+    auditFindings,
+    auditActions,
+    reportArtifacts,
+    shareLinks,
+    marketplaceBidBoard,
+    dispatchSlaEvents,
+    evidenceAiJobs,
+    regulatorVerificationRequests,
+    analyticsRiskSignals,
+    webhookDeliveryEvents,
+    mobileAuditSessions,
+    enterpriseSecurityEvents,
+    qaHarnessRuns,
+    releaseGateResults,
+    tenantInvites,
+    evidenceProvenanceEvents,
+  };
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isLoaded, setIsLoaded] = useState(false);
@@ -3335,6 +4600,7 @@ export default function App() {
   });
   const [certificates, setCertificates] = useState(initialCertificates);
   const [auditors, setAuditors] = useState(mockProviders);
+  const [providerDirectory, setProviderDirectory] = useState(mockProviders);
   const [marketplaceJobs, setMarketplaceJobs] = useState(() => {
     if (typeof window === 'undefined') {
       return initialMarketplaceJobs;
@@ -3389,6 +4655,30 @@ export default function App() {
     }
     return loadStoredIntegrationConnections();
   });
+  const [apiClients, setApiClients] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultApiClients;
+    }
+    return loadStoredApiClients();
+  });
+  const [webhookEndpoints, setWebhookEndpoints] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultWebhookEndpoints;
+    }
+    return loadStoredWebhookEndpoints();
+  });
+  const [enterpriseSsoProviders, setEnterpriseSsoProviders] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultEnterpriseSsoProviders;
+    }
+    return loadStoredEnterpriseSsoProviders();
+  });
+  const [enterpriseAccessPolicies, setEnterpriseAccessPolicies] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultEnterpriseAccessPolicies;
+    }
+    return loadStoredEnterpriseAccessPolicies();
+  });
   const [templateBlueprints, setTemplateBlueprints] = useState(() => {
     if (typeof window === 'undefined') {
       return defaultTemplateBlueprints;
@@ -3437,7 +4727,87 @@ export default function App() {
     }
     return loadStoredShareLinks();
   });
+  const [marketplaceBidBoard, setMarketplaceBidBoard] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultMarketplaceBidBoard;
+    }
+    return loadStoredMarketplaceBidBoard();
+  });
+  const [dispatchSlaEvents, setDispatchSlaEvents] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultDispatchSlaEvents;
+    }
+    return loadStoredDispatchSlaEvents();
+  });
+  const [evidenceAiJobs, setEvidenceAiJobs] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultEvidenceAiJobs;
+    }
+    return loadStoredEvidenceAiJobs();
+  });
+  const [regulatorVerificationRequests, setRegulatorVerificationRequests] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultRegulatorVerificationRequests;
+    }
+    return loadStoredRegulatorVerificationRequests();
+  });
+  const [analyticsRiskSignals, setAnalyticsRiskSignals] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultAnalyticsRiskSignals;
+    }
+    return loadStoredAnalyticsRiskSignals();
+  });
+  const [webhookDeliveryEvents, setWebhookDeliveryEvents] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultWebhookDeliveryEvents;
+    }
+    return loadStoredWebhookDeliveryEvents();
+  });
+  const [mobileAuditSessions, setMobileAuditSessions] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultMobileAuditSessions;
+    }
+    return loadStoredMobileAuditSessions();
+  });
+  const [enterpriseSecurityEvents, setEnterpriseSecurityEvents] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultEnterpriseSecurityEvents;
+    }
+    return loadStoredEnterpriseSecurityEvents();
+  });
+  const [qaHarnessRuns, setQaHarnessRuns] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultQaHarnessRuns;
+    }
+    return loadStoredQaHarnessRuns();
+  });
+  const [releaseGateResults, setReleaseGateResults] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultReleaseGateResults;
+    }
+    return loadStoredReleaseGateResults();
+  });
+  const [tenantInvites, setTenantInvites] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultTenantInvites;
+    }
+    return loadStoredTenantInvites();
+  });
+  const [evidenceProvenanceEvents, setEvidenceProvenanceEvents] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultEvidenceProvenanceEvents;
+    }
+    return loadStoredEvidenceProvenanceEvents();
+  });
+  const [authRuntimeMode, setAuthRuntimeMode] = useState(() => {
+    if (typeof window === 'undefined') {
+      return defaultAuthRuntimeMode;
+    }
+    return loadStoredAuthRuntimeMode();
+  });
+  const [supabaseSession, setSupabaseSession] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const isSupabaseRuntime = authRuntimeMode === 'supabase' && SUPABASE_ENV_CONFIGURED;
 
   // UI State
   const [toasts, setToasts] = useState([]);
@@ -3466,7 +4836,132 @@ export default function App() {
     }
     return loadStoredDebugRole();
   });
+  const isDebugBypassSession = String(authSession?.email || '').trim().toLowerCase() === 'debug@incert.local';
+  const shouldTrackSupabaseSession = Boolean(SUPABASE_ENV_CONFIGURED && supabase && !isDebugBypassSession);
   const handledHashRef = useRef('');
+  const debugSnapshotValidatedRef = useRef(false);
+  const resetWorkspaceToMockData = useCallback(() => {
+    const debugSnapshot = buildDebugMockSnapshot();
+    setAssets(debugSnapshot.assets);
+    setCertificates(debugSnapshot.certificates);
+    setAuditors(debugSnapshot.auditors);
+    setProviderDirectory(debugSnapshot.providerDirectory);
+    setMarketplaceJobs(debugSnapshot.marketplaceJobs);
+    setInspectionLogs(debugSnapshot.inspectionLogs);
+    setRecurringProgrammes(debugSnapshot.recurringProgrammes);
+    setPublicSiteConfig(debugSnapshot.publicSiteConfig);
+    setOnboardingTasks(debugSnapshot.onboardingTasks);
+    setFinanceInvoices(debugSnapshot.financeInvoices);
+    setPayoutRuns(debugSnapshot.payoutRuns);
+    setInspectionTemplates(debugSnapshot.inspectionTemplates);
+    setIntegrationConnections(debugSnapshot.integrationConnections);
+    setApiClients(debugSnapshot.apiClients);
+    setWebhookEndpoints(debugSnapshot.webhookEndpoints);
+    setEnterpriseSsoProviders(debugSnapshot.enterpriseSsoProviders);
+    setEnterpriseAccessPolicies(debugSnapshot.enterpriseAccessPolicies);
+    setTemplateBlueprints(debugSnapshot.templateBlueprints);
+    setTemplateListings(debugSnapshot.templateListings);
+    setLicenceGrants(debugSnapshot.licenceGrants);
+    setAuditRuns(debugSnapshot.auditRuns);
+    setAuditFindings(debugSnapshot.auditFindings);
+    setAuditActions(debugSnapshot.auditActions);
+    setReportArtifacts(debugSnapshot.reportArtifacts);
+    setShareLinks(debugSnapshot.shareLinks);
+    setMarketplaceBidBoard(debugSnapshot.marketplaceBidBoard);
+    setDispatchSlaEvents(debugSnapshot.dispatchSlaEvents);
+    setEvidenceAiJobs(debugSnapshot.evidenceAiJobs);
+    setRegulatorVerificationRequests(debugSnapshot.regulatorVerificationRequests);
+    setAnalyticsRiskSignals(debugSnapshot.analyticsRiskSignals);
+    setWebhookDeliveryEvents(debugSnapshot.webhookDeliveryEvents);
+    setMobileAuditSessions(debugSnapshot.mobileAuditSessions);
+    setEnterpriseSecurityEvents(debugSnapshot.enterpriseSecurityEvents);
+    setQaHarnessRuns(debugSnapshot.qaHarnessRuns);
+    setReleaseGateResults(debugSnapshot.releaseGateResults);
+    setTenantInvites(debugSnapshot.tenantInvites);
+    setEvidenceProvenanceEvents(debugSnapshot.evidenceProvenanceEvents);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(DEBUG_SNAPSHOT_VERSION_STORAGE_KEY, DEBUG_SNAPSHOT_SCHEMA_VERSION);
+      } catch {
+        // no-op when storage is unavailable
+      }
+    }
+  }, []);
+  const clearSupabaseOpsAndProviderState = useCallback(() => {
+    setAssets([]);
+    setCertificates([]);
+    setMarketplaceJobs([]);
+    setInspectionLogs([]);
+    setRecurringProgrammes([]);
+    setProviderDirectory([]);
+    setAuditors([]);
+    setTemplateBlueprints([]);
+    setTenantInvites([]);
+    setMarketplaceBidBoard([]);
+    setDispatchSlaEvents([]);
+    setEvidenceAiJobs([]);
+    setEvidenceProvenanceEvents([]);
+    setRegulatorVerificationRequests([]);
+    setAuditFindings([]);
+    setAuditActions([]);
+    setFinanceInvoices([]);
+    setPayoutRuns([]);
+    setAnalyticsRiskSignals([]);
+    setIntegrationConnections([]);
+    setApiClients([]);
+    setWebhookEndpoints([]);
+    setWebhookDeliveryEvents([]);
+    setMobileAuditSessions([]);
+    setEnterpriseSsoProviders([]);
+    setEnterpriseAccessPolicies([]);
+    setEnterpriseSecurityEvents([]);
+    setQaHarnessRuns([]);
+    setReleaseGateResults([]);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (!isDebugBypassSession) {
+      debugSnapshotValidatedRef.current = false;
+      return;
+    }
+
+    if (debugSnapshotValidatedRef.current) {
+      return;
+    }
+
+    let storedSnapshotVersion = '';
+    try {
+      storedSnapshotVersion = String(window.localStorage.getItem(DEBUG_SNAPSHOT_VERSION_STORAGE_KEY) || '').trim();
+    } catch {
+      storedSnapshotVersion = '';
+    }
+
+    const minimumTimelineRecords = Math.max(90, Math.floor(DEBUG_MOCK_HISTORY_DAYS * 0.9));
+    const hasYearScaleDataset =
+      marketplaceJobs.length >= minimumTimelineRecords &&
+      inspectionLogs.length >= minimumTimelineRecords &&
+      marketplaceBidBoard.length >= minimumTimelineRecords;
+    const shouldRefreshSnapshot =
+      storedSnapshotVersion !== DEBUG_SNAPSHOT_SCHEMA_VERSION || !hasYearScaleDataset;
+
+    debugSnapshotValidatedRef.current = true;
+    if (!shouldRefreshSnapshot) {
+      return;
+    }
+
+    resetWorkspaceToMockData();
+    addToast('Debug data refreshed with a 12-month timeline.', 'info');
+  }, [
+    inspectionLogs.length,
+    isDebugBypassSession,
+    marketplaceBidBoard.length,
+    marketplaceJobs.length,
+    resetWorkspaceToMockData,
+  ]);
 
   useEffect(() => {
     setInspectionTemplates((currentTemplates) => {
@@ -3477,6 +4972,794 @@ export default function App() {
       return hydratedTemplates;
     });
   }, []);
+
+  useEffect(() => {
+    if (!shouldTrackSupabaseSession) {
+      setSupabaseSession(null);
+      return undefined;
+    }
+
+    let isActive = true;
+
+    supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (!isActive) {
+          return;
+        }
+        if (error) {
+          console.error('Failed to load Supabase session', error);
+          setSupabaseSession(null);
+          return;
+        }
+        setSupabaseSession(data.session ?? null);
+      })
+      .catch((error) => {
+        if (!isActive) {
+          return;
+        }
+        console.error('Supabase session lookup crashed', error);
+        setSupabaseSession(null);
+      });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSupabaseSession(session ?? null);
+    });
+
+    return () => {
+      isActive = false;
+      subscription.unsubscribe();
+    };
+  }, [shouldTrackSupabaseSession]);
+
+  useEffect(() => {
+    if (!SUPABASE_ENV_CONFIGURED || !supabase) {
+      return;
+    }
+
+    const normalizedEmail = String(authSession?.email || '').trim().toLowerCase();
+    if (!authSession?.isAuthenticated || !normalizedEmail || normalizedEmail === 'debug@incert.local') {
+      return;
+    }
+
+    if (authRuntimeMode !== 'supabase') {
+      setAuthRuntimeMode('supabase');
+    }
+  }, [authRuntimeMode, authSession?.email, authSession?.isAuthenticated]);
+
+  useEffect(() => {
+    if (!shouldTrackSupabaseSession) {
+      return;
+    }
+    if (supabaseSession?.user?.id && authRuntimeMode !== 'supabase') {
+      setAuthRuntimeMode('supabase');
+    }
+  }, [authRuntimeMode, shouldTrackSupabaseSession, supabaseSession?.user?.id]);
+
+  useEffect(() => {
+    if (!isSupabaseRuntime) {
+      return;
+    }
+
+    const user = supabaseSession?.user;
+    if (!user?.id || !user?.email) {
+      setAuthSession(defaultAuthSession);
+      return;
+    }
+
+    const accountTypeFromMetadata = normalizeUserRole(
+      user.user_metadata?.account_type || user.app_metadata?.account_type || 'company'
+    );
+
+    setAuthSession({
+      isAuthenticated: true,
+      email: String(user.email || '').toLowerCase(),
+      fullName: String(user.user_metadata?.full_name || user.user_metadata?.name || '').trim(),
+      accountType: accountTypeFromMetadata,
+      signedInAt: new Date().toISOString(),
+    });
+  }, [isSupabaseRuntime, supabaseSession]);
+
+  useEffect(() => {
+    if (!isSupabaseRuntime || supabaseSession?.user?.id) {
+      return;
+    }
+
+    // In Supabase runtime without an authenticated Supabase session (e.g. debug bypass),
+    // do not surface seeded/mock operations or provider datasets.
+    clearSupabaseOpsAndProviderState();
+  }, [isSupabaseRuntime, supabaseSession?.user?.id, clearSupabaseOpsAndProviderState]);
+
+  useEffect(() => {
+    if (!isSupabaseRuntime || !supabase || !supabaseSession?.user?.id) {
+      return;
+    }
+
+    let isCancelled = false;
+    clearSupabaseOpsAndProviderState();
+
+    const loadSupabaseData = async () => {
+      const userId = supabaseSession.user.id;
+
+      const [
+        membershipsResult,
+        organizationsResult,
+        sitesResult,
+        assetsResult,
+        requestsResult,
+        requestAssetsResult,
+        jobsResult,
+        certificatesResult,
+      ] = await Promise.all([
+        supabase
+          .from('organization_memberships')
+          .select('organization_id, role, is_default, created_at')
+          .eq('user_id', userId)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: true }),
+        supabase.from('organizations').select('id, name, org_type, metadata'),
+        supabase.from('sites').select('id, name'),
+        supabase
+          .from('assets')
+          .select('id, organization_id, site_id, external_asset_id, name, asset_class, regime, next_due_date, status')
+          .order('next_due_date', { ascending: true }),
+        supabase
+          .from('inspection_requests')
+          .select('id, organization_id, site_id, title, regime, status, preferred_end_date, created_at')
+          .order('created_at', { ascending: false })
+          .limit(300),
+        supabase.from('inspection_request_assets').select('request_id, asset_id'),
+        supabase
+          .from('inspection_jobs')
+          .select('id, request_id, provider_organization_id, status, notes, created_at')
+          .order('created_at', { ascending: false })
+          .limit(300),
+        supabase
+          .from('certificates')
+          .select('id, certificate_number, asset_id, provider_organization_id, regime, issue_date, expiry_date, status, sha256_hash')
+          .order('issued_at', { ascending: false })
+          .limit(300),
+      ]);
+
+      if (isCancelled) {
+        return;
+      }
+
+      const memberships = Array.isArray(membershipsResult.data) ? membershipsResult.data : [];
+      const organizations = Array.isArray(organizationsResult.data) ? organizationsResult.data : [];
+      const sites = Array.isArray(sitesResult.data) ? sitesResult.data : [];
+      const assetRows = Array.isArray(assetsResult.data) ? assetsResult.data : [];
+      const requestRows = Array.isArray(requestsResult.data) ? requestsResult.data : [];
+      const requestAssetRows = Array.isArray(requestAssetsResult.data) ? requestAssetsResult.data : [];
+      const jobRows = Array.isArray(jobsResult.data) ? jobsResult.data : [];
+      const certificateRows = Array.isArray(certificatesResult.data) ? certificatesResult.data : [];
+
+      const primaryMembership =
+        memberships.find((membership) => membership?.is_default) || memberships[0] || null;
+      if (primaryMembership?.role) {
+        setDebugRole(mapSupabaseRoleToUserRole(primaryMembership.role));
+      }
+
+      const organizationNameById = new Map(
+        organizations.map((organization) => [String(organization.id), String(organization.name || 'Organization')])
+      );
+      const siteNameById = new Map(sites.map((site) => [String(site.id), String(site.name || 'Site')]));
+
+      const mappedAssets = assetRows.map((asset) => {
+        const fallbackAssetCode = `AST-${String(asset.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+        const displayId = String(asset.external_asset_id || fallbackAssetCode || asset.id || '').trim();
+        return {
+          id: displayId || fallbackAssetCode,
+          dbId: String(asset.id || ''),
+          name: String(asset.name || 'Unnamed asset'),
+          site: siteNameById.get(String(asset.site_id || '')) || 'Unassigned site',
+          class: String(asset.asset_class || 'Asset'),
+          regime: String(asset.regime || '').toUpperCase() || 'LOLER',
+          nextDue: String(asset.next_due_date || new Date().toISOString().slice(0, 10)),
+        };
+      });
+
+      const assetByDbId = new Map(mappedAssets.map((asset) => [String(asset.dbId || ''), asset]));
+      setAssets(mappedAssets);
+
+      const requestAssetByRequestId = new Map();
+      requestAssetRows.forEach((entry) => {
+        const requestId = String(entry.request_id || '');
+        if (!requestId || requestAssetByRequestId.has(requestId)) {
+          return;
+        }
+        const linkedAsset = assetByDbId.get(String(entry.asset_id || ''));
+        if (linkedAsset) {
+          requestAssetByRequestId.set(requestId, linkedAsset);
+        }
+      });
+
+      const jobByRequestId = new Map();
+      jobRows.forEach((job) => {
+        const requestId = String(job.request_id || '');
+        if (!requestId || jobByRequestId.has(requestId)) {
+          return;
+        }
+        jobByRequestId.set(requestId, job);
+      });
+
+      const mappedMarketplaceJobs = requestRows.map((request) => {
+        const requestId = String(request.id || '');
+        const linkedJob = jobByRequestId.get(requestId) || null;
+        const linkedAsset = requestAssetByRequestId.get(requestId) || null;
+        const providerOrganizationId = String(linkedJob?.provider_organization_id || '').trim();
+        const jobCreatedAt = String(linkedJob?.created_at || request.created_at || '');
+        const uiStatus = linkedJob
+          ? mapJobStatusToMarketplaceStatus(linkedJob.status)
+          : mapRequestStatusToMarketplaceStatus(request.status);
+        const fallbackAssetName = String(request.title || 'Inspection scope');
+        const fallbackAssetId = linkedAsset?.id || `REQ-${requestId.slice(0, 8).toUpperCase()}`;
+        const dueDate = String(request.preferred_end_date || '').slice(0, 10);
+        const createdAt = jobCreatedAt.slice(0, 10);
+
+        return {
+          id: linkedJob?.id
+            ? `JOB-${String(linkedJob.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`
+            : `REQ-${requestId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          dbRequestId: requestId,
+          dbJobId: linkedJob?.id ? String(linkedJob.id) : '',
+          companyName:
+            organizationNameById.get(String(request.organization_id || '')) ||
+            organizationNameById.get(String(primaryMembership?.organization_id || '')) ||
+            'Operator',
+          assetId: linkedAsset?.id || fallbackAssetId,
+          assetName: linkedAsset?.name || fallbackAssetName,
+          site: siteNameById.get(String(request.site_id || '')) || linkedAsset?.site || 'Unassigned site',
+          regime: String(request.regime || linkedAsset?.regime || 'LOLER').toUpperCase(),
+          status: uiStatus,
+          dueDate: dueDate || '',
+          budget: 0,
+          createdAt: createdAt || '',
+          matchedAuditorId: providerOrganizationId || null,
+          matchedAuditorName: organizationNameById.get(providerOrganizationId) || '',
+          notes: String(linkedJob?.notes || request.title || '').trim(),
+          scope: {
+            template: 'supabase_request',
+            assetCount: 1,
+            estimatedHours: 1,
+            complexity: 'standard',
+            equipment: 'none',
+            travelKm: 0,
+            weekendAccess: false,
+            expedite: false,
+          },
+          documents: [],
+          timeline: [
+            {
+              label: linkedJob ? 'Job record loaded from Supabase' : 'Request record loaded from Supabase',
+              at: createdAt || '',
+              actor: 'Supabase',
+            },
+          ],
+        };
+      });
+
+      setMarketplaceJobs(mappedMarketplaceJobs);
+
+      const mappedCertificates = certificateRows.map((certificate) => {
+        const asset = assetByDbId.get(String(certificate.asset_id || '')) || null;
+        const providerId = String(certificate.provider_organization_id || '').trim();
+        const certificateNumber =
+          String(certificate.certificate_number || '').trim() ||
+          `CERT-${String(certificate.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+        return {
+          id: certificateNumber,
+          dbId: String(certificate.id || ''),
+          assetId: asset?.id || String(certificate.asset_id || '').slice(0, 8).toUpperCase(),
+          assetName: asset?.name || 'Asset',
+          regime: String(certificate.regime || asset?.regime || 'LOLER').toUpperCase(),
+          provider: organizationNameById.get(providerId) || 'Provider',
+          issueDate: String(certificate.issue_date || '').slice(0, 10),
+          expiryDate: String(certificate.expiry_date || '').slice(0, 10),
+          status: String(certificate.status || 'valid'),
+          hash: String(certificate.sha256_hash || '').slice(0, 16),
+        };
+      });
+
+      setCertificates(mappedCertificates);
+
+      const requestById = new Map(requestRows.map((request) => [String(request.id || ''), request]));
+      const providerStatsByOrgId = new Map();
+      jobRows.forEach((job) => {
+        const providerOrgId = String(job.provider_organization_id || '').trim();
+        if (!providerOrgId) {
+          return;
+        }
+        const request = requestById.get(String(job.request_id || '')) || null;
+        const regime = String(request?.regime || '').toUpperCase();
+        const existing = providerStatsByOrgId.get(providerOrgId) || {
+          activeJobs: 0,
+          regimes: new Set(),
+        };
+        if (['pending', 'accepted', 'in_progress', 'submitted'].includes(String(job.status || '').toLowerCase())) {
+          existing.activeJobs += 1;
+        }
+        if (regime) {
+          existing.regimes.add(regime);
+        }
+        providerStatsByOrgId.set(providerOrgId, existing);
+      });
+
+      const providerOrganizations = organizations.filter((organization) => {
+        const normalizedOrgType = String(organization.org_type || '').toLowerCase();
+        return ['provider', 'auditor', 'insurer', 'fm'].includes(normalizedOrgType);
+      });
+      const providerOrgIds = new Set([
+        ...providerOrganizations.map((organization) => String(organization.id || '')),
+        ...Array.from(providerStatsByOrgId.keys()),
+      ]);
+
+      const mappedProviders = Array.from(providerOrgIds)
+        .filter(Boolean)
+        .map((organizationId) => {
+          const organization = organizations.find((item) => String(item.id) === organizationId) || null;
+          const metadata = organization?.metadata && typeof organization.metadata === 'object' ? organization.metadata : {};
+          const stats = providerStatsByOrgId.get(organizationId) || { activeJobs: 0, regimes: new Set() };
+          const regimes = Array.from(stats.regimes || []).filter(Boolean);
+          return {
+            id: `PRV-${organizationId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+            dbOrganizationId: organizationId,
+            name: String(organization?.name || `Provider ${organizationId.slice(0, 8)}`),
+            tier: mapOrgTypeToProviderTier(organization?.org_type),
+            employmentModel: String(organization?.org_type || '').toLowerCase() === 'auditor' ? 'third_party' : 'direct',
+            regimes: regimes.length > 0 ? regimes : ['LOLER', 'PUWER', 'PSSR'],
+            activeJobs: Math.max(0, Number(stats.activeJobs || 0)),
+            maxConcurrentJobs: Math.max(1, Number(metadata.maxConcurrentJobs || metadata.max_concurrent_jobs || 8)),
+            rating: Number(metadata.rating || 4.6),
+            avgResponseMins: Math.max(15, Number(metadata.avgResponseMins || metadata.avg_response_mins || 60)),
+            baseLocation: String(metadata.baseLocation || metadata.base_location || 'UK'),
+            availability: {
+              weekdays: [1, 2, 3, 4, 5],
+              weekend: Boolean(metadata.weekend || metadata.weekend_support || false),
+            },
+            rateCards: metadata.rateCards && typeof metadata.rateCards === 'object' ? metadata.rateCards : undefined,
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      setAuditors(mappedProviders);
+      setProviderDirectory(mappedProviders);
+
+      const selectRows = async (tableName, columns, applyQuery) => {
+        try {
+          let query = supabase.from(tableName).select(columns);
+          if (typeof applyQuery === 'function') {
+            query = applyQuery(query);
+          }
+          const { data, error } = await query;
+          if (error) {
+            console.warn(`Supabase read failed for ${tableName}`, error.message);
+            return [];
+          }
+          return Array.isArray(data) ? data : [];
+        } catch (error) {
+          console.warn(`Supabase read crashed for ${tableName}`, error);
+          return [];
+        }
+      };
+
+      const scopedOrganizationIds = Array.from(
+        new Set(
+          memberships
+            .map((membership) => String(membership.organization_id || '').trim())
+            .filter(Boolean)
+        )
+      );
+
+      const orderNewest = (field) => (query) => query.order(field, { ascending: false }).limit(200);
+      const scopeByOrg = (field = 'organization_id') => (query) =>
+        scopedOrganizationIds.length > 0 ? query.in(field, scopedOrganizationIds) : query;
+
+      const [
+        templateDefinitionRows,
+        templateVersionRows,
+        bidRows,
+        dispatchEventRows,
+        aiJobRows,
+        provenanceRows,
+        verificationRows,
+        capaRows,
+        findingRows,
+        invoiceRows,
+        payoutRows,
+        riskSignalRows,
+        integrationSyncRows,
+        apiClientRows,
+        webhookEndpointRows,
+        webhookDeliveryRows,
+        mobileDeviceRows,
+        mobileSessionRows,
+        ssoProviderRows,
+        enterprisePolicyRows,
+        securityEventRows,
+        qaSuiteRows,
+        qaRunRows,
+        releaseGateRows,
+        releaseGateResultRows,
+      ] = await Promise.all([
+        selectRows('InCert-inspection_template_definitions', 'id, organization_id, regime, name, current_version_id, created_at, updated_at', (query) =>
+          orderNewest('updated_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-inspection_template_versions', 'id, template_id, version_number, status, scoring_model, published_at, updated_at', orderNewest('updated_at')),
+        selectRows('InCert-marketplace_bids', 'id, request_id, organization_id, status, total_ex_vat, vat_amount, lead_time_hours, quality_score, rank_score, submitted_at, metadata', orderNewest('created_at')),
+        selectRows('InCert-dispatch_sla_events', 'id, request_id, event_type, event_at, minutes_from_open, is_breach', orderNewest('event_at')),
+        selectRows('InCert-evidence_ai_jobs', 'id, evidence_file_id, status, model_name, created_at, completed_at, metadata', orderNewest('created_at')),
+        selectRows('InCert-evidence_provenance_events', 'id, evidence_file_id, event_type, file_hash_sha256, metadata, created_at', orderNewest('created_at')),
+        selectRows('InCert-regulator_verification_requests', 'id, requester_email, requester_organization_id, certificate_id, status, opened_at, decision_notes, metadata', orderNewest('opened_at')),
+        selectRows('InCert-capa_actions', 'id, finding_id, title, status, due_date, owner_user_id, created_at', (query) =>
+          orderNewest('created_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('inspection_findings', 'id, summary, severity, finding_code, created_at', orderNewest('created_at')),
+        selectRows('InCert-finance_invoices', 'id, invoice_number, status, total_inc_vat, due_at, issued_at, created_at', (query) =>
+          orderNewest('created_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-finance_payout_batches', 'id, status, reference, scheduled_for, paid_at, total_inc_vat, created_at', orderNewest('created_at')),
+        selectRows('InCert-analytics_risk_signals', 'id, organization_id, signal_type, severity, score, detected_at', (query) =>
+          orderNewest('detected_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-integration_sync_jobs', 'id, connector_name, status, finished_at, created_at', (query) =>
+          orderNewest('created_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-api_clients', 'id, name, client_key, scopes, is_active, created_at, updated_at', (query) =>
+          orderNewest('created_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-webhook_endpoints', 'id, name, url, is_active, updated_at', (query) =>
+          orderNewest('updated_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-webhook_delivery_events', 'id, endpoint_id, status, attempt_count, event_type, delivered_at, updated_at, created_at', orderNewest('created_at')),
+        selectRows('InCert-mobile_devices', 'id, device_identifier, platform, attestation_status', (query) =>
+          orderNewest('created_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-mobile_audit_sessions', 'id, job_id, device_id, status, started_at, ended_at, last_sync_at, created_at', (query) =>
+          orderNewest('created_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-enterprise_sso_providers', 'id, name, is_active, metadata, updated_at', (query) =>
+          orderNewest('updated_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-enterprise_access_policies', 'id, policy_name, is_active, updated_at', (query) =>
+          orderNewest('updated_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-enterprise_security_events', 'id, event_type, severity, source, event_at', (query) =>
+          orderNewest('event_at')(scopeByOrg('organization_id')(query))
+        ),
+        selectRows('InCert-qa_test_suites', 'id, name', orderNewest('updated_at')),
+        selectRows('InCert-qa_test_runs', 'id, suite_id, status, branch_name, summary, started_at, completed_at, created_at', orderNewest('created_at')),
+        selectRows('InCert-release_gates', 'id, name', orderNewest('updated_at')),
+        selectRows('InCert-release_gate_results', 'id, run_id, gate_id, status, notes, checked_at, updated_at', orderNewest('updated_at')),
+      ]);
+
+      const latestVersionByTemplateId = new Map();
+      templateVersionRows.forEach((version) => {
+        const templateId = String(version.template_id || '');
+        if (!templateId) {
+          return;
+        }
+        const previous = latestVersionByTemplateId.get(templateId);
+        if (!previous || Number(version.version_number || 0) > Number(previous.version_number || 0)) {
+          latestVersionByTemplateId.set(templateId, version);
+        }
+      });
+      const versionById = new Map(templateVersionRows.map((version) => [String(version.id || ''), version]));
+      const liveTemplateBlueprints = templateDefinitionRows.map((definition, index) => {
+        const definitionId = String(definition.id || '');
+        const currentVersion =
+          versionById.get(String(definition.current_version_id || '')) || latestVersionByTemplateId.get(definitionId) || null;
+        return {
+          id: `TPLX-${String(index + 1).padStart(4, '0')}`,
+          ownerOrgId: String(definition.organization_id || ''),
+          name: String(definition.name || `Template ${index + 1}`),
+          category: String(definition.regime || 'LOLER'),
+          schemaVersion: '1.0',
+          scoringModel:
+            String(currentVersion?.scoring_model?.mode || currentVersion?.scoring_model?.model || 'weighted_sections'),
+          licenceModel: 'single_site',
+          status: String(currentVersion?.status || 'draft'),
+          currentVersion: `${Number(currentVersion?.version_number || 1)}.0`,
+          blockTypes: [],
+          mandatoryEvidenceBlocks: 0,
+          versions: [],
+          passThreshold: { passScore: 0, maxScore: 0, passPercent: 0, criticalQuestionIds: [] },
+          questionBank: [],
+        };
+      });
+      setTemplateBlueprints(liveTemplateBlueprints);
+
+      const mappedBidBoard = bidRows.map((bid) => ({
+        id: `BID-${String(bid.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+        requestId: `REQ-${String(bid.request_id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+        providerOrgName: organizationNameById.get(String(bid.organization_id || '')) || 'Provider',
+        strategy: String(bid.metadata?.strategy || 'best_value'),
+        totalExVat: Number(bid.total_ex_vat || 0),
+        vatAmount: Number(bid.vat_amount || 0),
+        leadTimeHours: Number(bid.lead_time_hours || 0),
+        qualityScore: Number(bid.quality_score || 0),
+        rankScore: Number(bid.rank_score || 0),
+        status: String(bid.status || 'submitted'),
+        submittedAt: String(bid.submitted_at || ''),
+        assignedAuditor: String(bid.metadata?.assignedAuditor || bid.metadata?.assigned_auditor || ''),
+        assignmentStatus: String(bid.metadata?.assignmentStatus || bid.metadata?.assignment_status || 'pending'),
+      }));
+      setMarketplaceBidBoard(mappedBidBoard);
+
+      setDispatchSlaEvents(
+        dispatchEventRows.map((event) => ({
+          id: `SLA-${String(event.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          requestId: `REQ-${String(event.request_id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          eventType: String(event.event_type || ''),
+          eventAt: String(event.event_at || ''),
+          minutesFromOpen: Number(event.minutes_from_open || 0),
+          isBreach: Boolean(event.is_breach),
+        }))
+      );
+
+      setEvidenceAiJobs(
+        aiJobRows.map((job) => ({
+          id: `EAI-${String(job.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          evidenceRef: `evidence://${String(job.evidence_file_id || '')}`,
+          model: String(job.model_name || 'gpt-5-mini'),
+          status: String(job.status || 'queued'),
+          extractionSummary: String(job.metadata?.extractionSummary || job.metadata?.extraction_summary || ''),
+          confidenceScore: Number(job.metadata?.confidenceScore || job.metadata?.confidence_score || 0),
+          createdAt: String(job.created_at || ''),
+          completedAt: String(job.completed_at || ''),
+          reviewDecision: String(job.metadata?.reviewDecision || job.metadata?.review_decision || 'pending'),
+        }))
+      );
+
+      setEvidenceProvenanceEvents(
+        provenanceRows.map((event) => ({
+          id: `PRV-${String(event.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          evidenceRef: `evidence://${String(event.evidence_file_id || '')}`,
+          eventType: String(event.event_type || ''),
+          hash: String(event.file_hash_sha256 || ''),
+          deviceMetadata: String(event.metadata?.device || event.metadata?.device_identifier || ''),
+          createdAt: String(event.created_at || ''),
+        }))
+      );
+
+      setRegulatorVerificationRequests(
+        verificationRows.map((request) => ({
+          id: `VRQ-${String(request.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          requestor:
+            String(request.requester_email || '').trim() ||
+            organizationNameById.get(String(request.requester_organization_id || '')) ||
+            'Verification desk',
+          referenceId: String(request.certificate_id || ''),
+          status: String(request.status || 'open'),
+          requestedAt: String(request.opened_at || ''),
+          dueAt: String(request.metadata?.dueAt || request.metadata?.due_at || ''),
+          latestEvent: String(request.decision_notes || request.metadata?.latestEvent || 'Verification requested'),
+        }))
+      );
+
+      setAuditFindings(
+        findingRows.map((finding) => ({
+          id: `FND-${String(finding.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          severity: String(finding.severity || 'medium'),
+          taxonomyCode: String(finding.finding_code || ''),
+          description: String(finding.summary || ''),
+          linkedBlockId: '',
+          photos: 0,
+          riskScore: 0,
+          status: 'open',
+        }))
+      );
+
+      setAuditActions(
+        capaRows.map((action) => ({
+          id: `ACT-${String(action.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          findingId: String(action.finding_id || ''),
+          assignee: String(action.owner_user_id || 'Assignee'),
+          dueDate: String(action.due_date || ''),
+          status: String(action.status || 'open'),
+          evidenceRequired: true,
+          closureSignoff: 'auditor',
+          closureEvidenceCount: 0,
+        }))
+      );
+
+      setFinanceInvoices(
+        invoiceRows.map((invoice) => ({
+          id: String(invoice.id || ''),
+          invoiceNumber: String(invoice.invoice_number || ''),
+          status: ['draft', 'issued', 'overdue'].includes(String(invoice.status || '').toLowerCase())
+            ? 'pending_approval'
+            : String(invoice.status || '').toLowerCase() === 'paid'
+              ? 'paid'
+              : 'approved',
+          totalIncVat: Number(invoice.total_inc_vat || 0),
+          issuedAt: String(invoice.issued_at || ''),
+          dueAt: String(invoice.due_at || ''),
+          createdAt: String(invoice.created_at || ''),
+        }))
+      );
+
+      setPayoutRuns(
+        payoutRows.map((batch) => ({
+          id: String(batch.id || ''),
+          status: String(batch.status || 'draft'),
+          scheduledFor: String(batch.scheduled_for || ''),
+          paidAt: String(batch.paid_at || ''),
+          totalIncVat: Number(batch.total_inc_vat || 0),
+          reference: String(batch.reference || ''),
+        }))
+      );
+
+      setAnalyticsRiskSignals(
+        riskSignalRows.map((signal) => ({
+          id: `RSK-${String(signal.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          organization: organizationNameById.get(String(signal.organization_id || '')) || 'Organization',
+          signal: String(signal.signal_type || ''),
+          riskLevel: String(signal.severity || 'low'),
+          confidence: Number(signal.score || 0),
+          triggeredAt: String(signal.detected_at || ''),
+        }))
+      );
+
+      setIntegrationConnections(
+        integrationSyncRows.map((sync) => ({
+          id: String(sync.id || ''),
+          name: String(sync.connector_name || 'Connector'),
+          category: 'Integration',
+          status: String(sync.status || '').toLowerCase() === 'succeeded' ? 'connected' : 'not_connected',
+          endpoint: '',
+          lastSyncAt: String(sync.finished_at || sync.created_at || ''),
+        }))
+      );
+
+      setApiClients(
+        apiClientRows.map((client) => ({
+          id: `API-${String(client.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          name: String(client.name || 'API Client'),
+          status: client.is_active ? 'active' : 'inactive',
+          scopes: Array.isArray(client.scopes) ? client.scopes : [],
+          secretFingerprint: String(client.client_key || '').slice(-8),
+          secretRotatedAt: String(client.updated_at || ''),
+          createdAt: String(client.created_at || ''),
+        }))
+      );
+
+      const webhookNameById = new Map(
+        webhookEndpointRows.map((endpoint) => [String(endpoint.id || ''), String(endpoint.name || 'Webhook')])
+      );
+      const endpointLastDeliveredAt = webhookDeliveryRows.reduce((accumulator, deliveryEvent) => {
+        const endpointId = String(deliveryEvent.endpoint_id || '');
+        if (!endpointId) {
+          return accumulator;
+        }
+        const deliveredAt = String(deliveryEvent.delivered_at || deliveryEvent.updated_at || deliveryEvent.created_at || '');
+        if (!accumulator.has(endpointId) || deliveredAt > accumulator.get(endpointId)) {
+          accumulator.set(endpointId, deliveredAt);
+        }
+        return accumulator;
+      }, new Map());
+
+      setWebhookEndpoints(
+        webhookEndpointRows.map((endpoint) => {
+          const endpointId = String(endpoint.id || '');
+          return {
+            id: `WEP-${endpointId.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+            name: String(endpoint.name || 'Webhook Endpoint'),
+            status: endpoint.is_active ? 'active' : 'inactive',
+            targetUrl: String(endpoint.url || ''),
+            lastDeliveredAt: endpointLastDeliveredAt.get(endpointId) || '',
+          };
+        })
+      );
+
+      setWebhookDeliveryEvents(
+        webhookDeliveryRows.map((event) => ({
+          id: `WEB-${String(event.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          endpointLabel: webhookNameById.get(String(event.endpoint_id || '')) || 'Webhook',
+          status: String(event.status || 'pending'),
+          attempts: Number(event.attempt_count || 0),
+          lastAttemptAt: String(event.updated_at || event.created_at || ''),
+          latencyMs: 0,
+        }))
+      );
+
+      const mobileDeviceById = new Map(
+        mobileDeviceRows.map((device) => [String(device.id || ''), device])
+      );
+      setMobileAuditSessions(
+        mobileSessionRows.map((session) => {
+          const device = mobileDeviceById.get(String(session.device_id || '')) || null;
+          return {
+            id: `MAS-${String(session.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+            jobId: String(session.job_id || ''),
+            deviceName: device
+              ? `${String(device.platform || 'Device')} - ${String(device.device_identifier || '').slice(0, 8)}`
+              : 'Mobile Device',
+            attestationStatus: String(device?.attestation_status || 'unknown'),
+            syncStatus: String(session.status || 'active'),
+            startedAt: String(session.started_at || ''),
+            closedAt: String(session.ended_at || ''),
+          };
+        })
+      );
+
+      setEnterpriseSsoProviders(
+        ssoProviderRows.map((provider) => ({
+          id: `SSO-${String(provider.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          providerName: String(provider.name || 'SSO Provider'),
+          status: provider.is_active ? 'configured' : 'disabled',
+          domain: String(provider.metadata?.domain || provider.metadata?.primary_domain || ''),
+          updatedAt: String(provider.updated_at || ''),
+        }))
+      );
+
+      setEnterpriseAccessPolicies(
+        enterprisePolicyRows.map((policy) => ({
+          id: `POL-${String(policy.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          name: String(policy.policy_name || 'Policy'),
+          status: policy.is_active ? 'enabled' : 'disabled',
+          updatedAt: String(policy.updated_at || ''),
+        }))
+      );
+
+      setEnterpriseSecurityEvents(
+        securityEventRows.map((event) => ({
+          id: `SEC-${String(event.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          eventType: String(event.event_type || ''),
+          severity: String(event.severity || 'low'),
+          actor: String(event.source || 'system'),
+          occurredAt: String(event.event_at || ''),
+        }))
+      );
+
+      const qaSuiteNameById = new Map(
+        qaSuiteRows.map((suite) => [String(suite.id || ''), String(suite.name || 'QA Suite')])
+      );
+      setQaHarnessRuns(
+        qaRunRows.map((run) => {
+          const summary = run.summary && typeof run.summary === 'object' ? run.summary : {};
+          const passRateCandidate = Number(summary.pass_rate || summary.passRate || summary.passed_pct || 0);
+          return {
+            id: `QAR-${String(run.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+            suiteName: qaSuiteNameById.get(String(run.suite_id || '')) || 'QA Suite',
+            status: String(run.status || 'queued'),
+            branch: String(run.branch_name || 'main'),
+            startedAt: String(run.started_at || ''),
+            completedAt: String(run.completed_at || ''),
+            passRate: Number.isFinite(passRateCandidate) ? passRateCandidate : 0,
+          };
+        })
+      );
+
+      const gateNameById = new Map(
+        releaseGateRows.map((gate) => [String(gate.id || ''), String(gate.name || 'Release Gate')])
+      );
+      setReleaseGateResults(
+        releaseGateResultRows.map((result) => ({
+          id: `RLG-${String(result.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+          gateName: gateNameById.get(String(result.gate_id || '')) || 'Release Gate',
+          status: String(result.status || 'pending'),
+          evaluatedAt: String(result.checked_at || result.updated_at || ''),
+          notes: String(result.notes || ''),
+        }))
+      );
+
+      setTenantInvites([]);
+    };
+
+    loadSupabaseData().catch((error) => {
+      if (isCancelled) {
+        return;
+      }
+      console.error('Failed to hydrate Supabase data', error);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isSupabaseRuntime, supabaseSession?.user?.id, clearSupabaseOpsAndProviderState]);
 
   const enrichedAssets = useMemo(() => {
     return assets
@@ -3563,6 +5846,7 @@ export default function App() {
       name: resolvedName,
     };
   }, [marketplaceJobs, publicSiteConfig?.siteTitle]);
+  const activeProviderRecords = isSupabaseRuntime ? providerDirectory : auditors;
   const activeCompanyInitials = useMemo(() => {
     const initials = String(activeCompanyContext.name || '')
       .split(/\s+/)
@@ -3702,6 +5986,38 @@ export default function App() {
 
   useEffect(() => {
     try {
+      window.localStorage.setItem(API_CLIENTS_STORAGE_KEY, JSON.stringify(apiClients));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [apiClients]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WEBHOOK_ENDPOINTS_STORAGE_KEY, JSON.stringify(webhookEndpoints));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [webhookEndpoints]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ENTERPRISE_SSO_PROVIDERS_STORAGE_KEY, JSON.stringify(enterpriseSsoProviders));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [enterpriseSsoProviders]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ENTERPRISE_ACCESS_POLICIES_STORAGE_KEY, JSON.stringify(enterpriseAccessPolicies));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [enterpriseAccessPolicies]);
+
+  useEffect(() => {
+    try {
       window.localStorage.setItem(TEMPLATE_BLUEPRINTS_STORAGE_KEY, JSON.stringify(templateBlueprints));
     } catch {
       // no-op when storage is unavailable
@@ -3763,6 +6079,113 @@ export default function App() {
       // no-op when storage is unavailable
     }
   }, [shareLinks]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MARKETPLACE_BID_BOARD_STORAGE_KEY, JSON.stringify(marketplaceBidBoard));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [marketplaceBidBoard]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DISPATCH_SLA_EVENTS_STORAGE_KEY, JSON.stringify(dispatchSlaEvents));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [dispatchSlaEvents]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(EVIDENCE_AI_JOBS_STORAGE_KEY, JSON.stringify(evidenceAiJobs));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [evidenceAiJobs]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        REGULATOR_VERIFICATION_REQUESTS_STORAGE_KEY,
+        JSON.stringify(regulatorVerificationRequests)
+      );
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [regulatorVerificationRequests]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ANALYTICS_RISK_SIGNALS_STORAGE_KEY, JSON.stringify(analyticsRiskSignals));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [analyticsRiskSignals]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WEBHOOK_DELIVERY_EVENTS_STORAGE_KEY, JSON.stringify(webhookDeliveryEvents));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [webhookDeliveryEvents]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MOBILE_AUDIT_SESSIONS_STORAGE_KEY, JSON.stringify(mobileAuditSessions));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [mobileAuditSessions]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ENTERPRISE_SECURITY_EVENTS_STORAGE_KEY, JSON.stringify(enterpriseSecurityEvents));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [enterpriseSecurityEvents]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(QA_HARNESS_RUNS_STORAGE_KEY, JSON.stringify(qaHarnessRuns));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [qaHarnessRuns]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RELEASE_GATE_RESULTS_STORAGE_KEY, JSON.stringify(releaseGateResults));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [releaseGateResults]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(TENANT_INVITES_STORAGE_KEY, JSON.stringify(tenantInvites));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [tenantInvites]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(EVIDENCE_PROVENANCE_EVENTS_STORAGE_KEY, JSON.stringify(evidenceProvenanceEvents));
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [evidenceProvenanceEvents]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AUTH_RUNTIME_MODE_STORAGE_KEY, authRuntimeMode);
+    } catch {
+      // no-op when storage is unavailable
+    }
+  }, [authRuntimeMode]);
 
   useEffect(() => {
     try {
@@ -3887,7 +6310,7 @@ export default function App() {
         return;
       }
 
-      const parsed = parseCertexScanValue(hashValue);
+      const parsed = parseInCertScanValue(hashValue);
       if (!parsed) {
         return;
       }
@@ -3934,11 +6357,114 @@ export default function App() {
     }, 4000);
   };
 
-  const authenticateUser = ({ mode = 'signin', email = '', fullName = '', accountType = 'company' }) => {
+  const setRuntimeAuthMode = (mode) => {
+    const normalized = String(mode || '').toLowerCase() === 'supabase' ? 'supabase' : 'mock';
+    const currentEmail = String(authSession?.email || '').trim().toLowerCase();
+    const isDebugUser = currentEmail === 'debug@incert.local';
+
+    if (normalized === 'mock' && authSession?.isAuthenticated && !isDebugUser) {
+      addToast('Mock mode is restricted to Debug: Enter App.', 'info');
+      if (SUPABASE_ENV_CONFIGURED) {
+        setAuthRuntimeMode('supabase');
+      }
+      return false;
+    }
+
+    if (normalized === 'supabase' && !SUPABASE_ENV_CONFIGURED) {
+      addToast('Supabase env vars are not configured yet. Staying in mock auth mode.', 'info');
+      setAuthRuntimeMode('mock');
+      return false;
+    }
+    setAuthRuntimeMode(normalized);
+    addToast(
+      normalized === 'supabase'
+        ? 'Auth runtime switched to Supabase mode'
+        : 'Auth runtime switched to mock mode',
+      'info'
+    );
+    return true;
+  };
+
+  const authenticateUser = async ({ mode = 'signin', email = '', password = '', fullName = '', accountType = 'company' }) => {
     const normalizedEmail = String(email || '').trim().toLowerCase();
     if (!normalizedEmail) {
       addToast('Enter a valid email address', 'info');
       return false;
+    }
+    const isDebugBypass = import.meta.env.DEV && normalizedEmail === 'debug@incert.local';
+    if (isDebugBypass) {
+      if (supabase) {
+        try {
+          await supabase.auth.signOut();
+        } catch (error) {
+          console.warn('Debug bypass sign-out warning', error);
+        }
+      }
+      setAuthRuntimeMode('mock');
+      setSupabaseSession(null);
+      resetWorkspaceToMockData();
+      const normalizedRole = normalizeUserRole(accountType);
+      setAuthSession({
+        isAuthenticated: true,
+        email: normalizedEmail,
+        fullName: String(fullName || 'Debug User').trim(),
+        accountType: normalizedRole,
+        signedInAt: new Date().toISOString(),
+      });
+      setDebugRole(normalizedRole);
+      setActiveTab((USER_ROLE_TAB_ACCESS[normalizedRole] || USER_ROLE_TAB_ACCESS.company)[0] || 'dashboard');
+      addToast('Debug session started (mock data mode)', 'info');
+      return true;
+    }
+    if (SUPABASE_ENV_CONFIGURED && supabase) {
+      if (authRuntimeMode !== 'supabase') {
+        setAuthRuntimeMode('supabase');
+      }
+      const trimmedPassword = String(password || '').trim();
+      if (!trimmedPassword) {
+        addToast('Enter your password to sign in with Supabase.', 'info');
+        return false;
+      }
+
+      if (mode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password: trimmedPassword,
+          options: {
+            data: {
+              full_name: String(fullName || '').trim(),
+              account_type: normalizeUserRole(accountType),
+            },
+          },
+        });
+
+        if (error) {
+          addToast(`Supabase sign-up failed: ${error.message}`, 'info');
+          return false;
+        }
+
+        if (data.session) {
+          setSupabaseSession(data.session);
+          addToast('Account created and signed in to InCert.', 'success');
+          return true;
+        }
+
+        addToast('Check your email to confirm your account, then sign in.', 'info');
+        return true;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: trimmedPassword,
+      });
+      if (error) {
+        addToast(`Supabase sign-in failed: ${error.message}`, 'info');
+        return false;
+      }
+
+      setSupabaseSession(data.session ?? null);
+      addToast('Signed in to InCert', 'success');
+      return true;
     }
     const normalizedRole = normalizeUserRole(accountType);
 
@@ -3951,7 +6477,7 @@ export default function App() {
     });
     setDebugRole(normalizedRole);
     setActiveTab((USER_ROLE_TAB_ACCESS[normalizedRole] || USER_ROLE_TAB_ACCESS.company)[0] || 'dashboard');
-    addToast(mode === 'signup' ? 'Account created. Welcome to CertEx.' : 'Signed in to CertEx', 'success');
+    addToast(mode === 'signup' ? 'Account created. Welcome to InCert.' : 'Signed in to InCert', 'success');
     return true;
   };
 
@@ -3986,7 +6512,18 @@ export default function App() {
     addToast(`Debug role switched to ${USER_ROLE_OPTIONS.find((option) => option.id === normalizedRole)?.label || 'Company'}`, 'info');
   };
 
-  const signOutUser = () => {
+  const signOutUser = async () => {
+    const shouldSignOutSupabase =
+      Boolean(supabase) &&
+      !isDebugBypassSession &&
+      (isSupabaseRuntime || Boolean(supabaseSession?.user?.id));
+    if (shouldSignOutSupabase) {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        addToast(`Supabase sign-out warning: ${error.message}`, 'info');
+      }
+      setSupabaseSession(null);
+    }
     setAuthSession(defaultAuthSession);
     setDebugRole(normalizeUserRole(defaultAuthSession.accountType));
     setActiveTab('dashboard');
@@ -4062,9 +6599,9 @@ export default function App() {
   };
 
   const handleScanLookup = (scanValue) => {
-    const parsed = parseCertexScanValue(scanValue);
+    const parsed = parseInCertScanValue(scanValue);
     if (!parsed) {
-      addToast('Unable to parse code. Use AST-xxx, CERT-xxxx, or a CertEx link.', 'info');
+      addToast('Unable to parse code. Use AST-xxx, CERT-xxxx, or a InCert link.', 'info');
       return false;
     }
 
@@ -4251,7 +6788,7 @@ export default function App() {
         budget: quoteSnapshot.total,
         createdAt: createdAtIsoDate,
         matchedAuditorId: null,
-        auditExecutionMode: AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE,
+        auditExecutionMode: AUDIT_EXECUTION_MODES.INCERT_TEMPLATE,
         externalAuditReviewStatus: EXTERNAL_AUDIT_REVIEW_STATUSES.NOT_REQUIRED,
         externalSoftwareWithholdPct: 0,
         auditMethodLocked: false,
@@ -4276,7 +6813,7 @@ export default function App() {
           {
             label: `Instant quote v1 generated (${formatCurrencyGBP(quoteSnapshot.total)} inc VAT)`,
             at: timelineAt,
-            actor: 'Certex Pricing Engine',
+            actor: 'InCert Pricing Engine',
           },
           ...(assignedInspectionTemplate
             ? [
@@ -4342,7 +6879,7 @@ export default function App() {
     };
   };
 
-  const dispatchMarketplaceJob = (jobId, auditorId, source = 'Certex Match Engine') => {
+  const dispatchMarketplaceJob = (jobId, auditorId, source = 'InCert Match Engine') => {
     const targetAuditor = auditors.find((auditor) => auditor.id === auditorId);
     if (!targetAuditor) {
       addToast('Auditor not found for dispatch', 'info');
@@ -4394,7 +6931,7 @@ export default function App() {
                   {
                     label: 'Previous offer expired; dispatch re-opened',
                     at: timelineAt,
-                    actor: 'Certex Dispatch Engine',
+                    actor: 'InCert Dispatch Engine',
                   },
                 ]
               : []),
@@ -4421,11 +6958,122 @@ export default function App() {
     );
   };
 
+  const reassignMarketplaceJob = (
+    jobId,
+    fromAuditorId,
+    toAuditorId,
+    source = 'Audit Company Control Desk'
+  ) => {
+    if (!jobId || !toAuditorId) {
+      addToast('Job and target auditor are required for reassignment', 'info');
+      return false;
+    }
+
+    if (fromAuditorId === toAuditorId) {
+      addToast('Select a different auditor for reassignment', 'info');
+      return false;
+    }
+
+    const targetAuditor = auditors.find((auditor) => auditor.id === toAuditorId);
+    const previousAuditor = auditors.find((auditor) => auditor.id === fromAuditorId);
+    if (!targetAuditor) {
+      addToast('Target auditor not found', 'info');
+      return false;
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const timelineAt = getTimelineStamp(now);
+    let reassignmentStatus = 'none';
+    let blockingReason = '';
+    let touchedJobStatus = '';
+
+    setMarketplaceJobs((previousJobs) =>
+      previousJobs.map((job) => {
+        if (job.id !== jobId) {
+          return job;
+        }
+
+        if (!['offered', 'assigned', 'in_progress', 'awaiting_review'].includes(job.status)) {
+          blockingReason = 'Only active jobs can be reassigned';
+          return job;
+        }
+
+        if (job.matchedAuditorId !== fromAuditorId) {
+          blockingReason = 'Job is no longer assigned to the selected auditor';
+          return job;
+        }
+
+        touchedJobStatus = job.status;
+        reassignmentStatus = 'success';
+        const dispatch = getMarketplaceJobDispatch(job);
+        const scope = getMarketplaceJobScope(job);
+        const offerExpiresAt =
+          job.status === 'offered'
+            ? new Date(now.getTime() + resolveOfferTtlMinutes(scope) * 60000).toISOString()
+            : dispatch.offerExpiresAt;
+
+        return {
+          ...job,
+          matchedAuditorId: toAuditorId,
+          dispatch: {
+            ...dispatch,
+            dispatchedAt: nowIso,
+            offerExpiresAt,
+            attempts: dispatch.attempts + 1,
+          },
+          timeline: [
+            ...job.timeline,
+            {
+              label: `Reassigned from ${previousAuditor?.name || 'previous auditor'} to ${targetAuditor.name}`,
+              at: timelineAt,
+              actor: source,
+            },
+          ],
+        };
+      })
+    );
+
+    if (reassignmentStatus !== 'success') {
+      addToast(blockingReason || 'Unable to reassign this job', 'info');
+      return false;
+    }
+
+    setDispatchSlaEvents((previousEvents) => [
+      {
+        id: getNextEntityId(previousEvents, 'SLA'),
+        requestId: jobId,
+        eventType: 'audit_company_reassignment',
+        eventAt: nowIso,
+        minutesFromOpen: 0,
+        isBreach: false,
+      },
+      ...previousEvents,
+    ]);
+
+    if (['assigned', 'in_progress', 'awaiting_review'].includes(touchedJobStatus)) {
+      setAuditors((previousAuditors) =>
+        previousAuditors.map((auditor) => {
+          if (auditor.id === fromAuditorId) {
+            return { ...auditor, activeJobs: Math.max(0, Number(auditor.activeJobs || 0) - 1) };
+          }
+          if (auditor.id === toAuditorId) {
+            return { ...auditor, activeJobs: Number(auditor.activeJobs || 0) + 1 };
+          }
+          return auditor;
+        })
+      );
+    }
+
+    addToast(`Job ${jobId} reassigned to ${targetAuditor.name}`, 'success');
+    return true;
+  };
+
   const acceptMarketplaceOffer = (
     jobId,
     auditorId,
     source = 'Auditor Console',
-    executionMode = AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+    executionMode = AUDIT_EXECUTION_MODES.INCERT_TEMPLATE
   ) => {
     const targetAuditor = auditors.find((auditor) => auditor.id === auditorId);
     if (!targetAuditor) {
@@ -4478,7 +7126,7 @@ export default function App() {
                 {
                   label: 'Offer expired before acceptance',
                   at: timelineAt,
-                  actor: 'Certex Dispatch Engine',
+                  actor: 'InCert Dispatch Engine',
                 },
               ],
             };
@@ -4525,7 +7173,7 @@ export default function App() {
                 label:
                   selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
                     ? 'Audit method selected: auditor software'
-                    : 'Audit method selected: Certex template',
+                    : 'Audit method selected: InCert template',
                 at: timelineAt,
                 actor: targetAuditor.name,
               },
@@ -4536,14 +7184,14 @@ export default function App() {
                         pricing.auditorHourlyRate || 0
                       ).toFixed(2)}/h)`,
                       at: timelineAt,
-                      actor: 'Certex Pricing Engine',
+                      actor: 'InCert Pricing Engine',
                     },
                   ]
                 : []),
               {
                 label: `Quote locked (${pricingLock?.quoteId || pricing.quoteId})`,
                 at: timelineAt,
-                actor: 'Certex Pricing Engine',
+                actor: 'InCert Pricing Engine',
               },
             ],
           };
@@ -4593,7 +7241,7 @@ export default function App() {
                 label:
                   selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
                     ? 'Audit method selected: auditor software'
-                    : 'Audit method selected: Certex template',
+                    : 'Audit method selected: InCert template',
                 at: timelineAt,
                 actor: targetAuditor.name,
               },
@@ -4604,14 +7252,14 @@ export default function App() {
                         pricing.auditorHourlyRate || 0
                       ).toFixed(2)}/h)`,
                       at: timelineAt,
-                      actor: 'Certex Pricing Engine',
+                      actor: 'InCert Pricing Engine',
                     },
                   ]
                 : []),
               {
                 label: `Quote locked (${pricingLock?.quoteId || pricing.quoteId})`,
                 at: timelineAt,
-                actor: 'Certex Pricing Engine',
+                actor: 'InCert Pricing Engine',
               },
             ],
           };
@@ -4657,7 +7305,7 @@ export default function App() {
   const startMarketplaceAudit = (
     jobId,
     auditorId,
-    executionMode = AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+    executionMode = AUDIT_EXECUTION_MODES.INCERT_TEMPLATE
   ) => {
     const targetJob = marketplaceJobs.find((job) => job.id === jobId);
     const canStartAssigned = targetJob?.status === 'assigned';
@@ -4707,10 +7355,10 @@ export default function App() {
                   label: job.status === 'assigned'
                     ? selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
                       ? 'Audit started (auditor software selected)'
-                      : 'Audit started (Certex template)'
+                      : 'Audit started (InCert template)'
                     : selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
                       ? 'Audit method selected (auditor software)'
-                      : 'Audit method selected (Certex template)',
+                      : 'Audit method selected (InCert template)',
                   at: timelineAt,
                   actor: auditors.find((auditor) => auditor.id === auditorId)?.name || 'Auditor',
                 },
@@ -4722,10 +7370,10 @@ export default function App() {
     didStart = true;
     addToast(
       selectedExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
-        ? 'Audit started with auditor software. Upload evidence and submit for Certex review.'
+        ? 'Audit started with auditor software. Upload evidence and submit for InCert review.'
         : canStartAssigned
           ? 'Audit marked in progress'
-          : 'Audit method set to Certex template',
+          : 'Audit method set to InCert template',
       'success'
     );
     return didStart;
@@ -4761,6 +7409,22 @@ export default function App() {
           : job
       )
     );
+    setEvidenceProvenanceEvents((previousEvents) => {
+      const nowIso = new Date().toISOString();
+      const provenanceRows = [];
+      fileNames.forEach((fileName) => {
+        const computedId = getNextEntityId([...previousEvents, ...provenanceRows], 'PRV');
+        provenanceRows.push({
+          id: computedId,
+          evidenceRef: `evidence://${jobId}/${fileName}`,
+          eventType: 'file_uploaded',
+          hash: createPseudoHash(`${jobId}:${fileName}:${nowIso}`),
+          deviceMetadata: 'web:browser-upload',
+          createdAt: nowIso,
+        });
+      });
+      return [...provenanceRows, ...previousEvents];
+    });
     addToast(`${fileNames.length} document(s) uploaded`, 'success');
   };
 
@@ -4807,7 +7471,7 @@ export default function App() {
               timeline: [
                 ...job.timeline,
                 {
-                  label: `External audit submitted for Certex review (${job.documents.length} evidence file(s))`,
+                  label: `External audit submitted for InCert review (${job.documents.length} evidence file(s))`,
                   at: timelineAt,
                   actor: targetAuditor.name,
                 },
@@ -4817,11 +7481,11 @@ export default function App() {
       )
     );
 
-    addToast('External audit submitted for Certex review', 'success');
+    addToast('External audit submitted for InCert review', 'success');
     return true;
   };
 
-  const reviewMarketplaceExternalAudit = (jobId, decision, reviewerName = 'Certex QA') => {
+  const reviewMarketplaceExternalAudit = (jobId, decision, reviewerName = 'InCert QA') => {
     const targetJob = marketplaceJobs.find((job) => job.id === jobId);
     if (!targetJob) {
       addToast('Job not found for review', 'info');
@@ -4873,14 +7537,14 @@ export default function App() {
             timeline: [
               ...job.timeline,
               {
-                label: 'Certex approved external audit evidence',
+                label: 'InCert approved external audit evidence',
                 at: reviewAt,
                 actor: reviewerName,
               },
               {
                 label: `Settlement scheduled for ${settlement.scheduledPayoutDate}`,
                 at: reviewAt,
-                actor: 'Certex Settlement Engine',
+                actor: 'InCert Settlement Engine',
               },
             ],
           };
@@ -4900,7 +7564,7 @@ export default function App() {
           timeline: [
             ...job.timeline,
             {
-              label: 'Certex requested revisions to external audit evidence',
+              label: 'InCert requested revisions to external audit evidence',
               at: reviewAt,
               actor: reviewerName,
             },
@@ -4969,7 +7633,7 @@ export default function App() {
     }
 
     if (normalizeAuditExecutionMode(targetJob.auditExecutionMode) === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE) {
-      addToast('External audits must be submitted for Certex review before completion', 'info');
+      addToast('External audits must be submitted for InCert review before completion', 'info');
       return false;
     }
 
@@ -5012,7 +7676,7 @@ export default function App() {
               {
                 label: `Settlement scheduled for ${settlement.scheduledPayoutDate}`,
                 at: timelineAt,
-                actor: 'Certex Settlement Engine',
+                actor: 'InCert Settlement Engine',
               },
             ],
           };
@@ -5237,6 +7901,14 @@ export default function App() {
     return true;
   };
 
+  const resolveInvoiceIssueDate = (invoice) =>
+    String(invoice?.issueDate || invoice?.issuedAt || invoice?.createdAt || '').slice(0, 10);
+  const resolveInvoiceDueDate = (invoice) => String(invoice?.dueDate || invoice?.dueAt || '').slice(0, 10);
+  const resolveInvoiceMonthKey = (invoice) =>
+    String(resolveInvoiceIssueDate(invoice) || resolveInvoiceDueDate(invoice) || '').slice(0, 7);
+  const resolvePayoutMonthKey = (run) =>
+    String(run?.scheduledPayoutDate || run?.scheduledFor || run?.createdAt || '').slice(0, 7);
+
   const generateMissingInvoices = () => {
     const completedJobs = marketplaceJobs.filter((job) => job.status === 'completed');
     if (completedJobs.length === 0) {
@@ -5267,6 +7939,8 @@ export default function App() {
         quoteId: pricing.quoteId,
         assetName: job.assetName,
         providerName: auditors.find((auditor) => auditor.id === job.matchedAuditorId)?.name || 'Assigned provider',
+        billToName: job.companyName || activeCompanyContext.name,
+        payToName: auditors.find((auditor) => auditor.id === job.matchedAuditorId)?.name || 'Assigned provider',
         issueDate,
         dueDate,
         poNumber,
@@ -5280,6 +7954,8 @@ export default function App() {
         approvedAt: '',
         payoutScheduledAt: '',
         paidAt: '',
+        reminderCount: 0,
+        lastReminderAt: '',
       };
       nextInvoices.unshift(invoice);
       existingInvoiceJobIds.add(job.id);
@@ -5322,14 +7998,366 @@ export default function App() {
     return true;
   };
 
+  const issueInvoice = (invoiceId) => {
+    let didIssue = false;
+    const issuedAt = new Date().toISOString().slice(0, 10);
+    setFinanceInvoices((previousInvoices) =>
+      previousInvoices.map((invoice) => {
+        if (invoice.id !== invoiceId) {
+          return invoice;
+        }
+
+        const currentStatus = String(invoice.status || '').toLowerCase();
+        if (!['approved', 'overdue', 'payout_scheduled'].includes(currentStatus)) {
+          return invoice;
+        }
+
+        didIssue = true;
+        const resolvedIssueDate = resolveInvoiceIssueDate(invoice) || issuedAt;
+        return {
+          ...invoice,
+          status: currentStatus === 'approved' ? 'issued' : invoice.status,
+          issueDate: resolvedIssueDate,
+          issuedAt: resolvedIssueDate,
+        };
+      })
+    );
+
+    if (!didIssue) {
+      addToast('Invoice is not eligible for issuing', 'info');
+      return false;
+    }
+
+    addToast(`Invoice ${invoiceId} issued to customer`, 'success');
+    return true;
+  };
+
+  const sendInvoiceReminder = (invoiceId) => {
+    let reminderCount = 0;
+    let didSend = false;
+    const lastReminderAt = new Date().toISOString();
+
+    setFinanceInvoices((previousInvoices) =>
+      previousInvoices.map((invoice) => {
+        if (invoice.id !== invoiceId) {
+          return invoice;
+        }
+
+        const currentStatus = String(invoice.status || '').toLowerCase();
+        if (['pending_approval', 'approved', 'paid'].includes(currentStatus)) {
+          return invoice;
+        }
+
+        didSend = true;
+        reminderCount = Math.max(0, Number(invoice.reminderCount || 0)) + 1;
+        return {
+          ...invoice,
+          reminderCount,
+          lastReminderAt,
+        };
+      })
+    );
+
+    if (!didSend) {
+      addToast('Issue invoice before sending reminders', 'info');
+      return false;
+    }
+
+    addToast(`Reminder ${reminderCount} sent for ${invoiceId}`, 'success');
+    return true;
+  };
+
+  const markInvoiceCollected = (invoiceId) => {
+    const targetInvoice = financeInvoices.find((invoice) => invoice.id === invoiceId);
+    if (!targetInvoice) {
+      addToast('Invoice not found for collection posting', 'info');
+      return false;
+    }
+
+    let didCollect = false;
+    const paidAt = new Date().toISOString();
+    setFinanceInvoices((previousInvoices) =>
+      previousInvoices.map((invoice) => {
+        if (invoice.id !== invoiceId) {
+          return invoice;
+        }
+
+        const currentStatus = String(invoice.status || '').toLowerCase();
+        if (currentStatus === 'pending_approval' || currentStatus === 'paid') {
+          return invoice;
+        }
+
+        didCollect = true;
+        return {
+          ...invoice,
+          status: 'paid',
+          paidAt,
+        };
+      })
+    );
+
+    if (!didCollect) {
+      addToast('Invoice is not eligible for collection posting', 'info');
+      return false;
+    }
+
+    const collectedInvoice = {
+      ...targetInvoice,
+      status: 'paid',
+      paidAt,
+    };
+    const collectedInvoicesById = new Map([[String(invoiceId), collectedInvoice]]);
+    setPayoutRuns((previousRuns) => upsertPayoutRunsFromCollectedInvoices(previousRuns, collectedInvoicesById, paidAt));
+
+    addToast(`Cash received for invoice ${invoiceId}. Provider payout queued within 7 days.`, 'success');
+    return true;
+  };
+
+  const buildDebugCollectedTimestamp = (invoice, fallbackIso = new Date().toISOString()) => {
+    const seedSource = String(invoice?.id || invoice?.jobId || invoice?.quoteId || '');
+    const seedValue = seedSource.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const fallbackDate = String(fallbackIso || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const sourceDate =
+      resolveInvoiceIssueDate(invoice) ||
+      resolveInvoiceDueDate(invoice) ||
+      fallbackDate;
+    const parsedSource = parseISODate(sourceDate);
+    if (!parsedSource) {
+      return fallbackIso;
+    }
+    const year = parsedSource.getUTCFullYear();
+    const monthIndex = parsedSource.getUTCMonth();
+    const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+    const day = Math.min(daysInMonth, (seedValue % 24) + 1);
+    const hour = 8 + (seedValue % 10);
+    const minute = (seedValue * 7) % 60;
+    return new Date(Date.UTC(year, monthIndex, day, hour, minute, 0, 0)).toISOString();
+  };
+
+  const buildDebugPayoutPaidTimestamp = (run, fallbackIso = new Date().toISOString()) => {
+    const seedSource = String(run?.id || run?.invoiceId || run?.jobId || '');
+    const seedValue = seedSource.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const fallbackDate = String(fallbackIso || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const sourceDate =
+      String(run?.scheduledPayoutDate || run?.scheduledFor || run?.createdAt || fallbackDate).slice(0, 10) || fallbackDate;
+    const parsedSource = parseISODate(sourceDate);
+    if (!parsedSource) {
+      return fallbackIso;
+    }
+    const year = parsedSource.getUTCFullYear();
+    const monthIndex = parsedSource.getUTCMonth();
+    const day = parsedSource.getUTCDate();
+    const hour = 9 + (seedValue % 8);
+    const minute = (seedValue * 11) % 60;
+    return new Date(Date.UTC(year, monthIndex, day, hour, minute, 0, 0)).toISOString();
+  };
+
+  const resolveInvoicePayoutAmount = (invoice) => {
+    const payoutBaseExVat = Number(
+      invoice?.providerPayoutExVat ||
+      invoice?.subtotalExVat ||
+      roundMoney(Number(invoice?.totalIncVat || 0) / (1 + DEFAULT_VAT_RATE))
+    );
+    return roundMoney(Math.max(0, payoutBaseExVat));
+  };
+
+  const upsertPayoutRunsFromCollectedInvoices = (previousRuns, collectedInvoicesById, fallbackCreatedAtIso = new Date().toISOString()) => {
+    if (!(collectedInvoicesById instanceof Map) || collectedInvoicesById.size === 0) {
+      return previousRuns;
+    }
+
+    let nextRuns = previousRuns.map((run) => {
+      const invoiceId = String(run.invoiceId || '');
+      const linkedInvoice = collectedInvoicesById.get(invoiceId);
+      if (!linkedInvoice || String(run.status || '').toLowerCase() === 'paid') {
+        return run;
+      }
+      const collectionDate = String(linkedInvoice.paidAt || '').slice(0, 10);
+      const fallbackDate = resolveInvoiceDueDate(linkedInvoice) || resolveInvoiceIssueDate(linkedInvoice) || collectionDate;
+      const scheduledPayoutDate = resolveCollectionBackedPayoutDate(
+        collectionDate,
+        `${invoiceId}-${run.id || 'run'}`,
+        fallbackDate,
+        7
+      );
+      return {
+        ...run,
+        scheduledPayoutDate,
+        scheduledFor: scheduledPayoutDate,
+      };
+    });
+
+    const existingInvoiceIds = new Set(nextRuns.map((run) => String(run.invoiceId || '')));
+    collectedInvoicesById.forEach((linkedInvoice, invoiceId) => {
+      const normalizedInvoiceId = String(invoiceId || '');
+      if (!normalizedInvoiceId || existingInvoiceIds.has(normalizedInvoiceId)) {
+        return;
+      }
+
+      const collectionDate = String(linkedInvoice.paidAt || '').slice(0, 10);
+      const fallbackDate = resolveInvoiceDueDate(linkedInvoice) || resolveInvoiceIssueDate(linkedInvoice) || collectionDate;
+      const scheduledPayoutDate = resolveCollectionBackedPayoutDate(
+        collectionDate,
+        `${normalizedInvoiceId}-new-run`,
+        fallbackDate,
+        7
+      );
+
+      nextRuns = [
+        {
+          id: getNextPayoutRunId(nextRuns),
+          invoiceId: normalizedInvoiceId,
+          jobId: String(linkedInvoice.jobId || ''),
+          providerName: String(linkedInvoice.providerName || linkedInvoice.payToName || 'Assigned provider'),
+          payoutAmount: resolveInvoicePayoutAmount(linkedInvoice),
+          scheduledPayoutDate,
+          scheduledFor: scheduledPayoutDate,
+          status: 'scheduled',
+          createdAt: String(linkedInvoice.paidAt || fallbackCreatedAtIso || new Date().toISOString()),
+        },
+        ...nextRuns,
+      ];
+      existingInvoiceIds.add(normalizedInvoiceId);
+    });
+
+    return nextRuns;
+  };
+
+  const markInvoicesCollectedForMonth = (monthKey) => {
+    const normalizedMonthKey = String(monthKey || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(normalizedMonthKey)) {
+      addToast('Select a valid month before running debug approve+collect', 'info');
+      return false;
+    }
+
+    let collectedCount = 0;
+    const nowIso = new Date().toISOString();
+    const issuedAt = nowIso.slice(0, 10);
+    const approvedAt = nowIso;
+    const collectedInvoicesById = new Map();
+    setFinanceInvoices((previousInvoices) =>
+      previousInvoices.map((invoice) => {
+        if (resolveInvoiceMonthKey(invoice) !== normalizedMonthKey) {
+          return invoice;
+        }
+
+        const currentStatus = String(invoice.status || '').toLowerCase();
+        if (currentStatus === 'paid') {
+          return invoice;
+        }
+
+        collectedCount += 1;
+        const resolvedIssueDate = resolveInvoiceIssueDate(invoice) || issuedAt;
+        const paidAt = buildDebugCollectedTimestamp(invoice, nowIso);
+        const nextInvoice = {
+          ...invoice,
+          status: 'paid',
+          approvedAt: invoice.approvedAt || approvedAt,
+          issueDate: resolvedIssueDate,
+          issuedAt: invoice.issuedAt || resolvedIssueDate,
+          paidAt,
+        };
+        collectedInvoicesById.set(String(nextInvoice.id || ''), nextInvoice);
+        return nextInvoice;
+      })
+    );
+
+    if (collectedCount === 0) {
+      addToast(`No eligible receivables in ${normalizedMonthKey}`, 'info');
+      return false;
+    }
+
+    setPayoutRuns((previousRuns) => upsertPayoutRunsFromCollectedInvoices(previousRuns, collectedInvoicesById, nowIso));
+
+    addToast(
+      `Debug: approved+collected ${collectedCount} receivable${collectedCount === 1 ? '' : 's'} for ${normalizedMonthKey}`,
+      'success'
+    );
+    return true;
+  };
+
+  const markAllInvoicesCollectedDebug = () => {
+    let collectedCount = 0;
+    const nowIso = new Date().toISOString();
+    const issuedAt = nowIso.slice(0, 10);
+    const approvedAt = nowIso;
+    const collectedInvoicesById = new Map();
+    setFinanceInvoices((previousInvoices) =>
+      previousInvoices.map((invoice) => {
+        const currentStatus = String(invoice.status || '').toLowerCase();
+        if (currentStatus === 'paid') {
+          return invoice;
+        }
+
+        collectedCount += 1;
+        const resolvedIssueDate = resolveInvoiceIssueDate(invoice) || issuedAt;
+        const paidAt = buildDebugCollectedTimestamp(invoice, nowIso);
+        const nextInvoice = {
+          ...invoice,
+          status: 'paid',
+          approvedAt: invoice.approvedAt || approvedAt,
+          issueDate: resolvedIssueDate,
+          issuedAt: invoice.issuedAt || resolvedIssueDate,
+          paidAt,
+        };
+        collectedInvoicesById.set(String(nextInvoice.id || ''), nextInvoice);
+        return nextInvoice;
+      })
+    );
+
+    if (collectedCount === 0) {
+      addToast('No eligible receivables in this debug year window', 'info');
+      return false;
+    }
+
+    setPayoutRuns((previousRuns) => upsertPayoutRunsFromCollectedInvoices(previousRuns, collectedInvoicesById, nowIso));
+
+    addToast(`Debug: approved+collected ${collectedCount} receivable${collectedCount === 1 ? '' : 's'} for the full year`, 'success');
+    return true;
+  };
+
+  const runInvoiceCollectionsSweep = () => {
+    const today = startOfToday().getTime();
+    let markedOverdue = 0;
+
+    setFinanceInvoices((previousInvoices) =>
+      previousInvoices.map((invoice) => {
+        const currentStatus = String(invoice.status || '').toLowerCase();
+        if (['pending_approval', 'overdue', 'paid'].includes(currentStatus)) {
+          return invoice;
+        }
+
+        const dueDate = parseISODate(resolveInvoiceDueDate(invoice));
+        if (!dueDate || Number.isNaN(dueDate.getTime()) || dueDate.getTime() >= today) {
+          return invoice;
+        }
+
+        markedOverdue += 1;
+        return {
+          ...invoice,
+          status: 'overdue',
+        };
+      })
+    );
+
+    if (markedOverdue === 0) {
+      addToast('No invoices became overdue in this sweep', 'info');
+      return false;
+    }
+
+    addToast(`Collections sweep flagged ${markedOverdue} overdue invoice${markedOverdue === 1 ? '' : 's'}`, 'success');
+    return true;
+  };
+
   const schedulePayoutForInvoice = (invoiceId) => {
     const targetInvoice = financeInvoices.find((invoice) => invoice.id === invoiceId);
     if (!targetInvoice) {
       addToast('Invoice not found for payout scheduling', 'info');
       return false;
     }
-    if (targetInvoice.status !== 'approved') {
-      addToast('Approve invoice before scheduling payout', 'info');
+    const normalizedInvoiceStatus = String(targetInvoice.status || '').toLowerCase();
+    if (!['approved', 'issued', 'overdue', 'paid'].includes(normalizedInvoiceStatus)) {
+      addToast('Invoice must be approved/issued before scheduling payout', 'info');
       return false;
     }
     if (payoutRuns.some((run) => run.invoiceId === invoiceId)) {
@@ -5341,8 +8369,23 @@ export default function App() {
     const pricing = linkedJob ? getMarketplaceJobPricing(linkedJob) : null;
     const settlement = linkedJob ? getMarketplaceJobSettlement(linkedJob, pricing) : null;
     const runId = getNextPayoutRunId(payoutRuns);
-    const scheduledPayoutDate = settlement?.scheduledPayoutDate || getNextWeeklyPayoutDate(new Date());
-    const payoutAmount = settlement?.netProviderScheduled || roundMoney(targetInvoice.totalIncVat * 0.82);
+    const collectionDate = String(targetInvoice.paidAt || '').slice(0, 10);
+    const fallbackPayoutBaseDate =
+      resolveInvoiceDueDate(targetInvoice) ||
+      resolveInvoiceIssueDate(targetInvoice) ||
+      new Date().toISOString().slice(0, 10);
+    const scheduledPayoutDate = resolveCollectionBackedPayoutDate(
+      collectionDate,
+      `${String(targetInvoice.id || invoiceId)}-manual-schedule`,
+      fallbackPayoutBaseDate,
+      7
+    );
+    const fallbackPayoutBaseExVat = Number(
+      targetInvoice.providerPayoutExVat ||
+      targetInvoice.subtotalExVat ||
+      roundMoney(Number(targetInvoice.totalIncVat || 0) / (1 + DEFAULT_VAT_RATE))
+    );
+    const payoutAmount = settlement?.netProviderScheduled || roundMoney(Math.max(0, fallbackPayoutBaseExVat));
     const createdAt = new Date().toISOString();
 
     setPayoutRuns((previousRuns) => [
@@ -5353,6 +8396,7 @@ export default function App() {
         providerName: targetInvoice.providerName,
         payoutAmount,
         scheduledPayoutDate,
+        scheduledFor: scheduledPayoutDate,
         status: 'scheduled',
         createdAt,
       },
@@ -5364,14 +8408,352 @@ export default function App() {
         invoice.id === invoiceId
           ? {
               ...invoice,
-              status: 'payout_scheduled',
+              status: String(invoice.status || '').toLowerCase() === 'paid' ? 'paid' : 'payout_scheduled',
               payoutScheduledAt: createdAt,
             }
           : invoice
       )
     );
 
-    addToast(`Payout run ${runId} scheduled for ${targetInvoice.providerName}`, 'success');
+    addToast(`Payout run ${runId} scheduled for ${targetInvoice.providerName} (within 7 days of collection)`, 'success');
+    return true;
+  };
+
+  const markPayoutRunPaid = (runId) => {
+    const targetRun = payoutRuns.find((run) => run.id === runId);
+    if (!targetRun) {
+      addToast('Payout run not found', 'info');
+      return false;
+    }
+
+    if (String(targetRun.status || '').toLowerCase() === 'paid') {
+      addToast('Payout run is already marked as paid', 'info');
+      return false;
+    }
+
+    const paidAt = new Date().toISOString();
+    setPayoutRuns((previousRuns) =>
+      previousRuns.map((run) =>
+        run.id === runId
+          ? {
+              ...run,
+              status: 'paid',
+              paidAt,
+            }
+          : run
+      )
+    );
+
+    if (targetRun.invoiceId) {
+      setFinanceInvoices((previousInvoices) =>
+        previousInvoices.map((invoice) =>
+          invoice.id === targetRun.invoiceId
+            ? {
+                ...invoice,
+                status: 'paid',
+                paidAt: invoice.paidAt || paidAt,
+              }
+            : invoice
+        )
+      );
+    }
+
+    addToast(`Payout ${runId} marked as paid`, 'success');
+    return true;
+  };
+
+  const markPayoutRunsPaidForMonth = (monthKey) => {
+    const normalizedMonthKey = String(monthKey || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(normalizedMonthKey)) {
+      addToast('Select a valid month before running bulk payout', 'info');
+      return false;
+    }
+
+    let paidRunsCount = 0;
+    const nowIso = new Date().toISOString();
+    const relatedInvoiceIds = new Set();
+    const relatedInvoicePaidAtById = new Map();
+    const invoicePaidDateById = new Map(
+      financeInvoices.map((invoice) => [String(invoice.id || ''), String(invoice.paidAt || '').slice(0, 10)])
+    );
+
+    setPayoutRuns((previousRuns) =>
+      previousRuns.map((run) => {
+        if (resolvePayoutMonthKey(run) !== normalizedMonthKey) {
+          return run;
+        }
+
+        if (String(run.status || '').toLowerCase() === 'paid') {
+          return run;
+        }
+
+        paidRunsCount += 1;
+        let alignedRun = run;
+        if (run.invoiceId) {
+          const relatedInvoiceId = String(run.invoiceId);
+          relatedInvoiceIds.add(relatedInvoiceId);
+          const invoicePaidDate = invoicePaidDateById.get(relatedInvoiceId) || '';
+          const fallbackDate =
+            String(run.scheduledPayoutDate || run.scheduledFor || run.createdAt || nowIso).slice(0, 10) ||
+            String(nowIso).slice(0, 10);
+          const alignedScheduledDate = resolveCollectionBackedPayoutDate(
+            invoicePaidDate,
+            `${relatedInvoiceId}-${run.id || 'run'}`,
+            fallbackDate,
+            7
+          );
+          alignedRun = {
+            ...run,
+            scheduledPayoutDate: alignedScheduledDate,
+            scheduledFor: alignedScheduledDate,
+          };
+          if (!relatedInvoicePaidAtById.has(relatedInvoiceId)) {
+            relatedInvoicePaidAtById.set(relatedInvoiceId, buildDebugPayoutPaidTimestamp(alignedRun, nowIso));
+          }
+        }
+        const runPaidAt = buildDebugPayoutPaidTimestamp(alignedRun, nowIso);
+
+        return {
+          ...alignedRun,
+          status: 'paid',
+          paidAt: runPaidAt,
+        };
+      })
+    );
+
+    if (paidRunsCount === 0) {
+      addToast(`No eligible provider payouts in ${normalizedMonthKey}`, 'info');
+      return false;
+    }
+
+    if (relatedInvoiceIds.size > 0) {
+      setFinanceInvoices((previousInvoices) =>
+        previousInvoices.map((invoice) =>
+          relatedInvoiceIds.has(String(invoice.id || ''))
+            ? {
+                ...invoice,
+                status: 'paid',
+                paidAt: invoice.paidAt || relatedInvoicePaidAtById.get(String(invoice.id || '')) || nowIso,
+              }
+            : invoice
+        )
+      );
+    }
+
+    addToast(
+      `Debug: paid ${paidRunsCount} provider run${paidRunsCount === 1 ? '' : 's'} for ${normalizedMonthKey}`,
+      'success'
+    );
+    return true;
+  };
+
+  const markAllPayoutRunsPaidDebug = () => {
+    let paidRunsCount = 0;
+    const nowIso = new Date().toISOString();
+    const relatedInvoiceIds = new Set();
+    const relatedInvoicePaidAtById = new Map();
+    const invoicePaidDateById = new Map(
+      financeInvoices.map((invoice) => [String(invoice.id || ''), String(invoice.paidAt || '').slice(0, 10)])
+    );
+
+    setPayoutRuns((previousRuns) =>
+      previousRuns.map((run) => {
+        if (String(run.status || '').toLowerCase() === 'paid') {
+          return run;
+        }
+
+        paidRunsCount += 1;
+        let alignedRun = run;
+        if (run.invoiceId) {
+          const relatedInvoiceId = String(run.invoiceId);
+          relatedInvoiceIds.add(relatedInvoiceId);
+          const invoicePaidDate = invoicePaidDateById.get(relatedInvoiceId) || '';
+          const fallbackDate =
+            String(run.scheduledPayoutDate || run.scheduledFor || run.createdAt || nowIso).slice(0, 10) ||
+            String(nowIso).slice(0, 10);
+          const alignedScheduledDate = resolveCollectionBackedPayoutDate(
+            invoicePaidDate,
+            `${relatedInvoiceId}-${run.id || 'run'}`,
+            fallbackDate,
+            7
+          );
+          alignedRun = {
+            ...run,
+            scheduledPayoutDate: alignedScheduledDate,
+            scheduledFor: alignedScheduledDate,
+          };
+          if (!relatedInvoicePaidAtById.has(relatedInvoiceId)) {
+            relatedInvoicePaidAtById.set(relatedInvoiceId, buildDebugPayoutPaidTimestamp(alignedRun, nowIso));
+          }
+        }
+        const runPaidAt = buildDebugPayoutPaidTimestamp(alignedRun, nowIso);
+
+        return {
+          ...alignedRun,
+          status: 'paid',
+          paidAt: runPaidAt,
+        };
+      })
+    );
+
+    if (paidRunsCount === 0) {
+      addToast('No eligible provider payouts in this debug year window', 'info');
+      return false;
+    }
+
+    if (relatedInvoiceIds.size > 0) {
+      setFinanceInvoices((previousInvoices) =>
+        previousInvoices.map((invoice) =>
+          relatedInvoiceIds.has(String(invoice.id || ''))
+            ? {
+                ...invoice,
+                status: 'paid',
+                paidAt: invoice.paidAt || relatedInvoicePaidAtById.get(String(invoice.id || '')) || nowIso,
+              }
+            : invoice
+        )
+      );
+    }
+
+    addToast(`Debug: paid ${paidRunsCount} provider run${paidRunsCount === 1 ? '' : 's'} for the full year`, 'success');
+    return true;
+  };
+
+  const alignDebugPayoutsToCollections = () => {
+    const invoiceById = new Map(financeInvoices.map((invoice) => [String(invoice.id || ''), invoice]));
+    let alignedCount = 0;
+
+    setPayoutRuns((previousRuns) =>
+      previousRuns.map((run) => {
+        const invoiceId = String(run.invoiceId || '');
+        if (!invoiceId) {
+          return run;
+        }
+        const linkedInvoice = invoiceById.get(invoiceId);
+        if (!linkedInvoice) {
+          return run;
+        }
+
+        const collectionDate = String(linkedInvoice.paidAt || '').slice(0, 10);
+        const fallbackDate =
+          resolveInvoiceDueDate(linkedInvoice) ||
+          resolveInvoiceIssueDate(linkedInvoice) ||
+          String(run.paidAt || run.scheduledPayoutDate || run.scheduledFor || '').slice(0, 10);
+        const alignedScheduledDate = resolveCollectionBackedPayoutDate(
+          collectionDate,
+          `${invoiceId}-${run.id || 'align'}`,
+          fallbackDate,
+          7
+        );
+        if (!parseISODate(alignedScheduledDate)) {
+          return run;
+        }
+
+        const alignedPaidAt = buildDebugPayoutPaidTimestamp(
+          {
+            ...run,
+            scheduledPayoutDate: alignedScheduledDate,
+            scheduledFor: alignedScheduledDate,
+          },
+          `${alignedScheduledDate}T09:00:00.000Z`
+        );
+        const nextRun = {
+          ...run,
+          scheduledPayoutDate: alignedScheduledDate,
+          scheduledFor: alignedScheduledDate,
+          paidAt: String(run.status || '').toLowerCase() === 'paid' ? alignedPaidAt : run.paidAt,
+        };
+        const changed =
+          String(nextRun.scheduledPayoutDate || '') !== String(run.scheduledPayoutDate || '') ||
+          String(nextRun.scheduledFor || '') !== String(run.scheduledFor || '') ||
+          String(nextRun.paidAt || '') !== String(run.paidAt || '');
+        if (changed) {
+          alignedCount += 1;
+          return nextRun;
+        }
+        return run;
+      })
+    );
+
+    if (alignedCount === 0) {
+      addToast('No payout runs required alignment to the 7-day collection payout cadence', 'info');
+      return false;
+    }
+
+    addToast(
+      `Debug: aligned ${alignedCount} payout run${alignedCount === 1 ? '' : 's'} to 7-day collection payout cadence`,
+      'success'
+    );
+    return true;
+  };
+
+  const exportAccountancyCsv = () => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
+    const escapeCsvCell = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const rows = [
+      [
+        'Entry Type',
+        'Record ID',
+        'Status',
+        'Counterparty',
+        'Job ID',
+        'Invoice ID',
+        'Reference',
+        'Amount (inc VAT)',
+        'Issued Date',
+        'Due/Scheduled Date',
+        'Paid Date',
+      ],
+    ];
+
+    financeInvoices.forEach((invoice) => {
+      rows.push([
+        'Invoice',
+        invoice.id || '',
+        invoice.status || '',
+        invoice.providerName || 'Customer invoice',
+        invoice.jobId || '',
+        invoice.id || '',
+        invoice.quoteId || invoice.invoiceNumber || '',
+        Number(invoice.totalIncVat || 0),
+        resolveInvoiceIssueDate(invoice),
+        resolveInvoiceDueDate(invoice),
+        String(invoice.paidAt || '').slice(0, 10),
+      ]);
+    });
+
+    payoutRuns.forEach((run) => {
+      rows.push([
+        'Payout',
+        run.id || '',
+        run.status || '',
+        run.providerName || run.reference || 'Provider payout',
+        run.jobId || '',
+        run.invoiceId || '',
+        run.reference || '',
+        Number(run.payoutAmount ?? run.totalIncVat ?? 0),
+        String(run.createdAt || '').slice(0, 10),
+        String(run.scheduledPayoutDate || run.scheduledFor || '').slice(0, 10),
+        String(run.paidAt || '').slice(0, 10),
+      ]);
+    });
+
+    const csvText = rows.map((row) => row.map(escapeCsvCell).join(',')).join('\n');
+    const fileName = `incert-accountancy-${new Date().toISOString().slice(0, 10)}.csv`;
+    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+
+    addToast('Accountancy CSV exported', 'success');
     return true;
   };
 
@@ -5457,6 +8839,142 @@ export default function App() {
     return true;
   };
 
+  const createApiClient = (name = 'New API Client') => {
+    const clientName = String(name || '').trim() || 'New API Client';
+    const nowIso = new Date().toISOString();
+    const clientId = getNextEntityId(apiClients, 'API');
+    setApiClients((previousClients) => [
+      {
+        id: clientId,
+        name: clientName,
+        status: 'active',
+        scopes: ['jobs.read', 'jobs.write'],
+        secretFingerprint: `fp_${createPseudoHash(`${clientId}:${nowIso}`).slice(0, 6)}`,
+        secretRotatedAt: nowIso,
+        createdAt: nowIso,
+      },
+      ...previousClients,
+    ]);
+    addToast(`API client ${clientId} created`, 'success');
+    return true;
+  };
+
+  const rotateApiClientSecret = (clientId) => {
+    let didRotate = false;
+    const rotatedAt = new Date().toISOString();
+    setApiClients((previousClients) =>
+      previousClients.map((client) => {
+        if (client.id !== clientId) {
+          return client;
+        }
+        didRotate = true;
+        return {
+          ...client,
+          secretFingerprint: `fp_${createPseudoHash(`${client.id}:${rotatedAt}`).slice(0, 6)}`,
+          secretRotatedAt: rotatedAt,
+        };
+      })
+    );
+
+    if (!didRotate) {
+      addToast('API client not found for secret rotation', 'info');
+      return false;
+    }
+
+    addToast(`API secret rotated for ${clientId}`, 'success');
+    return true;
+  };
+
+  const upsertWebhookEndpoint = (payload = {}) => {
+    const name = String(payload.name || '').trim();
+    const targetUrl = String(payload.targetUrl || '').trim();
+    if (!name || !targetUrl) {
+      addToast('Webhook name and target URL are required', 'info');
+      return false;
+    }
+    const endpointId = getNextEntityId(webhookEndpoints, 'WEP');
+    setWebhookEndpoints((previousEndpoints) => [
+      {
+        id: endpointId,
+        name,
+        status: 'active',
+        targetUrl,
+        lastDeliveredAt: '',
+      },
+      ...previousEndpoints,
+    ]);
+    addToast(`Webhook endpoint ${endpointId} added`, 'success');
+    return true;
+  };
+
+  const configureEnterpriseSsoProvider = (providerName = 'SAML Provider', domain = 'example.com') => {
+    const normalizedProvider = String(providerName || '').trim() || 'SAML Provider';
+    const normalizedDomain = String(domain || '').trim() || 'example.com';
+    const nowIso = new Date().toISOString();
+    const existingProvider = enterpriseSsoProviders.find(
+      (provider) => provider.providerName.toLowerCase() === normalizedProvider.toLowerCase()
+    );
+
+    if (existingProvider) {
+      setEnterpriseSsoProviders((previousProviders) =>
+        previousProviders.map((provider) =>
+          provider.id === existingProvider.id
+            ? {
+                ...provider,
+                status: 'configured',
+                domain: normalizedDomain,
+                updatedAt: nowIso,
+              }
+            : provider
+        )
+      );
+      addToast(`SSO provider ${existingProvider.id} updated`, 'success');
+      return true;
+    }
+
+    const providerId = getNextEntityId(enterpriseSsoProviders, 'SSO');
+    setEnterpriseSsoProviders((previousProviders) => [
+      {
+        id: providerId,
+        providerName: normalizedProvider,
+        status: 'configured',
+        domain: normalizedDomain,
+        updatedAt: nowIso,
+      },
+      ...previousProviders,
+    ]);
+    addToast(`SSO provider ${providerId} configured`, 'success');
+    return true;
+  };
+
+  const toggleEnterpriseAccessPolicy = (policyId) => {
+    let didToggle = false;
+    let nextStatus = 'enabled';
+    const updatedAt = new Date().toISOString();
+    setEnterpriseAccessPolicies((previousPolicies) =>
+      previousPolicies.map((policy) => {
+        if (policy.id !== policyId) {
+          return policy;
+        }
+        didToggle = true;
+        nextStatus = policy.status === 'enabled' ? 'disabled' : 'enabled';
+        return {
+          ...policy,
+          status: nextStatus,
+          updatedAt,
+        };
+      })
+    );
+
+    if (!didToggle) {
+      addToast('Access policy not found', 'info');
+      return false;
+    }
+
+    addToast(`Access policy ${policyId} set to ${nextStatus}`, 'success');
+    return true;
+  };
+
   const createTemplateBlueprint = ({ name, category, scoringModel, licenceModel, blockTypes, mandatoryEvidenceBlocks }) => {
     const templateName = String(name || '').trim();
     if (!templateName) {
@@ -5475,7 +8993,7 @@ export default function App() {
     setTemplateBlueprints((previousTemplates) => [
       {
         id: templateId,
-        ownerOrgId: 'certex',
+        ownerOrgId: 'incert',
         name: templateName,
         category: String(category || 'HS'),
         schemaVersion: '1.0',
@@ -5683,7 +9201,7 @@ export default function App() {
       );
       const createdAt = new Date().toISOString();
       artifactId = getNextEntityId(previousArtifacts, 'RPT');
-      const basePath = `storage://certex-reports/${auditRunId}/v${nextVersion}`;
+      const basePath = `storage://incert-reports/${auditRunId}/v${nextVersion}`;
       const artifact = {
         id: artifactId,
         auditRunId,
@@ -5691,10 +9209,10 @@ export default function App() {
         pdfUri: `${basePath}/report.pdf`,
         htmlUri: `${basePath}/report.html`,
         hash: createPseudoHash(JSON.stringify({ auditRunId, nextVersion, createdAt })),
-        signature: `sig:certex:${auditRunId}:v${nextVersion}`,
+        signature: `sig:incert:${auditRunId}:v${nextVersion}`,
         status: 'valid',
-        signedPdfUrl: `https://signed.certex.example/reports/${auditRunId}/v${nextVersion}.pdf`,
-        signedHtmlUrl: `https://signed.certex.example/reports/${auditRunId}/v${nextVersion}.html`,
+        signedPdfUrl: `https://signed.incert.example/reports/${auditRunId}/v${nextVersion}.pdf`,
+        signedHtmlUrl: `https://signed.incert.example/reports/${auditRunId}/v${nextVersion}.html`,
         createdAt,
       };
       return [artifact, ...replacedArtifacts];
@@ -5868,11 +9386,501 @@ export default function App() {
         expiresAt: expiresAt.toISOString(),
         accessPolicy: 'read_only',
         auditLogEnabled: true,
-        url: `https://portal.certex.example/share/${shareId}`,
+        url: `https://portal.incert.example/share/${shareId}`,
       },
       ...previousLinks,
     ]);
     addToast(`Share link ${shareId} generated`, 'success');
+    return true;
+  };
+
+  const createTenantInvite = (email, role = 'dutyholder_admin') => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) {
+      addToast('Invite email is required', 'info');
+      return false;
+    }
+    if (tenantInvites.some((invite) => invite.email === normalizedEmail && invite.status === 'pending')) {
+      addToast('A pending invite already exists for this email', 'info');
+      return false;
+    }
+    const now = new Date().toISOString();
+    setTenantInvites((previous) => [
+      {
+        id: getNextEntityId(previous, 'INV'),
+        email: normalizedEmail,
+        role: String(role || 'dutyholder_admin'),
+        status: 'pending',
+        sentAt: now,
+        acceptedAt: '',
+      },
+      ...previous,
+    ]);
+    addToast(`Invite sent to ${normalizedEmail}`, 'success');
+    return true;
+  };
+
+  const acceptNextTenantInvite = () => {
+    let acceptedInviteId = '';
+    setTenantInvites((previous) =>
+      previous.map((invite) => {
+        if (!acceptedInviteId && invite.status === 'pending') {
+          acceptedInviteId = invite.id;
+          return {
+            ...invite,
+            status: 'accepted',
+            acceptedAt: new Date().toISOString(),
+          };
+        }
+        return invite;
+      })
+    );
+    if (!acceptedInviteId) {
+      addToast('No pending invites to accept', 'info');
+      return false;
+    }
+    addToast(`Invite ${acceptedInviteId} marked as accepted`, 'success');
+    return true;
+  };
+
+  const appendEvidenceProvenanceEvent = () => {
+    const targetJob =
+      marketplaceJobs.find((job) => Array.isArray(job.documents) && job.documents.length > 0) || marketplaceJobs[0];
+    if (!targetJob) {
+      addToast('No job found to append provenance event', 'info');
+      return false;
+    }
+    const docName = Array.isArray(targetJob.documents) && targetJob.documents.length > 0 ? targetJob.documents[0] : 'manual-upload.pdf';
+    const evidenceRef = `evidence://${targetJob.id}/${docName}`;
+    const createdAt = new Date().toISOString();
+    setEvidenceProvenanceEvents((previous) => [
+      {
+        id: getNextEntityId(previous, 'PRV'),
+        evidenceRef,
+        eventType: 'review_signed',
+        hash: createPseudoHash(`${evidenceRef}-${createdAt}`),
+        deviceMetadata: 'server:review-workflow',
+        createdAt,
+      },
+      ...previous,
+    ]);
+    addToast(`Provenance event appended for ${targetJob.id}`, 'success');
+    return true;
+  };
+
+  const seedMarketplaceBidRound = () => {
+    const targetJob =
+      marketplaceJobs.find((job) => ['open', 'offered'].includes(job.status)) || marketplaceJobs[0] || null;
+    if (!targetJob) {
+      addToast('No marketplace job available to seed bids', 'info');
+      return false;
+    }
+
+    const existingBidCount = marketplaceBidBoard.filter((bid) => bid.requestId === targetJob.id).length;
+    if (existingBidCount >= 3) {
+      addToast(`Bid board for ${targetJob.id} already has ${existingBidCount} bids`, 'info');
+      return false;
+    }
+
+    const nowIso = new Date().toISOString();
+    const firstSeedBidId = getNextEntityId(marketplaceBidBoard, 'BID');
+    const secondSeedBidId = getNextEntityId([...marketplaceBidBoard, { id: firstSeedBidId }], 'BID');
+    const seedBids = [
+      {
+        id: firstSeedBidId,
+        requestId: targetJob.id,
+        providerOrgName: 'NorthStar Inspection Partners',
+        strategy: 'best_value',
+        totalExVat: roundMoney(Math.max(120, Number(targetJob.budget || 320) * 0.92)),
+        vatAmount: roundMoney(Math.max(24, Number(targetJob.budget || 320) * 0.184)),
+        leadTimeHours: 11,
+        qualityScore: 90,
+        rankScore: 89,
+        status: 'submitted',
+        submittedAt: nowIso,
+        assignedAuditor: 'Hannah Briggs',
+        assignmentStatus: 'assigned',
+      },
+      {
+        id: secondSeedBidId,
+        requestId: targetJob.id,
+        providerOrgName: 'Allianz Engineering',
+        strategy: 'best_value',
+        totalExVat: roundMoney(Math.max(120, Number(targetJob.budget || 320) * 0.96)),
+        vatAmount: roundMoney(Math.max(24, Number(targetJob.budget || 320) * 0.192)),
+        leadTimeHours: 8,
+        qualityScore: 94,
+        rankScore: 92,
+        status: 'submitted',
+        submittedAt: nowIso,
+        assignedAuditor: 'O. Turner',
+        assignmentStatus: 'assigned',
+      },
+    ];
+
+    setMarketplaceBidBoard((previous) => [...seedBids, ...previous]);
+    setDispatchSlaEvents((previous) => [
+      {
+        id: getNextEntityId(previous, 'SLA'),
+        requestId: targetJob.id,
+        eventType: 'bid_round_seeded',
+        eventAt: nowIso,
+        minutesFromOpen: 22,
+        isBreach: false,
+      },
+      ...previous,
+    ]);
+    addToast(`Seeded ${seedBids.length} marketplace bids for ${targetJob.id}`, 'success');
+    return true;
+  };
+
+  const awardBestMarketplaceBid = () => {
+    const groupedByRequest = marketplaceBidBoard.reduce((groups, bid) => {
+      if (!groups.has(bid.requestId)) {
+        groups.set(bid.requestId, []);
+      }
+      groups.get(bid.requestId).push(bid);
+      return groups;
+    }, new Map());
+
+    const targetGroup = [...groupedByRequest.entries()].find(([, bids]) =>
+      bids.some((bid) => bid.status === 'submitted')
+    );
+
+    if (!targetGroup) {
+      addToast('No submitted bids are available for award', 'info');
+      return false;
+    }
+
+    const [requestId, bids] = targetGroup;
+    const winner = rankBidEntries(
+      bids.filter((bid) => bid.status === 'submitted' || bid.status === 'shortlisted')
+    )[0];
+
+    if (!winner) {
+      addToast(`No eligible bid found for ${requestId}`, 'info');
+      return false;
+    }
+
+    const nowIso = new Date().toISOString();
+    setMarketplaceBidBoard((previous) =>
+      previous.map((bid) => {
+        if (bid.requestId !== requestId) {
+          return bid;
+        }
+        if (bid.id === winner.id) {
+          return {
+            ...bid,
+            status: 'awarded',
+            assignmentStatus: 'accepted',
+          };
+        }
+        if (['submitted', 'shortlisted'].includes(bid.status)) {
+          return { ...bid, status: 'rejected' };
+        }
+        return bid;
+      })
+    );
+
+    setDispatchSlaEvents((previous) => [
+      {
+        id: getNextEntityId(previous, 'SLA'),
+        requestId,
+        eventType: 'bid_awarded',
+        eventAt: nowIso,
+        minutesFromOpen: 34,
+        isBreach: false,
+      },
+      ...previous,
+    ]);
+
+    setMarketplaceJobs((previous) =>
+      previous.map((job) => {
+        if (job.id !== requestId) {
+          return job;
+        }
+        const matchedAuditor =
+          auditors.find((auditor) => auditor.name === winner.providerOrgName) ||
+          auditors.find((auditor) => String(auditor.name || '').includes(String(winner.providerOrgName || '')));
+        return {
+          ...job,
+          status: job.status === 'completed' ? 'completed' : 'offered',
+          matchedAuditorId: matchedAuditor?.id || job.matchedAuditorId,
+          timeline: [
+            ...job.timeline,
+            {
+              label: `Bid awarded to ${winner.providerOrgName} (${formatCurrencyGBP(winner.totalExVat)} ex VAT)`,
+              at: getTimelineStamp(new Date(nowIso)),
+              actor: 'InCert Award Engine',
+            },
+          ],
+        };
+      })
+    );
+
+    addToast(`Awarded best-value bid for ${requestId}`, 'success');
+    return true;
+  };
+
+  const enqueueEvidenceAiExtraction = () => {
+    const targetJob =
+      marketplaceJobs.find((job) => Array.isArray(job.documents) && job.documents.length > 0) || marketplaceJobs[0];
+    if (!targetJob) {
+      addToast('No job available for evidence AI extraction', 'info');
+      return false;
+    }
+
+    const latestDoc = Array.isArray(targetJob.documents) && targetJob.documents.length > 0 ? targetJob.documents[0] : 'manual-upload.pdf';
+    const createdAt = new Date().toISOString();
+    setEvidenceAiJobs((previous) => [
+      {
+        id: getNextEntityId(previous, 'EAI'),
+        evidenceRef: `evidence://${targetJob.id}/${latestDoc}`,
+        model: 'gpt-5-mini',
+        status: 'queued',
+        extractionSummary: '',
+        confidenceScore: 0,
+        createdAt,
+        completedAt: '',
+        reviewDecision: 'pending',
+      },
+      ...previous,
+    ]);
+    addToast(`Queued evidence AI extraction for ${targetJob.id}`, 'success');
+    return true;
+  };
+
+  const advanceEvidenceAiReview = () => {
+    let changedRecord = null;
+    setEvidenceAiJobs((previous) =>
+      previous.map((job) => {
+        if (changedRecord) {
+          return job;
+        }
+        if (job.status === 'queued') {
+          changedRecord = {
+            id: job.id,
+            to: 'completed',
+          };
+          return {
+            ...job,
+            status: 'completed',
+            extractionSummary:
+              job.extractionSummary || 'Auto-extracted checklist evidence, detected 2 pass, 1 fail, and 1 advisory.',
+            confidenceScore: 0.89,
+            completedAt: new Date().toISOString(),
+            reviewDecision: 'pending',
+          };
+        }
+        if (job.status === 'completed' && job.reviewDecision === 'pending') {
+          changedRecord = {
+            id: job.id,
+            to: 'accepted',
+          };
+          return {
+            ...job,
+            reviewDecision: 'accepted',
+          };
+        }
+        return job;
+      })
+    );
+
+    if (!changedRecord) {
+      addToast('No queued/pending AI evidence jobs to advance', 'info');
+      return false;
+    }
+
+    addToast(`Evidence AI job ${changedRecord.id} advanced to ${changedRecord.to}`, 'success');
+    return true;
+  };
+
+  const createRegulatorVerificationRequest = () => {
+    const targetArtifact = reportArtifacts[0];
+    const now = new Date();
+    const due = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
+    setRegulatorVerificationRequests((previous) => [
+      {
+        id: getNextEntityId(previous, 'VRQ'),
+        requestor: 'Insurer Desk',
+        referenceId: targetArtifact?.id || certificates[0]?.id || 'RPT-PENDING',
+        status: 'open',
+        requestedAt: now.toISOString(),
+        dueAt: due.toISOString(),
+        latestEvent: 'Verification request created from operator workflow.',
+      },
+      ...previous,
+    ]);
+    addToast('Regulator/insurer verification request created', 'success');
+    return true;
+  };
+
+  const resolveRegulatorVerificationRequest = () => {
+    let resolvedId = '';
+    setRegulatorVerificationRequests((previous) =>
+      previous.map((request) => {
+        if (!resolvedId && request.status === 'open') {
+          resolvedId = request.id;
+          return {
+            ...request,
+            status: 'fulfilled',
+            latestEvent: 'Evidence bundle verified and response issued.',
+          };
+        }
+        return request;
+      })
+    );
+
+    if (!resolvedId) {
+      addToast('No open verification requests to resolve', 'info');
+      return false;
+    }
+    addToast(`Verification request ${resolvedId} fulfilled`, 'success');
+    return true;
+  };
+
+  const triggerWebhookRetry = () => {
+    let retriedId = '';
+    setWebhookDeliveryEvents((previous) =>
+      previous.map((event) => {
+        if (!retriedId && event.status === 'failed') {
+          retriedId = event.id;
+          return {
+            ...event,
+            status: 'delivered',
+            attempts: Number(event.attempts || 0) + 1,
+            latencyMs: 320,
+            lastAttemptAt: new Date().toISOString(),
+          };
+        }
+        return event;
+      })
+    );
+
+    if (!retriedId) {
+      addToast('No failed webhook events to retry', 'info');
+      return false;
+    }
+    addToast(`Webhook delivery ${retriedId} retried and delivered`, 'success');
+    return true;
+  };
+
+  const openMobileAuditSession = () => {
+    const targetJob =
+      marketplaceJobs.find((job) => ['assigned', 'in_progress'].includes(job.status) && job.matchedAuditorId) ||
+      marketplaceJobs.find((job) => job.matchedAuditorId);
+    if (!targetJob) {
+      addToast('No matched audit job available for mobile session', 'info');
+      return false;
+    }
+
+    const matchedAuditor = auditors.find((auditor) => auditor.id === targetJob.matchedAuditorId);
+    setMobileAuditSessions((previous) => [
+      {
+        id: getNextEntityId(previous, 'MAS'),
+        jobId: targetJob.id,
+        deviceName: `iPhone - ${matchedAuditor?.name || 'Auditor Device'}`,
+        attestationStatus: 'verified',
+        syncStatus: isOnline ? 'synced' : 'queued',
+        startedAt: new Date().toISOString(),
+        closedAt: '',
+      },
+      ...previous,
+    ]);
+
+    addToast(`Mobile audit session opened for ${targetJob.id}`, 'success');
+    return true;
+  };
+
+  const logEnterpriseSecurityEvent = () => {
+    const severity = enterpriseSecurityEvents.some((event) => event.severity === 'high') ? 'medium' : 'high';
+    setEnterpriseSecurityEvents((previous) => [
+      {
+        id: getNextEntityId(previous, 'SEC'),
+        eventType: severity === 'high' ? 'anomalous_access_attempt' : 'policy_change',
+        severity,
+        actor: authSession.email || 'debug@incert.local',
+        occurredAt: new Date().toISOString(),
+      },
+      ...previous,
+    ]);
+    addToast('Enterprise security event logged', 'success');
+    return true;
+  };
+
+  const startQaHarnessRun = () => {
+    const runId = getNextEntityId(qaHarnessRuns, 'QAR');
+    const now = new Date().toISOString();
+    setQaHarnessRuns((previous) => [
+      {
+        id: runId,
+        suiteName: 'Marketplace + Evidence Integration',
+        status: 'running',
+        branch: 'main',
+        startedAt: now,
+        completedAt: '',
+        passRate: 0,
+      },
+      ...previous,
+    ]);
+    addToast(`QA harness run ${runId} started`, 'success');
+    return true;
+  };
+
+  const finalizeLatestQaHarnessRun = () => {
+    let finalizedRunId = '';
+    setQaHarnessRuns((previous) =>
+      previous.map((run) => {
+        if (!finalizedRunId && run.status === 'running') {
+          finalizedRunId = run.id;
+          return {
+            ...run,
+            status: 'passed',
+            completedAt: new Date().toISOString(),
+            passRate: 100,
+          };
+        }
+        return run;
+      })
+    );
+
+    if (!finalizedRunId) {
+      addToast('No running QA harness run to finalize', 'info');
+      return false;
+    }
+    addToast(`QA harness run ${finalizedRunId} finalized as passed`, 'success');
+    return true;
+  };
+
+  const advanceReleaseGateResult = () => {
+    let advancedId = '';
+    let nextStatus = 'pending';
+    setReleaseGateResults((previous) =>
+      previous.map((gate) => {
+        if (advancedId) {
+          return gate;
+        }
+        advancedId = gate.id;
+        nextStatus = gate.status === 'pending' ? 'passed' : gate.status === 'passed' ? 'failed' : 'pending';
+        return {
+          ...gate,
+          status: nextStatus,
+          evaluatedAt: new Date().toISOString(),
+          notes:
+            nextStatus === 'passed'
+              ? 'Gate passed after latest QA telemetry.'
+              : nextStatus === 'failed'
+                ? 'Gate failed due to unresolved blocker.'
+                : 'Gate reset for next release cycle.',
+        };
+      })
+    );
+
+    if (!advancedId) {
+      addToast('No release gate records available', 'info');
+      return false;
+    }
+    addToast(`Release gate ${advancedId} moved to ${nextStatus}`, 'success');
     return true;
   };
 
@@ -5966,10 +9974,6 @@ export default function App() {
       openTab('dashboard');
       return;
     }
-    if (actionId === 'go-landing') {
-      openTab('landing');
-      return;
-    }
     if (actionId === 'go-onboarding') {
       openTab('onboarding');
       return;
@@ -5990,8 +9994,16 @@ export default function App() {
       openTab('marketplace');
       return;
     }
+    if (actionId === 'go-accountancy') {
+      openTab('accountancy');
+      return;
+    }
     if (actionId === 'go-help') {
       openTab('help');
+      return;
+    }
+    if (actionId === 'go-ops') {
+      openTab('ops');
       return;
     }
     if (actionId === 'new-asset') {
@@ -6028,6 +10040,12 @@ export default function App() {
       setShowCommandPalette(false);
       openTab('marketplace');
       addToast('Open the marketplace composer to advertise an audit job', 'info');
+      return;
+    }
+    if (actionId === 'open-ops-console') {
+      setShowCommandPalette(false);
+      openTab('ops');
+      addToast('Operations console opened', 'info');
     }
   };
 
@@ -6042,6 +10060,8 @@ export default function App() {
           isDarkMode={isDarkMode}
           onToggleTheme={toggleTheme}
           onAuthenticate={authenticateUser}
+          authRuntimeMode={authRuntimeMode}
+          isSupabaseConfigured={SUPABASE_ENV_CONFIGURED}
         />
       </div>
     );
@@ -6107,13 +10127,7 @@ export default function App() {
 
         {/* --- MOBILE HEADER --- */}
         <header className="md:hidden glass-panel h-16 bg-white/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-4 fixed inset-x-0 top-0 z-50 w-full transition-colors duration-300">
-          <div className="flex items-center space-x-2">
-            <ShieldCheck className="h-7 w-7 text-cyan-600 dark:text-cyan-400" />
-            <div className="flex flex-col leading-none">
-              <span className="font-bold text-lg tracking-tight text-slate-800 dark:text-white">CertEx</span>
-              <span className="text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">by InCommand</span>
-            </div>
-          </div>
+          <InCertLogo width={138} height={36} className="text-slate-800 dark:text-white" />
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setShowCommandPalette(true)}
@@ -6165,12 +10179,11 @@ export default function App() {
 
         {/* --- DESKTOP SIDEBAR --- */}
         <aside className="hidden md:flex w-64 glass-panel bg-white/80 dark:bg-slate-800/80 border-r border-slate-200 dark:border-slate-700 flex-col z-30 h-screen transition-colors duration-300">
-          <div className="p-6 flex items-center space-x-3">
-            <ShieldCheck className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
-            <div className="flex flex-col leading-none">
-              <span className="font-bold text-xl tracking-tight text-slate-800 dark:text-white">CertEx</span>
-              <span className="text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">by InCommand</span>
-            </div>
+          <div className="px-6 pt-6 pb-3 space-y-3">
+            <InCertLogo width={176} height={44} className="text-slate-800 dark:text-white" />
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+              Navigation
+            </p>
           </div>
 
           <nav className="flex-1 px-4 space-y-2 mt-4">
@@ -6180,14 +10193,6 @@ export default function App() {
                 label="Dashboard"
                 isActive={activeTab === 'dashboard'}
                 onClick={() => openTab('dashboard')}
-              />
-            )}
-            {allowedTabsForRole.includes('landing') && (
-              <DesktopNavItem
-                icon={<MapIcon />}
-                label="Landing"
-                isActive={activeTab === 'landing'}
-                onClick={() => openTab('landing')}
               />
             )}
             {allowedTabsForRole.includes('onboarding') && (
@@ -6230,6 +10235,22 @@ export default function App() {
                 onClick={() => openTab('marketplace')}
               />
             )}
+            {allowedTabsForRole.includes('accountancy') && (
+              <DesktopNavItem
+                icon={<BarChart3 />}
+                label="Accountancy"
+                isActive={activeTab === 'accountancy'}
+                onClick={() => openTab('accountancy')}
+              />
+            )}
+            {allowedTabsForRole.includes('ops') && (
+              <DesktopNavItem
+                icon={<ServerCog />}
+                label="Operations"
+                isActive={activeTab === 'ops'}
+                onClick={() => openTab('ops')}
+              />
+            )}
             {allowedTabsForRole.includes('help') && (
               <DesktopNavItem
                 icon={<FileText />}
@@ -6261,9 +10282,11 @@ export default function App() {
         <main className="flex-1 flex flex-col h-screen md:h-screen pt-16 md:pt-0 overflow-hidden relative z-20">
           {/* Desktop Header */}
           <header className="hidden md:flex h-20 glass-panel bg-white/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 items-center justify-between px-8 sticky top-0 z-30 transition-colors duration-300">
-            <h1 className="text-2xl font-bold text-slate-800 dark:text-white capitalize tracking-wide flex items-center space-x-3">
-              <span>{activeTab.replace(/([A-Z])/g, ' $1').trim()}</span>
-            </h1>
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-slate-800 dark:text-white capitalize tracking-wide">
+                {activeTab.replace(/([A-Z])/g, ' $1').trim()}
+              </h1>
+            </div>
             <div className="flex items-center space-x-4">
               <div className="relative group">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500 group-focus-within:text-cyan-500 transition-colors" />
@@ -6383,7 +10406,7 @@ export default function App() {
                 </div>
               </div>
               <p className="text-[11px] text-amber-700/90 dark:text-amber-200/90">
-                Role-based UI simulation before Supabase auth is enabled.
+                Role-based UI simulation. Auth runtime: {authRuntimeMode === 'supabase' ? 'Supabase live' : 'Mock'}.
               </p>
             </div>
           </div>
@@ -6407,15 +10430,6 @@ export default function App() {
                   isOnline={isOnline}
                   pendingCount={queuedInspectionCount}
                   onSubmit={handleLogInspection}
-                />
-              )}
-
-              {activeTab === 'landing' && (
-                <PublicLandingView
-                  onNotify={addToast}
-                  publicSiteConfig={publicSiteConfig}
-                  onOpenOnboarding={() => openTab('onboarding')}
-                  onOpenHelp={() => openTab('help')}
                 />
               )}
 
@@ -6471,7 +10485,7 @@ export default function App() {
 
               {activeTab === 'providers' && (
                 <ProviderNetworkView
-                  providers={auditors}
+                  providers={activeProviderRecords}
                   searchQuery={searchQuery}
                   onDispatch={openDispatch}
                 />
@@ -6480,7 +10494,7 @@ export default function App() {
               {activeTab === 'marketplace' && (
                 <MarketplaceExchangeView
                   assets={enrichedAssets}
-                  auditors={auditors}
+                  auditors={activeProviderRecords}
                   jobs={marketplaceJobs}
                   inspectionTemplates={inspectionTemplates}
                   companyContext={activeCompanyContext}
@@ -6497,6 +10511,97 @@ export default function App() {
                   onApplyAdjustment={applyMarketplaceAdjustment}
                   onStartAuditRunForJob={startAuditRunForMarketplaceJob}
                   onRecordFinding={recordMarketplaceFinding}
+                  onReassignJob={reassignMarketplaceJob}
+                />
+              )}
+
+              {activeTab === 'accountancy' && (
+                <AccountancyView
+                  financeInvoices={financeInvoices}
+                  payoutRuns={payoutRuns}
+                  onGenerateInvoices={generateMissingInvoices}
+                  onApproveInvoice={approveInvoice}
+                  onIssueInvoice={issueInvoice}
+                  onSendInvoiceReminder={sendInvoiceReminder}
+                  onMarkInvoiceCollected={markInvoiceCollected}
+                  onRunCollectionsSweep={runInvoiceCollectionsSweep}
+                  onSchedulePayout={schedulePayoutForInvoice}
+                  onMarkPayoutPaid={markPayoutRunPaid}
+                  onExportCsv={exportAccountancyCsv}
+                  showDebugBulkActions={isDebugBypassSession}
+                  onCollectReceivablesMonthDebug={markInvoicesCollectedForMonth}
+                  onPayProvidersMonthDebug={markPayoutRunsPaidForMonth}
+                  onCollectReceivablesYearDebug={markAllInvoicesCollectedDebug}
+                  onPayProvidersYearDebug={markAllPayoutRunsPaidDebug}
+                  onAlignPayoutsToCollectionsDebug={alignDebugPayoutsToCollections}
+                />
+              )}
+
+              {activeTab === 'ops' && (
+                <OperationsCenterView
+                  isSupabaseConfigured={SUPABASE_ENV_CONFIGURED}
+                  authRuntimeMode={authRuntimeMode}
+                  onSetAuthRuntimeMode={setRuntimeAuthMode}
+                  tenantInvites={tenantInvites}
+                  onCreateTenantInvite={createTenantInvite}
+                  onAcceptTenantInvite={acceptNextTenantInvite}
+                  marketplaceBidBoard={marketplaceBidBoard}
+                  dispatchSlaEvents={dispatchSlaEvents}
+                  onSeedBidRound={seedMarketplaceBidRound}
+                  onAwardBestBid={awardBestMarketplaceBid}
+                  templateBlueprints={templateBlueprints}
+                  onPublishTemplateBlueprint={publishTemplateBlueprint}
+                  evidenceAiJobs={evidenceAiJobs}
+                  evidenceProvenanceEvents={evidenceProvenanceEvents}
+                  onQueueEvidenceAiJob={enqueueEvidenceAiExtraction}
+                  onAdvanceEvidenceReview={advanceEvidenceAiReview}
+                  onAppendProvenanceEvent={appendEvidenceProvenanceEvent}
+                  regulatorVerificationRequests={regulatorVerificationRequests}
+                  onCreateVerificationRequest={createRegulatorVerificationRequest}
+                  onResolveVerificationRequest={resolveRegulatorVerificationRequest}
+                  auditFindings={auditFindings}
+                  auditActions={auditActions}
+                  onCreateAuditAction={() => {
+                    const targetFinding = auditFindings[0];
+                    if (!targetFinding) {
+                      addToast('Create a finding first before creating CAPA actions', 'info');
+                      return false;
+                    }
+                    return createAuditAction({
+                      findingId: targetFinding.id,
+                      assignee: 'Site Manager',
+                      dueDate: getDefaultActionDueDate(targetFinding.severity),
+                      evidenceRequired: true,
+                      closureSignoff: 'auditor',
+                    });
+                  }}
+                  onAdvanceAuditActionStatus={advanceAuditActionStatus}
+                  financeInvoices={financeInvoices}
+                  payoutRuns={payoutRuns}
+                  onGenerateInvoices={generateMissingInvoices}
+                  onSchedulePayout={schedulePayoutForInvoice}
+                  analyticsRiskSignals={analyticsRiskSignals}
+                  integrationConnections={integrationConnections}
+                  apiClients={apiClients}
+                  webhookEndpoints={webhookEndpoints}
+                  webhookDeliveryEvents={webhookDeliveryEvents}
+                  onCreateApiClient={createApiClient}
+                  onRotateApiClientSecret={rotateApiClientSecret}
+                  onCreateWebhookEndpoint={upsertWebhookEndpoint}
+                  onTriggerWebhookRetry={triggerWebhookRetry}
+                  mobileAuditSessions={mobileAuditSessions}
+                  onOpenMobileSession={openMobileAuditSession}
+                  enterpriseSsoProviders={enterpriseSsoProviders}
+                  enterpriseAccessPolicies={enterpriseAccessPolicies}
+                  enterpriseSecurityEvents={enterpriseSecurityEvents}
+                  onConfigureSsoProvider={configureEnterpriseSsoProvider}
+                  onToggleEnterprisePolicy={toggleEnterpriseAccessPolicy}
+                  onLogSecurityEvent={logEnterpriseSecurityEvent}
+                  qaHarnessRuns={qaHarnessRuns}
+                  releaseGateResults={releaseGateResults}
+                  onStartQaHarnessRun={startQaHarnessRun}
+                  onFinalizeQaHarnessRun={finalizeLatestQaHarnessRun}
+                  onAdvanceReleaseGateResult={advanceReleaseGateResult}
                 />
               )}
 
@@ -6520,6 +10625,16 @@ export default function App() {
                   auditActions={auditActions}
                   reportArtifacts={reportArtifacts}
                   shareLinks={shareLinks}
+                  marketplaceBidBoard={marketplaceBidBoard}
+                  dispatchSlaEvents={dispatchSlaEvents}
+                  evidenceAiJobs={evidenceAiJobs}
+                  regulatorVerificationRequests={regulatorVerificationRequests}
+                  analyticsRiskSignals={analyticsRiskSignals}
+                  webhookDeliveryEvents={webhookDeliveryEvents}
+                  mobileAuditSessions={mobileAuditSessions}
+                  enterpriseSecurityEvents={enterpriseSecurityEvents}
+                  qaHarnessRuns={qaHarnessRuns}
+                  releaseGateResults={releaseGateResults}
                   onUpdatePublicSiteConfig={updatePublicSiteConfig}
                   onToggleOnboardingTask={toggleOnboardingTask}
                   onRunPilotFulfilmentLoop={runPilotFulfilmentLoop}
@@ -6540,6 +10655,18 @@ export default function App() {
                   onCreateAuditAction={createAuditAction}
                   onAdvanceAuditActionStatus={advanceAuditActionStatus}
                   onCreateShareLink={createShareLinkForArtifact}
+                  onSeedBidRound={seedMarketplaceBidRound}
+                  onAwardBestBid={awardBestMarketplaceBid}
+                  onQueueEvidenceAiJob={enqueueEvidenceAiExtraction}
+                  onAdvanceEvidenceReview={advanceEvidenceAiReview}
+                  onCreateVerificationRequest={createRegulatorVerificationRequest}
+                  onResolveVerificationRequest={resolveRegulatorVerificationRequest}
+                  onTriggerWebhookRetry={triggerWebhookRetry}
+                  onOpenMobileSession={openMobileAuditSession}
+                  onLogSecurityEvent={logEnterpriseSecurityEvent}
+                  onStartQaHarnessRun={startQaHarnessRun}
+                  onFinalizeQaHarnessRun={finalizeLatestQaHarnessRun}
+                  onAdvanceReleaseGateResult={advanceReleaseGateResult}
                 />
               )}
 
@@ -6593,15 +10720,6 @@ export default function App() {
                 <button
                   onClick={() => {
                     setShowMobileQuickPanel(false);
-                    openTab('landing');
-                  }}
-                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
-                >
-                  Landing
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMobileQuickPanel(false);
                     openTab('onboarding');
                   }}
                   className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
@@ -6616,6 +10734,15 @@ export default function App() {
                   className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
                 >
                   Export
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMobileQuickPanel(false);
+                    openTab('ops');
+                  }}
+                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
+                >
+                  Ops
                 </button>
                 <button
                   onClick={() => {
@@ -6637,7 +10764,7 @@ export default function App() {
           style={{
             gridTemplateColumns: `repeat(${Math.max(
               2,
-              ['dashboard', 'assets', 'vault', 'providers', 'marketplace', 'help'].filter((tab) =>
+              ['dashboard', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'ops', 'help'].filter((tab) =>
                 allowedTabsForRole.includes(tab)
               ).length
             )}, minmax(0, 1fr))`,
@@ -6681,6 +10808,22 @@ export default function App() {
               label="Market"
               isActive={activeTab === 'marketplace'}
               onClick={() => openTab('marketplace')}
+            />
+          )}
+          {allowedTabsForRole.includes('accountancy') && (
+            <MobileNavItem
+              icon={<BarChart3 />}
+              label="Accounts"
+              isActive={activeTab === 'accountancy'}
+              onClick={() => openTab('accountancy')}
+            />
+          )}
+          {allowedTabsForRole.includes('ops') && (
+            <MobileNavItem
+              icon={<ServerCog />}
+              label="Ops"
+              isActive={activeTab === 'ops'}
+              onClick={() => openTab('ops')}
             />
           )}
           {allowedTabsForRole.includes('help') && (
@@ -6872,7 +11015,7 @@ export default function App() {
                   </p>
                   <p className="text-xs text-cyan-700/80 dark:text-cyan-200/80 mt-2 leading-relaxed">
                     Print and attach a QR label so auditors can scan this asset and jump straight to prior audits and
-                    certificates in CertEx.
+                    certificates in InCert.
                   </p>
                 </div>
               </div>
@@ -7667,7 +11810,7 @@ function BookingRequestModal({ isOpen, assets, auditors, initialAuditorId, onClo
           {step === 5 && (
             <div className="space-y-3">
               <p className="text-sm text-slate-600 dark:text-slate-300">
-                Review and submit this request to the CertEx network.
+                Review and submit this request to the InCert network.
               </p>
               <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 space-y-2 text-sm">
                 <p className="text-slate-700 dark:text-slate-200">
@@ -7951,7 +12094,7 @@ function AppFooter({ onOpenHelp, onPrivacy, onTerms }) {
     <footer className="border-t border-slate-200 dark:border-slate-700 pt-5">
       <div className="flex flex-col items-center gap-3 text-center md:flex-row md:justify-between md:text-left">
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          CertEx by InCommand &copy; {new Date().getFullYear()}
+          InCert by InCommand &copy; {new Date().getFullYear()}
         </p>
         <div className="flex items-center justify-center gap-5">
           <button
@@ -7997,7 +12140,7 @@ function AnimatedNetworkSvg() {
       {[
         { x: 80, y: 80, label: 'Company' },
         { x: 170, y: 170, label: 'Site' },
-        { x: 280, y: 130, label: 'Certex' },
+        { x: 280, y: 130, label: 'InCert' },
         { x: 390, y: 70, label: 'Auditor' },
         { x: 510, y: 180, label: 'Insurer' },
       ].map((node) => (
@@ -8072,7 +12215,7 @@ function AnimatedTrustSvg() {
 
 function AnimatedLogoShield({ className = 'h-7 w-7' }) {
   return (
-    <svg viewBox="0 0 28 28" className={className} role="img" aria-label="CertEx">
+    <svg viewBox="0 0 28 28" className={className} role="img" aria-label="InCert">
       <defs>
         <linearGradient id="logoShieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#06b6d4" />
@@ -8171,7 +12314,13 @@ function AnimatedStepIcon({ step, className = 'h-12 w-12' }) {
   );
 }
 
-function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
+function PublicMarketingLanding({
+  isDarkMode,
+  onToggleTheme,
+  onAuthenticate,
+  authRuntimeMode = 'mock',
+  isSupabaseConfigured = false,
+}) {
   const [authMode, setAuthMode] = useState('signin');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -8210,11 +12359,12 @@ function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
     Careers: 'careers',
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    const didAuth = onAuthenticate?.({
+    const didAuth = await onAuthenticate?.({
       mode: authMode,
       email,
+      password,
       fullName,
       accountType,
     });
@@ -8228,11 +12378,7 @@ function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
       <div className="max-w-7xl mx-auto px-4 md:px-8 pb-12">
         <header className="h-20 flex items-center justify-between sticky top-0 z-30 backdrop-blur-md bg-slate-50/80 dark:bg-slate-950/70 border-b border-slate-200/80 dark:border-slate-800/80">
           <button onClick={() => scrollToSection('home')} className="flex items-center gap-2.5">
-            <span className="text-cyan-600 dark:text-cyan-400"><AnimatedLogoShield className="h-7 w-7" /></span>
-            <div className="flex flex-col leading-none text-left">
-              <span className="font-bold text-xl tracking-tight text-slate-800 dark:text-white">CertEx</span>
-              <span className="text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">by InCommand</span>
-            </div>
+            <InCertLogo width={176} height={44} className="text-slate-800 dark:text-white" />
           </button>
           <nav className="hidden lg:flex items-center gap-2">
             {PUBLIC_SITE_PAGE_BLUEPRINTS.map((page) => (
@@ -8357,7 +12503,7 @@ function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
                 {[
                   { type: 'company', title: 'Company portal', copy: 'Book inspections, control approvals, and access vault exports.' },
                   { type: 'auditor', title: 'Auditor portal', copy: 'Accept jobs, submit findings, and track payout status.' },
-                  { type: 'admin', title: 'Certex admin portal', copy: 'See customer totals, auditor payouts, and platform gross.' },
+                  { type: 'admin', title: 'InCert admin portal', copy: 'See customer totals, auditor payouts, and platform gross.' },
                   { type: 'insurer', title: 'Insurer read-only portal', copy: 'Review completed jobs and evidence timeline only.' },
                 ].map((portal) => (
                   <article key={portal.type} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
@@ -8539,6 +12685,10 @@ function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
             <h2 className="text-xl font-black text-slate-900 dark:text-white mt-1">
               {authMode === 'signup' ? 'Create your account' : 'Sign in to your portal'}
             </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              Runtime mode: {authRuntimeMode === 'supabase' ? 'Supabase live' : 'Mock'} •{' '}
+              {isSupabaseConfigured ? 'env detected' : 'env pending'}
+            </p>
             <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
               Start with a company or auditor account, then invite teams and configure workflows.
             </p>
@@ -8604,7 +12754,7 @@ function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
                 >
                   <option value="company">Company</option>
                   <option value="auditor">Auditor</option>
-                  <option value="certex">Certex Admin</option>
+                  <option value="incert">InCert Admin</option>
                   <option value="insurer">Insurer (read-only)</option>
                 </select>
               </label>
@@ -8622,7 +12772,7 @@ function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
                   onClick={() =>
                     onAuthenticate?.({
                       mode: 'signin',
-                      email: 'debug@certex.local',
+                      email: 'debug@incert.local',
                       fullName: 'Debug User',
                       accountType,
                     })
@@ -8703,7 +12853,7 @@ function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
           <article id={sectionId('contact')} className="scroll-mt-24 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/85 dark:bg-slate-800/80 p-4">
             <h3 className="text-sm font-black text-slate-900 dark:text-white">Contact</h3>
             <p className="text-sm text-slate-700 dark:text-slate-200 mt-2">
-              <strong>Sales & onboarding:</strong> sales@certex.example · <strong>Support & compliance:</strong> support@certex.example. We typically respond within one business day.
+              <strong>Sales & onboarding:</strong> sales@incert.example · <strong>Support & compliance:</strong> support@incert.example. We typically respond within one business day.
             </p>
             <button type="button" onClick={() => scrollToSection('signin', { authMode: 'signup' })} className="mt-2 text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
               Create account to get started →
@@ -8723,7 +12873,7 @@ function PublicMarketingLanding({ isDarkMode, onToggleTheme, onAuthenticate }) {
         <footer className="mt-8 border-t border-slate-200 dark:border-slate-700 pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              CertEx by InCommand &copy; {new Date().getFullYear()}
+              InCert by InCommand &copy; {new Date().getFullYear()}
             </p>
             <div className="flex flex-wrap gap-2">
               {PUBLIC_FOOTER_LINKS.map((link) => (
@@ -8765,7 +12915,7 @@ function PublicLandingView({ onNotify, publicSiteConfig = defaultPublicSiteConfi
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Public Website</p>
             <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mt-2">
-              {publicSiteConfig.siteTitle || 'CertEx Public Site'}
+              {publicSiteConfig.siteTitle || 'InCert Public Site'}
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-3xl">
               Build-ready page architecture for acquisition, trust, and onboarding. Includes all public pages from the research
@@ -9079,6 +13229,1339 @@ function OnboardingPortalView({ onNotify, onboardingTasks = [], onToggleOnboardi
   );
 }
 
+function AccountancyView({
+  financeInvoices = [],
+  payoutRuns = [],
+  onGenerateInvoices,
+  onApproveInvoice,
+  onIssueInvoice,
+  onSendInvoiceReminder,
+  onMarkInvoiceCollected,
+  onRunCollectionsSweep,
+  onSchedulePayout,
+  onMarkPayoutPaid,
+  onExportCsv,
+  showDebugBulkActions = false,
+  onCollectReceivablesMonthDebug,
+  onPayProvidersMonthDebug,
+  onCollectReceivablesYearDebug,
+  onPayProvidersYearDebug,
+  onAlignPayoutsToCollectionsDebug,
+}) {
+  const PAYMENT_TERMS_DAYS = 30;
+  const AVERAGE_DAYS_PER_MONTH = 365.25 / 12;
+  const normalizeDateValue = (value) => String(value || '').slice(0, 10);
+  const normalizeMonthValue = (value) => String(value || '').slice(0, 7);
+  const isMonthKey = (value) => /^\d{4}-\d{2}$/.test(String(value || ''));
+  const buildIsoWeekKey = (dateValue) => {
+    const normalizedDate = normalizeDateValue(dateValue);
+    const [yearPart, monthPart, dayPart] = normalizedDate.split('-').map(Number);
+    if (!Number.isFinite(yearPart) || !Number.isFinite(monthPart) || !Number.isFinite(dayPart)) {
+      return '';
+    }
+    const targetDate = new Date(Date.UTC(yearPart, monthPart - 1, dayPart));
+    if (Number.isNaN(targetDate.getTime())) {
+      return '';
+    }
+    const isoWeekDate = new Date(targetDate);
+    isoWeekDate.setUTCDate(isoWeekDate.getUTCDate() + 4 - (isoWeekDate.getUTCDay() || 7));
+    const weekYear = isoWeekDate.getUTCFullYear();
+    const yearStart = new Date(Date.UTC(weekYear, 0, 1));
+    const weekNumber = Math.ceil((((isoWeekDate - yearStart) / 86400000) + 1) / 7);
+    return `${weekYear}-W${String(weekNumber).padStart(2, '0')}`;
+  };
+  const getPeriodMonthMultiplier = (granularity) => {
+    if (granularity === 'day') {
+      return 1 / AVERAGE_DAYS_PER_MONTH;
+    }
+    if (granularity === 'week') {
+      return 7 / AVERAGE_DAYS_PER_MONTH;
+    }
+    if (granularity === 'quarter') {
+      return 3;
+    }
+    if (granularity === 'year') {
+      return 12;
+    }
+    return 1;
+  };
+  const formatMonthLabel = (monthValue) => {
+    if (!isMonthKey(monthValue)) {
+      return String(monthValue || 'Unknown month');
+    }
+    const [year, month] = String(monthValue).split('-').map(Number);
+    const labelDate = new Date(Date.UTC(year, Math.max(0, month - 1), 1));
+    return labelDate.toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  };
+  const resolveInvoiceIssueDate = (invoice) =>
+    normalizeDateValue(invoice?.issueDate || invoice?.issuedAt || invoice?.createdAt);
+  const resolveInvoiceDueDate = (invoice) =>
+    normalizeDateValue(invoice?.dueDate || invoice?.dueAt || addDays(resolveInvoiceIssueDate(invoice), PAYMENT_TERMS_DAYS));
+  const resolvePayoutScheduleDate = (run) => normalizeDateValue(run?.scheduledPayoutDate || run?.scheduledFor);
+  const resolvePayoutAmount = (run) => Number(run?.payoutAmount ?? run?.totalIncVat ?? 0);
+  const toQuarterKey = (year, month) => `${year}-Q${Math.floor((month - 1) / 3) + 1}`;
+  const buildPeriodKey = (dateValue, granularity) => {
+    const normalizedDate = normalizeDateValue(dateValue);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+      return '';
+    }
+    const [yearPart, monthPart] = normalizedDate.split('-').map(Number);
+    if (!Number.isFinite(yearPart) || !Number.isFinite(monthPart) || monthPart < 1 || monthPart > 12) {
+      return '';
+    }
+    if (granularity === 'day') {
+      return normalizedDate;
+    }
+    if (granularity === 'week') {
+      return buildIsoWeekKey(normalizedDate);
+    }
+    if (granularity === 'year') {
+      return String(yearPart);
+    }
+    if (granularity === 'quarter') {
+      return toQuarterKey(yearPart, monthPart);
+    }
+    return `${String(yearPart)}-${String(monthPart).padStart(2, '0')}`;
+  };
+  const formatPeriodLabel = (periodKey, granularity) => {
+    if (granularity === 'day') {
+      return /^\d{4}-\d{2}-\d{2}$/.test(String(periodKey)) ? formatDateLabel(String(periodKey)) : 'Unknown day';
+    }
+    if (granularity === 'week') {
+      const match = String(periodKey).match(/^(\d{4})-W(\d{2})$/);
+      return match ? `Week ${match[2]} ${match[1]}` : 'Unknown week';
+    }
+    if (granularity === 'year') {
+      return /^\d{4}$/.test(String(periodKey)) ? String(periodKey) : 'Unknown year';
+    }
+    if (granularity === 'quarter') {
+      const match = String(periodKey).match(/^(\d{4})-Q([1-4])$/);
+      return match ? `Q${match[2]} ${match[1]}` : 'Unknown quarter';
+    }
+    return formatMonthLabel(periodKey);
+  };
+  const getPeriodRank = (periodKey, granularity) => {
+    if (granularity === 'day') {
+      const parsedDate = parseISODate(String(periodKey || ''));
+      return parsedDate ? parsedDate.getTime() : Number.MIN_SAFE_INTEGER;
+    }
+    if (granularity === 'week') {
+      const match = String(periodKey).match(/^(\d{4})-W(\d{2})$/);
+      if (!match) {
+        return Number.MIN_SAFE_INTEGER;
+      }
+      const year = Number(match[1]);
+      const week = Number(match[2]);
+      return year * 53 + week;
+    }
+    if (granularity === 'year') {
+      const year = Number(periodKey);
+      return Number.isFinite(year) ? year : Number.MIN_SAFE_INTEGER;
+    }
+    if (granularity === 'quarter') {
+      const match = String(periodKey).match(/^(\d{4})-Q([1-4])$/);
+      if (!match) {
+        return Number.MIN_SAFE_INTEGER;
+      }
+      const year = Number(match[1]);
+      const quarter = Number(match[2]);
+      return year * 4 + (quarter - 1);
+    }
+    if (!isMonthKey(periodKey)) {
+      return Number.MIN_SAFE_INTEGER;
+    }
+    const [year, month] = String(periodKey).split('-').map(Number);
+    return year * 12 + (month - 1);
+  };
+  const [receivablesMonthFilter, setReceivablesMonthFilter] = useState('');
+  const [providerQueueMonthFilter, setProviderQueueMonthFilter] = useState('');
+  const [summaryMonthFilter, setSummaryMonthFilter] = useState('');
+  const [profitAccountingMode, setProfitAccountingMode] = useState('cash');
+  const [profitLossGranularity, setProfitLossGranularity] = useState('month');
+  const [profitLossSortDirection, setProfitLossSortDirection] = useState('desc');
+  const [profitYearFilter, setProfitYearFilter] = useState('');
+  const [businessOverheadsMonthly, setBusinessOverheadsMonthly] = useState(600);
+  const [ownerPayMonthly, setOwnerPayMonthly] = useState(3000);
+  const [plannedStaffCount, setPlannedStaffCount] = useState(2);
+  const [avgStaffCostMonthly, setAvgStaffCostMonthly] = useState(2100);
+  const staffPayrollMonthly = Math.max(0, plannedStaffCount) * Math.max(0, avgStaffCostMonthly);
+  const inCertOperatingCostsMonthly = Math.max(0, businessOverheadsMonthly) + staffPayrollMonthly;
+  const totalPlannedCostsMonthly = inCertOperatingCostsMonthly + Math.max(0, ownerPayMonthly);
+
+  const formatDateSafe = (value) => {
+    const normalized = normalizeDateValue(value);
+    if (!normalized || !parseISODate(normalized)) {
+      return '-';
+    }
+    return formatDateLabel(normalized);
+  };
+
+  const todayMs = startOfToday().getTime();
+  const payoutByInvoiceId = useMemo(() => {
+    const ids = new Set();
+    payoutRuns.forEach((run) => {
+      if (run?.invoiceId) {
+        ids.add(String(run.invoiceId));
+      }
+    });
+    return ids;
+  }, [payoutRuns]);
+
+  const normalizedInvoices = useMemo(
+    () =>
+      [...financeInvoices]
+        .map((invoice) => {
+          const dueDate = resolveInvoiceDueDate(invoice);
+          const parsedDue = parseISODate(dueDate);
+          const dueMs = parsedDue ? parsedDue.getTime() : Number.MAX_SAFE_INTEGER;
+          const rawStatus = String(invoice.status || '').toLowerCase();
+          let collectionStatus = rawStatus;
+          if (rawStatus === 'payout_scheduled') {
+            collectionStatus = 'issued';
+          }
+          if (rawStatus === 'approved') {
+            collectionStatus = 'approved';
+          }
+          if (rawStatus === 'pending_approval') {
+            collectionStatus = 'pending_approval';
+          }
+          if (!['pending_approval', 'approved', 'issued', 'overdue', 'paid'].includes(collectionStatus)) {
+            collectionStatus = 'issued';
+          }
+          if (collectionStatus !== 'paid' && collectionStatus !== 'pending_approval' && dueMs < todayMs) {
+            collectionStatus = 'overdue';
+          }
+
+          return {
+            ...invoice,
+            displayId: String(invoice.id || invoice.invoiceNumber || 'INV-UNKNOWN'),
+            customerName: String(invoice.billToName || invoice.companyName || 'Customer'),
+            providerName: String(invoice.payToName || invoice.providerName || 'Assigned provider'),
+            issueDate: resolveInvoiceIssueDate(invoice),
+            dueDate,
+            collectionStatus,
+            totalIncVat: Number(invoice.totalIncVat || 0),
+            payoutScheduled: payoutByInvoiceId.has(String(invoice.id || '')),
+            dueMs,
+          };
+        })
+        .sort((first, second) => {
+          const dueDelta = first.dueMs - second.dueMs;
+          if (Number.isFinite(dueDelta) && dueDelta !== 0) {
+            return dueDelta;
+          }
+          return String(second.displayId).localeCompare(String(first.displayId));
+        }),
+    [financeInvoices, payoutByInvoiceId, todayMs]
+  );
+
+  const normalizedPayoutRuns = useMemo(
+    () =>
+      [...payoutRuns]
+        .map((run) => ({
+          ...run,
+          displayId: String(run.id || run.reference || 'PAY-UNKNOWN'),
+          scheduledDate: resolvePayoutScheduleDate(run),
+          payoutAmount: resolvePayoutAmount(run),
+          normalizedStatus: String(run.status || '').toLowerCase() === 'paid' ? 'paid' : 'scheduled',
+          sortDateMs: parseISODate(resolvePayoutScheduleDate(run))?.getTime() || Number.MAX_SAFE_INTEGER,
+        }))
+        .sort((first, second) => first.sortDateMs - second.sortDateMs),
+    [payoutRuns]
+  );
+  const invoicePaidAtById = useMemo(
+    () =>
+      new Map(
+        normalizedInvoices.map((invoice) => [
+          String(invoice.id || ''),
+          String(invoice.paidAt || '').slice(0, 10),
+        ])
+      ),
+    [normalizedInvoices]
+  );
+  const paidPayoutAmountByInvoiceId = useMemo(() => {
+    const byInvoiceId = new Map();
+    normalizedPayoutRuns.forEach((run) => {
+      if (run.normalizedStatus !== 'paid') {
+        return;
+      }
+      const invoiceId = String(run.invoiceId || '');
+      if (!invoiceId) {
+        return;
+      }
+      const linkedInvoicePaidDate = String(invoicePaidAtById.get(invoiceId) || '');
+      if (!linkedInvoicePaidDate) {
+        return;
+      }
+      const existingAmount = Number(byInvoiceId.get(invoiceId) || 0);
+      byInvoiceId.set(invoiceId, existingAmount + Number(run.payoutAmount || 0));
+    });
+    return byInvoiceId;
+  }, [invoicePaidAtById, normalizedPayoutRuns]);
+  const resolvePayoutCashAnchorDate = useCallback(
+    (run) => {
+      const invoiceId = String(run?.invoiceId || '');
+      const linkedInvoicePaidDate = invoiceId ? String(invoicePaidAtById.get(invoiceId) || '') : '';
+      return linkedInvoicePaidDate || '';
+    },
+    [invoicePaidAtById]
+  );
+
+  const receivablesMonthOptions = useMemo(() => {
+    const months = new Set();
+    normalizedInvoices.forEach((invoice) => {
+      const monthKey = normalizeMonthValue(invoice.issueDate || invoice.dueDate || '');
+      if (isMonthKey(monthKey)) {
+        months.add(monthKey);
+      }
+    });
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [normalizedInvoices]);
+
+  const providerQueueMonthOptions = useMemo(() => {
+    const months = new Set();
+    normalizedPayoutRuns.forEach((run) => {
+      const monthKey = normalizeMonthValue(run.scheduledDate || run.createdAt || '');
+      if (isMonthKey(monthKey)) {
+        months.add(monthKey);
+      }
+    });
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [normalizedPayoutRuns]);
+
+  const summaryMonthOptions = useMemo(() => {
+    const months = new Set([...receivablesMonthOptions, ...providerQueueMonthOptions]);
+    return Array.from(months).sort((a, b) => b.localeCompare(a));
+  }, [providerQueueMonthOptions, receivablesMonthOptions]);
+
+  useEffect(() => {
+    if (!receivablesMonthFilter) {
+      return;
+    }
+    if (!receivablesMonthOptions.includes(receivablesMonthFilter)) {
+      setReceivablesMonthFilter('');
+    }
+  }, [receivablesMonthFilter, receivablesMonthOptions]);
+
+  useEffect(() => {
+    if (!providerQueueMonthFilter) {
+      return;
+    }
+    if (!providerQueueMonthOptions.includes(providerQueueMonthFilter)) {
+      setProviderQueueMonthFilter('');
+    }
+  }, [providerQueueMonthFilter, providerQueueMonthOptions]);
+
+  useEffect(() => {
+    if (!summaryMonthFilter) {
+      return;
+    }
+    if (!summaryMonthOptions.includes(summaryMonthFilter)) {
+      setSummaryMonthFilter('');
+    }
+  }, [summaryMonthFilter, summaryMonthOptions]);
+
+  const filteredReceivables = useMemo(() => {
+    if (!receivablesMonthFilter) {
+      return normalizedInvoices;
+    }
+    return normalizedInvoices.filter((invoice) => {
+      const monthKey = normalizeMonthValue(invoice.issueDate || invoice.dueDate || '');
+      return monthKey === receivablesMonthFilter;
+    });
+  }, [normalizedInvoices, receivablesMonthFilter]);
+
+  const filteredProviderQueueRuns = useMemo(() => {
+    if (!providerQueueMonthFilter) {
+      return normalizedPayoutRuns;
+    }
+    return normalizedPayoutRuns.filter((run) => {
+      const monthKey = normalizeMonthValue(run.scheduledDate || run.createdAt || '');
+      return monthKey === providerQueueMonthFilter;
+    });
+  }, [normalizedPayoutRuns, providerQueueMonthFilter]);
+  const summaryInvoices = useMemo(() => {
+    if (!summaryMonthFilter) {
+      return normalizedInvoices;
+    }
+    return normalizedInvoices.filter((invoice) => {
+      const monthKey = normalizeMonthValue(invoice.issueDate || invoice.dueDate || '');
+      return monthKey === summaryMonthFilter;
+    });
+  }, [normalizedInvoices, summaryMonthFilter]);
+  const summaryPayoutRuns = useMemo(() => {
+    if (!summaryMonthFilter) {
+      return normalizedPayoutRuns;
+    }
+    return normalizedPayoutRuns.filter((run) => {
+      const monthKey = normalizeMonthValue(run.scheduledDate || run.createdAt || '');
+      return monthKey === summaryMonthFilter;
+    });
+  }, [normalizedPayoutRuns, summaryMonthFilter]);
+  const buildProfitLossRowsByGranularity = useCallback(
+    (granularity, accountingMode = 'cash') => {
+      const periodMonthMultiplier = getPeriodMonthMultiplier(granularity);
+      const rowsByPeriod = new Map();
+      const ensureRow = (periodKey) => {
+        if (!rowsByPeriod.has(periodKey)) {
+          rowsByPeriod.set(periodKey, {
+            periodKey,
+            periodLabel: formatPeriodLabel(periodKey, granularity),
+            periodRank: getPeriodRank(periodKey, granularity),
+            invoicedIncVat: 0,
+            collectedIncVat: 0,
+            collectedExVat: 0,
+            paidOutExVat: 0,
+            outstandingIncVat: 0,
+            overdueIncVat: 0,
+          });
+        }
+        return rowsByPeriod.get(periodKey);
+      };
+
+      const payoutAmountByInvoiceId = new Map();
+      if (accountingMode === 'accrual') {
+        normalizedPayoutRuns.forEach((run) => {
+          const invoiceId = String(run.invoiceId || '');
+          if (!invoiceId) {
+            return;
+          }
+          const existingAmount = Number(payoutAmountByInvoiceId.get(invoiceId) || 0);
+          payoutAmountByInvoiceId.set(invoiceId, existingAmount + Number(run.payoutAmount || 0));
+        });
+      }
+
+      normalizedInvoices.forEach((invoice) => {
+        const invoicePeriodKey = buildPeriodKey(invoice.issueDate || invoice.dueDate || '', granularity);
+        if (invoicePeriodKey) {
+          const invoiceRow = ensureRow(invoicePeriodKey);
+          const invoiceValue = Number(invoice.totalIncVat || 0);
+          invoiceRow.invoicedIncVat += invoiceValue;
+          if (invoice.collectionStatus !== 'paid') {
+            invoiceRow.outstandingIncVat += invoiceValue;
+          }
+          if (invoice.collectionStatus === 'overdue') {
+            invoiceRow.overdueIncVat += invoiceValue;
+          }
+        }
+
+        const invoiceStatus = String(invoice.collectionStatus || '').toLowerCase();
+        if (accountingMode === 'cash') {
+          if (invoiceStatus === 'paid') {
+            const collectedPeriodKey = buildPeriodKey(invoice.paidAt || '', granularity);
+            if (collectedPeriodKey) {
+              const collectedRow = ensureRow(collectedPeriodKey);
+              collectedRow.collectedIncVat += Number(invoice.totalIncVat || 0);
+              collectedRow.collectedExVat += resolveInvoiceSubtotalExVat(invoice);
+              const invoiceId = String(invoice.id || '');
+              const payoutRaw = Number(paidPayoutAmountByInvoiceId.get(invoiceId) || 0);
+              const payoutCap = Math.max(0, resolveInvoiceSubtotalExVat(invoice));
+              const payoutRecognized = Math.min(Math.max(0, payoutRaw), payoutCap);
+              collectedRow.paidOutExVat += payoutRecognized;
+            }
+          }
+        } else if (invoicePeriodKey && ['approved', 'issued', 'overdue', 'paid'].includes(invoiceStatus)) {
+          const accruedRow = ensureRow(invoicePeriodKey);
+          accruedRow.collectedIncVat += Number(invoice.totalIncVat || 0);
+          accruedRow.collectedExVat += resolveInvoiceSubtotalExVat(invoice);
+          const invoiceId = String(invoice.id || '');
+          const payoutFromRuns = Number(payoutAmountByInvoiceId.get(invoiceId) || 0);
+          const fallbackProviderCost = Number(invoice.providerPayoutExVat || 0);
+          const accruedCost = payoutFromRuns > 0 ? payoutFromRuns : fallbackProviderCost;
+          accruedRow.paidOutExVat += Number.isFinite(accruedCost) ? accruedCost : 0;
+        }
+      });
+
+      return Array.from(rowsByPeriod.values()).map((row) => {
+        const collectedExVat = roundMoney(row.collectedExVat);
+        const paidOutExVat = roundMoney(row.paidOutExVat);
+        const operatingProfitExVat = roundMoney(collectedExVat - paidOutExVat);
+        const inCertStaffWagesExVat = roundMoney(staffPayrollMonthly * periodMonthMultiplier);
+        const inCertOverheadsExVat = roundMoney(Math.max(0, businessOverheadsMonthly) * periodMonthMultiplier);
+        const inCertOperatingCostsExVat = roundMoney(inCertStaffWagesExVat + inCertOverheadsExVat);
+        const ownerDrawExVat = roundMoney(Math.max(0, ownerPayMonthly) * periodMonthMultiplier);
+        const netProfitAfterInCertCostsExVat = roundMoney(operatingProfitExVat - inCertOperatingCostsExVat);
+        const netAfterOwnerDrawExVat = roundMoney(netProfitAfterInCertCostsExVat - ownerDrawExVat);
+        return {
+          ...row,
+          invoicedIncVat: roundMoney(row.invoicedIncVat),
+          collectedIncVat: roundMoney(row.collectedIncVat),
+          collectedExVat,
+          paidOutExVat,
+          operatingProfitExVat,
+          inCertStaffWagesExVat,
+          inCertOverheadsExVat,
+          inCertOperatingCostsExVat,
+          ownerDrawExVat,
+          netProfitAfterInCertCostsExVat,
+          netAfterOwnerDrawExVat,
+          outstandingIncVat: roundMoney(row.outstandingIncVat),
+          overdueIncVat: roundMoney(row.overdueIncVat),
+          profitLossExVat: netProfitAfterInCertCostsExVat,
+          grossMarginPct: collectedExVat > 0 ? netProfitAfterInCertCostsExVat / collectedExVat : 0,
+        };
+      });
+    },
+    [businessOverheadsMonthly, getPeriodMonthMultiplier, normalizedInvoices, normalizedPayoutRuns, ownerPayMonthly, paidPayoutAmountByInvoiceId, staffPayrollMonthly]
+  );
+
+  const periodProfitLossRows = useMemo(() => {
+    const rows = buildProfitLossRowsByGranularity(profitLossGranularity, profitAccountingMode);
+    rows.sort((first, second) =>
+      profitLossSortDirection === 'asc'
+        ? first.periodRank - second.periodRank
+        : second.periodRank - first.periodRank
+    );
+    return rows;
+  }, [buildProfitLossRowsByGranularity, profitAccountingMode, profitLossGranularity, profitLossSortDirection]);
+
+  const monthlyProfitRows = useMemo(() => {
+    const rows = buildProfitLossRowsByGranularity('month', profitAccountingMode);
+    rows.sort((first, second) => second.periodRank - first.periodRank);
+    return rows;
+  }, [buildProfitLossRowsByGranularity, profitAccountingMode]);
+
+  const yearlyProfitRows = useMemo(() => {
+    const rows = buildProfitLossRowsByGranularity('year', profitAccountingMode);
+    rows.sort((first, second) => second.periodRank - first.periodRank);
+    return rows;
+  }, [buildProfitLossRowsByGranularity, profitAccountingMode]);
+
+  const profitYearOptions = useMemo(() => {
+    const years = new Set();
+    periodProfitLossRows.forEach((row) => {
+      const yearKey = String(row.periodKey || '').match(/^(\d{4})/)?.[1] || '';
+      if (/^\d{4}$/.test(yearKey)) {
+        years.add(yearKey);
+      }
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [periodProfitLossRows]);
+
+  useEffect(() => {
+    if (!profitYearFilter) {
+      return;
+    }
+    if (!profitYearOptions.includes(profitYearFilter)) {
+      setProfitYearFilter('');
+    }
+  }, [profitYearFilter, profitYearOptions]);
+
+  const filteredPeriodProfitLossRows = useMemo(() => {
+    if (!['day', 'week', 'month'].includes(profitLossGranularity) || !profitYearFilter) {
+      return periodProfitLossRows;
+    }
+    return periodProfitLossRows.filter((row) => String(row.periodKey || '').startsWith(`${profitYearFilter}-`));
+  }, [periodProfitLossRows, profitLossGranularity, profitYearFilter]);
+  const filteredPeriodProfitLossRowsWithCumulative = useMemo(() => {
+    const chronological = [...filteredPeriodProfitLossRows].sort((first, second) => first.periodRank - second.periodRank);
+    let runningBalance = 0;
+    const cumulativeByPeriod = new Map();
+    chronological.forEach((row) => {
+      runningBalance += Number(row.profitLossExVat || 0);
+      cumulativeByPeriod.set(row.periodKey, roundMoney(runningBalance));
+    });
+    return filteredPeriodProfitLossRows.map((row) => ({
+      ...row,
+      cumulativeBalanceExVat: Number(cumulativeByPeriod.get(row.periodKey) || 0),
+    }));
+  }, [filteredPeriodProfitLossRows]);
+  const yearCollectEligibleCount = normalizedInvoices.filter((invoice) => {
+    const currentStatus = String(invoice.collectionStatus || '').toLowerCase();
+    return currentStatus !== 'paid';
+  }).length;
+  const yearPayoutEligibleCount = normalizedPayoutRuns.filter((run) => {
+    const normalizedStatus = String(run.normalizedStatus || '').toLowerCase();
+    return normalizedStatus !== 'paid';
+  }).length;
+  function resolveInvoiceSubtotalExVat(invoice) {
+    const direct = Number(invoice?.subtotalExVat || 0);
+    if (Number.isFinite(direct) && direct > 0) {
+      return direct;
+    }
+    const fromTotal = Number(invoice?.totalIncVat || 0);
+    return fromTotal > 0 ? roundMoney(fromTotal / (1 + DEFAULT_VAT_RATE)) : 0;
+  }
+
+  const pendingApprovalCount = summaryInvoices.filter((invoice) => invoice.collectionStatus === 'pending_approval').length;
+  const awaitingIssueCount = summaryInvoices.filter((invoice) => invoice.collectionStatus === 'approved').length;
+  const overdueInvoices = summaryInvoices.filter((invoice) => invoice.collectionStatus === 'overdue');
+  const collectedInvoices = summaryInvoices.filter((invoice) => invoice.collectionStatus === 'paid');
+  const totalInvoicedValue = summaryInvoices.reduce((sum, invoice) => sum + Number(invoice.totalIncVat || 0), 0);
+  const collectedValue = collectedInvoices.reduce((sum, invoice) => sum + Number(invoice.totalIncVat || 0), 0);
+  const outstandingValue = summaryInvoices.reduce(
+    (sum, invoice) => sum + (invoice.collectionStatus === 'paid' ? 0 : Number(invoice.totalIncVat || 0)),
+    0
+  );
+  const overdueValue = overdueInvoices.reduce((sum, invoice) => sum + Number(invoice.totalIncVat || 0), 0);
+  const scheduledPayouts = summaryPayoutRuns.filter((run) => run.normalizedStatus === 'scheduled');
+  const paidPayouts = summaryPayoutRuns.filter(
+    (run) => run.normalizedStatus === 'paid' && String(invoicePaidAtById.get(String(run.invoiceId || '')) || '')
+  );
+  const scheduledPayoutValue = scheduledPayouts.reduce((sum, run) => sum + Number(run.payoutAmount || 0), 0);
+  const paidPayoutValue = summaryInvoices.reduce((sum, invoice) => {
+    if (String(invoice.collectionStatus || '').toLowerCase() !== 'paid') {
+      return sum;
+    }
+    const invoiceId = String(invoice.id || '');
+    const payoutRaw = Number(paidPayoutAmountByInvoiceId.get(invoiceId) || 0);
+    const payoutCap = Math.max(0, resolveInvoiceSubtotalExVat(invoice));
+    return sum + Math.min(Math.max(0, payoutRaw), payoutCap);
+  }, 0);
+  const totalInvoicedExVat = summaryInvoices.reduce((sum, invoice) => sum + resolveInvoiceSubtotalExVat(invoice), 0);
+  const collectedExVat = collectedInvoices.reduce((sum, invoice) => sum + resolveInvoiceSubtotalExVat(invoice), 0);
+  const payoutCommittedExVat = summaryPayoutRuns.reduce((sum, run) => sum + Number(run.payoutAmount || 0), 0);
+  const realizedGrossExVat = collectedExVat - paidPayoutValue;
+  const realizedGrossMarginPct = collectedExVat > 0 ? realizedGrossExVat / collectedExVat : 0;
+  const blendedPayoutRatePct = totalInvoicedExVat > 0 ? payoutCommittedExVat / totalInvoicedExVat : 0;
+  const netWindowMonth = summaryMonthFilter || new Date().toISOString().slice(0, 7);
+  const collectionsInNetWindow = normalizedInvoices.reduce((sum, invoice) => {
+    const paidAtMonth = String(invoice.paidAt || '').slice(0, 7);
+    return paidAtMonth === netWindowMonth ? sum + Number(invoice.totalIncVat || 0) : sum;
+  }, 0);
+  const payoutsInNetWindow = normalizedInvoices.reduce((sum, invoice) => {
+    if (String(invoice.collectionStatus || '').toLowerCase() !== 'paid') {
+      return sum;
+    }
+    const paidAtMonth = String(invoice.paidAt || '').slice(0, 7);
+    if (paidAtMonth !== netWindowMonth) {
+      return sum;
+    }
+    const invoiceId = String(invoice.id || '');
+    const payoutRaw = Number(paidPayoutAmountByInvoiceId.get(invoiceId) || 0);
+    const payoutCap = Math.max(0, resolveInvoiceSubtotalExVat(invoice));
+    return sum + Math.min(Math.max(0, payoutRaw), payoutCap);
+  }, 0);
+  const netCashInNetWindow = collectionsInNetWindow - payoutsInNetWindow;
+  const netWindowLabel = summaryMonthFilter ? `Net ${formatMonthLabel(summaryMonthFilter)}` : 'Net this month';
+  const summaryPeriodLabel = summaryMonthFilter ? formatMonthLabel(summaryMonthFilter) : 'All months';
+  const paidOutVsInvoicedPct = totalInvoicedValue > 0 ? paidPayoutValue / totalInvoicedValue : 0;
+  const revenueColumnLabel = profitAccountingMode === 'cash' ? 'Collected (inc VAT)' : 'Revenue (inc VAT)';
+  const cumulativeColumnLabel = profitAccountingMode === 'cash' ? 'Cumulative Net (ex VAT)' : 'Cumulative Net P/L (ex VAT)';
+  const nowDate = new Date();
+  const currentYearKey = String(nowDate.getFullYear());
+  const latestMonthProfitRow = monthlyProfitRows[0] || null;
+  const currentMonthProfitRow =
+    monthlyProfitRows.find((row) => row.periodKey === nowDate.toISOString().slice(0, 7)) || latestMonthProfitRow;
+  const trailingTwelveProfitRows = monthlyProfitRows.slice(0, 12);
+  const trailingTwelveOperatingAverageExVat =
+    trailingTwelveProfitRows.length > 0
+      ? trailingTwelveProfitRows.reduce((sum, row) => sum + Number(row.operatingProfitExVat || 0), 0) / trailingTwelveProfitRows.length
+      : 0;
+  const trailingTwelveMonthlyAverageExVat =
+    trailingTwelveProfitRows.length > 0
+      ? trailingTwelveProfitRows.reduce((sum, row) => sum + Number(row.profitLossExVat || 0), 0) / trailingTwelveProfitRows.length
+      : 0;
+  const projectedAnnualProfitExVat = trailingTwelveMonthlyAverageExVat * 12;
+  const currentYearProfitExVat = yearlyProfitRows.find((row) => row.periodKey === currentYearKey)?.profitLossExVat || 0;
+  const selectedYearKey = profitYearFilter || currentYearKey;
+  const selectedYearProfitExVat = monthlyProfitRows
+    .filter((row) => String(row.periodKey || '').startsWith(`${selectedYearKey}-`))
+    .reduce((sum, row) => sum + Number(row.profitLossExVat || 0), 0);
+  const netAfterCostsMonthlyExVat = trailingTwelveMonthlyAverageExVat - Math.max(0, ownerPayMonthly);
+  const netAfterCostsAnnualExVat = netAfterCostsMonthlyExVat * 12;
+  const affordableStaffHeadcount =
+    avgStaffCostMonthly > 0
+      ? Math.max(
+          0,
+          Math.floor((trailingTwelveOperatingAverageExVat - Math.max(0, businessOverheadsMonthly) - Math.max(0, ownerPayMonthly)) / avgStaffCostMonthly)
+        )
+      : 0;
+
+  const agingBuckets = useMemo(() => {
+    const buckets = {
+      current: 0,
+      d1to30: 0,
+      d31to60: 0,
+      d61to90: 0,
+      d90plus: 0,
+    };
+
+    summaryInvoices.forEach((invoice) => {
+      if (invoice.collectionStatus === 'paid') {
+        return;
+      }
+      const dueDate = parseISODate(invoice.dueDate);
+      if (!dueDate) {
+        buckets.current += Number(invoice.totalIncVat || 0);
+        return;
+      }
+      const daysOverdue = Math.floor((todayMs - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysOverdue <= 0) {
+        buckets.current += Number(invoice.totalIncVat || 0);
+        return;
+      }
+      if (daysOverdue <= 30) {
+        buckets.d1to30 += Number(invoice.totalIncVat || 0);
+        return;
+      }
+      if (daysOverdue <= 60) {
+        buckets.d31to60 += Number(invoice.totalIncVat || 0);
+        return;
+      }
+      if (daysOverdue <= 90) {
+        buckets.d61to90 += Number(invoice.totalIncVat || 0);
+        return;
+      }
+      buckets.d90plus += Number(invoice.totalIncVat || 0);
+    });
+
+    return buckets;
+  }, [summaryInvoices, todayMs]);
+
+  const statusBadgeClasses = {
+    pending_approval: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    approved: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
+    issued: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+    overdue: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+    paid: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  };
+
+  const statusLabels = {
+    pending_approval: 'Needs approval',
+    approved: 'Ready to issue',
+    issued: 'Issued',
+    overdue: 'Overdue',
+    paid: 'Collected',
+  };
+
+  return (
+    <div className="space-y-5 animate-in fade-in duration-300">
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">InCert Accountancy</p>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mt-1">Invoicing, Collections, and Payables</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 max-w-3xl">
+              Full finance operations view with {PAYMENT_TERMS_DAYS}-day default terms.
+            </p>
+            <label className="mt-3 inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              Summary period
+              <select
+                value={summaryMonthFilter}
+                onChange={(event) => setSummaryMonthFilter(event.target.value)}
+                className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+              >
+                <option value="">All months</option>
+                {summaryMonthOptions.map((monthKey) => (
+                  <option key={monthKey} value={monthKey}>
+                    {formatMonthLabel(monthKey)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => onGenerateInvoices?.()}
+              className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold inline-flex items-center gap-2"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Generate invoices
+            </button>
+            <button
+              onClick={() => onRunCollectionsSweep?.()}
+              className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200 inline-flex items-center gap-2"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Run overdue sweep
+            </button>
+            <button
+              onClick={() => onExportCsv?.()}
+              className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 text-xs font-bold text-slate-700 dark:text-slate-200 inline-flex items-center gap-2"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total invoiced</p>
+            <p className="text-xl font-black text-slate-900 dark:text-white mt-1">{formatCurrencyGBP(totalInvoicedValue)}</p>
+          </article>
+          <article className="rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/80 dark:bg-emerald-900/15 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Collected</p>
+            <p className="text-xl font-black text-emerald-700 dark:text-emerald-300 mt-1">{formatCurrencyGBP(collectedValue)}</p>
+          </article>
+          <article className="rounded-xl border border-indigo-200 dark:border-indigo-800/40 bg-indigo-50/80 dark:bg-indigo-900/15 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">Paid out</p>
+            <p className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-1">{formatCurrencyGBP(paidPayoutValue)}</p>
+            <p className="mt-1 text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+              {formatPercentage(paidOutVsInvoicedPct)} of invoiced
+            </p>
+          </article>
+          <article className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-900/15 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Outstanding</p>
+            <p className="text-xl font-black text-amber-700 dark:text-amber-300 mt-1">{formatCurrencyGBP(outstandingValue)}</p>
+          </article>
+          <article className="rounded-xl border border-rose-200 dark:border-rose-800/40 bg-rose-50/80 dark:bg-rose-900/15 p-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Overdue</p>
+            <p className="text-xl font-black text-rose-700 dark:text-rose-300 mt-1">{formatCurrencyGBP(overdueValue)}</p>
+          </article>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+            Summary {summaryPeriodLabel}
+          </span>
+          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+            {pendingApprovalCount} need approval
+          </span>
+          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+            {awaitingIssueCount} ready to issue
+          </span>
+          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+            {scheduledPayouts.length} payouts scheduled
+          </span>
+          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+            {paidPayouts.length} payouts paid
+          </span>
+          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+            {netWindowLabel} {formatCurrencyGBP(netCashInNetWindow)}
+          </span>
+          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+            Payout rate {formatPercentage(blendedPayoutRatePct)}
+          </span>
+          <span className="px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900/45">
+            Gross margin {formatPercentage(realizedGrossMarginPct)} ({formatCurrencyGBP(realizedGrossExVat)} ex VAT)
+          </span>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">Receivables Queue</h3>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-600 dark:text-slate-300">Approve, issue, chase, collect, and schedule payouts.</p>
+            <div className="inline-flex items-center gap-2">
+              <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Month
+                <select
+                  value={receivablesMonthFilter}
+                  onChange={(event) => setReceivablesMonthFilter(event.target.value)}
+                  className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+                >
+                  <option value="">All months</option>
+                  {receivablesMonthOptions.map((monthKey) => (
+                    <option key={monthKey} value={monthKey}>
+                      {formatMonthLabel(monthKey)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {showDebugBulkActions && (
+                <button
+                  onClick={() => onCollectReceivablesMonthDebug?.(receivablesMonthFilter)}
+                  disabled={!receivablesMonthFilter}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${
+                    receivablesMonthFilter
+                      ? 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800/40 dark:text-emerald-300 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30'
+                      : 'border-slate-200 text-slate-400 bg-slate-100 cursor-not-allowed dark:border-slate-700 dark:text-slate-500 dark:bg-slate-800'
+                  }`}
+                >
+                  Debug: Approve+collect month
+                </button>
+              )}
+              {showDebugBulkActions && (
+                <button
+                  onClick={() => onCollectReceivablesYearDebug?.()}
+                  disabled={yearCollectEligibleCount === 0}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${
+                    yearCollectEligibleCount > 0
+                      ? 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800/40 dark:text-emerald-300 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30'
+                      : 'border-slate-200 text-slate-400 bg-slate-100 cursor-not-allowed dark:border-slate-700 dark:text-slate-500 dark:bg-slate-800'
+                  }`}
+                >
+                  Debug: Approve+collect all year
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="mt-3 space-y-2 max-h-[560px] overflow-y-auto pr-1">
+            {filteredReceivables.length === 0 ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {receivablesMonthFilter ? 'No invoices for the selected month.' : 'No invoices available yet.'}
+              </p>
+            ) : (
+              filteredReceivables.slice(0, 30).map((invoice) => (
+                <article
+                  key={invoice.displayId}
+                  className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 dark:text-white">{invoice.displayId}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Bill to {invoice.customerName} | Pay {invoice.providerName}
+                    </p>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
+                      Issue {formatDateSafe(invoice.issueDate)} | Due {formatDateSafe(invoice.dueDate)} | {formatCurrencyGBP(invoice.totalIncVat)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={`text-[11px] font-bold px-2 py-1 rounded-full ${
+                        statusBadgeClasses[invoice.collectionStatus] || statusBadgeClasses.issued
+                      }`}
+                    >
+                      {statusLabels[invoice.collectionStatus] || 'Issued'}
+                    </span>
+                    {invoice.collectionStatus === 'pending_approval' && (
+                      <button
+                        onClick={() => onApproveInvoice?.(invoice.id)}
+                        className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+                      >
+                        Approve
+                      </button>
+                    )}
+                    {invoice.collectionStatus === 'approved' && (
+                      <button
+                        onClick={() => onIssueInvoice?.(invoice.id)}
+                        className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 text-[11px] font-bold"
+                      >
+                        Issue
+                      </button>
+                    )}
+                    {(invoice.collectionStatus === 'issued' || invoice.collectionStatus === 'overdue') && (
+                      <button
+                        onClick={() => onSendInvoiceReminder?.(invoice.id)}
+                        className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 text-[11px] font-bold"
+                      >
+                        Reminder
+                      </button>
+                    )}
+                    {invoice.collectionStatus !== 'pending_approval' && invoice.collectionStatus !== 'paid' && (
+                      <button
+                        onClick={() => onMarkInvoiceCollected?.(invoice.id)}
+                        className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[11px] font-bold"
+                      >
+                        Mark collected
+                      </button>
+                    )}
+                    {!invoice.payoutScheduled && invoice.collectionStatus !== 'pending_approval' && (
+                      <button
+                        onClick={() => onSchedulePayout?.(invoice.id)}
+                        className="px-2.5 py-1 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 text-[11px] font-bold"
+                      >
+                        Schedule payout
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">Pay Providers</h3>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-600 dark:text-slate-300">Scheduled runs and payment status.</p>
+            <div className="inline-flex items-center gap-2">
+              <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Month
+                <select
+                  value={providerQueueMonthFilter}
+                  onChange={(event) => setProviderQueueMonthFilter(event.target.value)}
+                  className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+                >
+                  <option value="">All months</option>
+                  {providerQueueMonthOptions.map((monthKey) => (
+                    <option key={monthKey} value={monthKey}>
+                      {formatMonthLabel(monthKey)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {showDebugBulkActions && (
+                <button
+                  onClick={() => onPayProvidersMonthDebug?.(providerQueueMonthFilter)}
+                  disabled={!providerQueueMonthFilter}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${
+                    providerQueueMonthFilter
+                      ? 'border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:border-indigo-800/40 dark:text-indigo-300 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30'
+                      : 'border-slate-200 text-slate-400 bg-slate-100 cursor-not-allowed dark:border-slate-700 dark:text-slate-500 dark:bg-slate-800'
+                  }`}
+                >
+                  Debug: Pay month
+                </button>
+              )}
+              {showDebugBulkActions && (
+                <button
+                  onClick={() => onPayProvidersYearDebug?.()}
+                  disabled={yearPayoutEligibleCount === 0}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${
+                    yearPayoutEligibleCount > 0
+                      ? 'border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:border-indigo-800/40 dark:text-indigo-300 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30'
+                      : 'border-slate-200 text-slate-400 bg-slate-100 cursor-not-allowed dark:border-slate-700 dark:text-slate-500 dark:bg-slate-800'
+                  }`}
+                >
+                  Debug: Pay all year
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="mt-3 space-y-2 max-h-[560px] overflow-y-auto pr-1">
+            {filteredProviderQueueRuns.length === 0 ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {providerQueueMonthFilter ? 'No payout runs for the selected month.' : 'No payout runs scheduled yet.'}
+              </p>
+            ) : (
+              filteredProviderQueueRuns.slice(0, 30).map((run) => (
+                <article
+                  key={run.displayId}
+                  className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-3"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 dark:text-white">{run.who}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {run.displayId} | Pay {formatDateSafe(run.scheduledDate)} | {formatCurrencyGBP(run.payoutAmount)}
+                    </p>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">Invoice {run.invoiceId || '-'}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[11px] font-bold px-2 py-1 rounded-full ${
+                        run.normalizedStatus === 'paid'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+                      }`}
+                    >
+                      {run.normalizedStatus === 'paid' ? 'Paid' : 'Scheduled'}
+                    </span>
+                    {run.normalizedStatus !== 'paid' && (
+                      <button
+                        onClick={() => onMarkPayoutPaid?.(run.id)}
+                        className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[11px] font-bold"
+                      >
+                        Mark paid
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">A/R Aging</h3>
+          <div className="mt-3 grid gap-2 text-xs">
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+              <span className="text-slate-600 dark:text-slate-300">Current</span>
+              <span className="font-bold text-slate-900 dark:text-white">{formatCurrencyGBP(agingBuckets.current)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-amber-200 dark:border-amber-800/40 px-3 py-2 bg-amber-50/60 dark:bg-amber-900/10">
+              <span className="text-amber-800 dark:text-amber-300">1-30 overdue</span>
+              <span className="font-bold text-amber-800 dark:text-amber-300">{formatCurrencyGBP(agingBuckets.d1to30)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-amber-200 dark:border-amber-800/40 px-3 py-2 bg-amber-50/60 dark:bg-amber-900/10">
+              <span className="text-amber-800 dark:text-amber-300">31-60 overdue</span>
+              <span className="font-bold text-amber-800 dark:text-amber-300">{formatCurrencyGBP(agingBuckets.d31to60)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-rose-200 dark:border-rose-800/40 px-3 py-2 bg-rose-50/60 dark:bg-rose-900/10">
+              <span className="text-rose-700 dark:text-rose-300">61-90 overdue</span>
+              <span className="font-bold text-rose-700 dark:text-rose-300">{formatCurrencyGBP(agingBuckets.d61to90)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-rose-200 dark:border-rose-800/40 px-3 py-2 bg-rose-50/60 dark:bg-rose-900/10">
+              <span className="text-rose-700 dark:text-rose-300">90+ overdue</span>
+              <span className="font-bold text-rose-700 dark:text-rose-300">{formatCurrencyGBP(agingBuckets.d90plus)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">Cash Movement</h3>
+			  <div className="mt-3 space-y-2 text-xs">
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+	              <span className="text-slate-600 dark:text-slate-300">Collected in net window</span>
+	              <span className="font-bold text-emerald-700 dark:text-emerald-300">{formatCurrencyGBP(collectionsInNetWindow)}</span>
+	            </div>
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+	              <span className="text-slate-600 dark:text-slate-300">Payouts paid in net window</span>
+	              <span className="font-bold text-rose-700 dark:text-rose-300">{formatCurrencyGBP(payoutsInNetWindow)}</span>
+	            </div>
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+	              <span className="text-slate-600 dark:text-slate-300">Paid payouts lifetime</span>
+	              <span className="font-bold text-slate-900 dark:text-white">{formatCurrencyGBP(paidPayoutValue)}</span>
+	            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+              <span className="text-slate-600 dark:text-slate-300">Scheduled payout balance</span>
+              <span className="font-bold text-slate-900 dark:text-white">{formatCurrencyGBP(scheduledPayoutValue)}</span>
+            </div>
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 bg-slate-50/80 dark:bg-slate-900/35">
+	              <span className="text-slate-700 dark:text-slate-200 font-semibold">{netWindowLabel}</span>
+	              <span className={`font-black ${netCashInNetWindow >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+	                {formatCurrencyGBP(netCashInNetWindow)}
+	              </span>
+	            </div>
+	          </div>
+	        </div>
+	      </section>
+
+	      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+	        <div className="flex flex-wrap items-center justify-between gap-3">
+	          <div>
+	            <h3 className="text-base font-bold text-slate-900 dark:text-white">Profit & Loss by Period</h3>
+	            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+	              Compare invoices, collections, provider payouts, staff wages, and net profit by day, week, month, quarter, or year.
+	            </p>
+	          </div>
+		          <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                Mode
+                <select
+                  value={profitAccountingMode}
+                  onChange={(event) => setProfitAccountingMode(event.target.value)}
+                  className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="accrual">Accrual</option>
+                </select>
+              </label>
+		            <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+		              View
+	              <select
+	                value={profitLossGranularity}
+	                onChange={(event) => setProfitLossGranularity(event.target.value)}
+	                className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+	              >
+	                <option value="day">Day</option>
+	                <option value="week">Week</option>
+	                <option value="month">Month</option>
+	                <option value="quarter">Quarter</option>
+		                <option value="year">Year</option>
+		              </select>
+		            </label>
+	              {['day', 'week', 'month'].includes(profitLossGranularity) && (
+	                <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+	                  Year
+	                  <select
+	                    value={profitYearFilter}
+	                    onChange={(event) => setProfitYearFilter(event.target.value)}
+	                    className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-700 dark:text-slate-200"
+	                  >
+	                    <option value="">All years</option>
+	                    {profitYearOptions.map((yearKey) => (
+	                      <option key={yearKey} value={yearKey}>
+	                        {yearKey}
+	                      </option>
+	                    ))}
+	                  </select>
+	                </label>
+	              )}
+		            <button
+		              onClick={() => setProfitLossSortDirection((current) => (current === 'desc' ? 'asc' : 'desc'))}
+		              className="px-2.5 py-1 rounded-md text-[11px] font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
+		            >
+              {profitLossSortDirection === 'desc' ? 'Newest first' : 'Oldest first'}
+            </button>
+            {showDebugBulkActions && (
+              <button
+                onClick={() => onAlignPayoutsToCollectionsDebug?.()}
+                className="px-2.5 py-1 rounded-md text-[11px] font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 dark:border-indigo-800/40 dark:text-indigo-300 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30"
+              >
+                Debug: Align payout months
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+		          <table className="min-w-full text-xs">
+		            <thead className="bg-slate-100/80 dark:bg-slate-900/50 text-slate-600 dark:text-slate-300">
+		              <tr>
+		                <th className="px-3 py-2 text-left font-bold">Period</th>
+		                <th className="px-3 py-2 text-right font-bold">Invoiced (inc VAT)</th>
+		                <th className="px-3 py-2 text-right font-bold">{revenueColumnLabel}</th>
+		                <th className="px-3 py-2 text-right font-bold">Paid Out to Auditors/Companies (ex VAT)</th>
+                    <th className="px-3 py-2 text-right font-bold">Operating P/L (ex VAT)</th>
+                    <th className="px-3 py-2 text-right font-bold">InCert Staff Wages (ex VAT)</th>
+                    <th className="px-3 py-2 text-right font-bold">InCert Costs (ex VAT)</th>
+		                <th className="px-3 py-2 text-right font-bold">Net P/L (ex VAT)</th>
+	                  <th className="px-3 py-2 text-right font-bold">{cumulativeColumnLabel}</th>
+		                <th className="px-3 py-2 text-right font-bold">Margin</th>
+		              </tr>
+			            </thead>
+			            <tbody>
+			              {filteredPeriodProfitLossRowsWithCumulative.length === 0 ? (
+			                <tr>
+			                  <td colSpan={10} className="px-3 py-4 text-center text-slate-500 dark:text-slate-400">
+			                    No period data available yet.
+			                  </td>
+			                </tr>
+			              ) : (
+			                filteredPeriodProfitLossRowsWithCumulative.map((row) => (
+		                  <tr key={row.periodKey} className="border-t border-slate-200 dark:border-slate-700">
+		                    <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">{row.periodLabel}</td>
+			                    <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-200">{formatCurrencyGBP(row.invoicedIncVat)}</td>
+			                    <td className="px-3 py-2 text-right text-emerald-700 dark:text-emerald-300">{formatCurrencyGBP(row.collectedIncVat)}</td>
+		                    <td className="px-3 py-2 text-right text-indigo-700 dark:text-indigo-300">{formatCurrencyGBP(row.paidOutExVat)}</td>
+                    <td
+                      className={`px-3 py-2 text-right font-bold ${
+                        row.operatingProfitExVat >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'
+                      }`}
+                    >
+	                      {formatCurrencyGBP(row.operatingProfitExVat)}
+	                    </td>
+                    <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-200">{formatCurrencyGBP(row.inCertStaffWagesExVat)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-200">{formatCurrencyGBP(row.inCertOperatingCostsExVat)}</td>
+	                    <td
+	                      className={`px-3 py-2 text-right font-bold ${
+	                        row.profitLossExVat >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'
+	                      }`}
+	                    >
+	                      {formatCurrencyGBP(row.profitLossExVat)}
+	                    </td>
+                    <td
+                      className={`px-3 py-2 text-right font-bold ${
+                        row.cumulativeBalanceExVat >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'
+                      }`}
+                    >
+                      {formatCurrencyGBP(row.cumulativeBalanceExVat)}
+                    </td>
+	                    <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-200">{formatPercentage(row.grossMarginPct)}</td>
+	                  </tr>
+	                ))
+	              )}
+	            </tbody>
+	          </table>
+	        </div>
+	      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+	        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+	          <h3 className="text-base font-bold text-slate-900 dark:text-white">Owner Profit View (ex VAT)</h3>
+	          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+	            Profit now includes overhead and InCert staff deductions. Use this to track true net business performance.
+	          </p>
+	          <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+              <span className="text-slate-600 dark:text-slate-300">Latest operating P/L</span>
+              <span className={`font-bold ${Number(latestMonthProfitRow?.operatingProfitExVat || 0) >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                {formatCurrencyGBP(Number(latestMonthProfitRow?.operatingProfitExVat || 0))}
+              </span>
+            </div>
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+	              <span className="text-slate-600 dark:text-slate-300">Latest month net P/L</span>
+	              <span className={`font-bold ${Number(latestMonthProfitRow?.profitLossExVat || 0) >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+	                {formatCurrencyGBP(Number(latestMonthProfitRow?.profitLossExVat || 0))}
+	              </span>
+	            </div>
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+	              <span className="text-slate-600 dark:text-slate-300">Current month net P/L</span>
+	              <span className={`font-bold ${Number(currentMonthProfitRow?.profitLossExVat || 0) >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+	                {formatCurrencyGBP(Number(currentMonthProfitRow?.profitLossExVat || 0))}
+	              </span>
+	            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+              <span className="text-slate-600 dark:text-slate-300">Avg monthly P/L (12m)</span>
+              <span className={`font-bold ${trailingTwelveMonthlyAverageExVat >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                {formatCurrencyGBP(trailingTwelveMonthlyAverageExVat)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+              <span className="text-slate-600 dark:text-slate-300">Projected annual P/L</span>
+              <span className={`font-bold ${projectedAnnualProfitExVat >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                {formatCurrencyGBP(projectedAnnualProfitExVat)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+              <span className="text-slate-600 dark:text-slate-300">Current year P/L</span>
+              <span className={`font-bold ${currentYearProfitExVat >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                {formatCurrencyGBP(currentYearProfitExVat)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+              <span className="text-slate-600 dark:text-slate-300">{selectedYearKey} P/L</span>
+              <span className={`font-bold ${selectedYearProfitExVat >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                {formatCurrencyGBP(selectedYearProfitExVat)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+	        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+	          <h3 className="text-base font-bold text-slate-900 dark:text-white">Affordability Planner (Monthly)</h3>
+	          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+	            Overheads and staff are now deducted in the net P/L above. This section helps plan owner draw on top of that.
+	          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              Business overheads
+              <input
+                type="number"
+                min="0"
+                value={businessOverheadsMonthly}
+                onChange={(event) => setBusinessOverheadsMonthly(Math.max(0, Number(event.target.value || 0)))}
+                className="mt-1 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200"
+              />
+            </label>
+            <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              Your monthly pay
+              <input
+                type="number"
+                min="0"
+                value={ownerPayMonthly}
+                onChange={(event) => setOwnerPayMonthly(Math.max(0, Number(event.target.value || 0)))}
+                className="mt-1 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200"
+              />
+            </label>
+            <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              Planned staff count
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={plannedStaffCount}
+                onChange={(event) => setPlannedStaffCount(Math.max(0, Math.round(Number(event.target.value || 0))))}
+                className="mt-1 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200"
+              />
+            </label>
+            <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              Avg staff cost each
+              <input
+                type="number"
+                min="0"
+                value={avgStaffCostMonthly}
+                onChange={(event) => setAvgStaffCostMonthly(Math.max(0, Number(event.target.value || 0)))}
+                className="mt-1 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200"
+              />
+            </label>
+          </div>
+	          <div className="mt-3 space-y-2 text-xs">
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+	              <span className="text-slate-600 dark:text-slate-300">InCert operating costs in P/L (overhead + staff)</span>
+	              <span className="font-bold text-slate-900 dark:text-white">{formatCurrencyGBP(inCertOperatingCostsMonthly)}</span>
+	            </div>
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+	              <span className="text-slate-600 dark:text-slate-300">Total planned monthly costs (inc owner draw)</span>
+	              <span className="font-bold text-slate-900 dark:text-white">{formatCurrencyGBP(totalPlannedCostsMonthly)}</span>
+	            </div>
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+	              <span className="text-slate-600 dark:text-slate-300">Net after owner draw (monthly)</span>
+	              <span className={`font-bold ${netAfterCostsMonthlyExVat >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+	                {formatCurrencyGBP(netAfterCostsMonthlyExVat)}
+	              </span>
+	            </div>
+	            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+	              <span className="text-slate-600 dark:text-slate-300">Net after owner draw (annual)</span>
+	              <span className={`font-bold ${netAfterCostsAnnualExVat >= 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+	                {formatCurrencyGBP(netAfterCostsAnnualExVat)}
+	              </span>
+	            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 bg-slate-50/80 dark:bg-slate-900/35">
+              <span className="text-slate-700 dark:text-slate-200 font-semibold">Affordable staff at current margin</span>
+              <span className="font-black text-slate-900 dark:text-white">{affordableStaffHeadcount}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function HelpCenterView({
   onNotify,
   jobs = [],
@@ -9098,6 +14581,16 @@ function HelpCenterView({
   auditActions = [],
   reportArtifacts = [],
   shareLinks = [],
+  marketplaceBidBoard = [],
+  dispatchSlaEvents = [],
+  evidenceAiJobs = [],
+  regulatorVerificationRequests = [],
+  analyticsRiskSignals = [],
+  webhookDeliveryEvents = [],
+  mobileAuditSessions = [],
+  enterpriseSecurityEvents = [],
+  qaHarnessRuns = [],
+  releaseGateResults = [],
   onUpdatePublicSiteConfig,
   onToggleOnboardingTask,
   onRunPilotFulfilmentLoop,
@@ -9118,6 +14611,18 @@ function HelpCenterView({
   onCreateAuditAction,
   onAdvanceAuditActionStatus,
   onCreateShareLink,
+  onSeedBidRound,
+  onAwardBestBid,
+  onQueueEvidenceAiJob,
+  onAdvanceEvidenceReview,
+  onCreateVerificationRequest,
+  onResolveVerificationRequest,
+  onTriggerWebhookRetry,
+  onOpenMobileSession,
+  onLogSecurityEvent,
+  onStartQaHarnessRun,
+  onFinalizeQaHarnessRun,
+  onAdvanceReleaseGateResult,
 }) {
   const [siteForm, setSiteForm] = useState(() => ({
     siteTitle: publicSiteConfig.siteTitle || '',
@@ -9281,6 +14786,20 @@ function HelpCenterView({
   const openFindings = auditFindings.filter((finding) => finding.status !== 'closed');
   const openActionCount = auditActions.filter((action) => action.status !== 'closed').length;
   const validArtifacts = reportArtifacts.filter((artifact) => artifact.status === 'valid');
+  const submittedBidCount = marketplaceBidBoard.filter((bid) => bid.status === 'submitted').length;
+  const awardedBidCount = marketplaceBidBoard.filter((bid) => bid.status === 'awarded').length;
+  const slaBreachCount = dispatchSlaEvents.filter((event) => Boolean(event.isBreach)).length;
+  const evidenceQueueCount = evidenceAiJobs.filter((job) => job.status === 'queued').length;
+  const evidencePendingReviewCount = evidenceAiJobs.filter(
+    (job) => job.status === 'completed' && job.reviewDecision === 'pending'
+  ).length;
+  const openVerificationRequests = regulatorVerificationRequests.filter((request) => request.status === 'open').length;
+  const highRiskSignals = analyticsRiskSignals.filter((signal) => signal.riskLevel === 'high').length;
+  const failedWebhookDeliveries = webhookDeliveryEvents.filter((event) => event.status === 'failed').length;
+  const activeMobileSessions = mobileAuditSessions.filter((session) => !session.closedAt).length;
+  const highSeveritySecurityEvents = enterpriseSecurityEvents.filter((event) => event.severity === 'high').length;
+  const runningQaRuns = qaHarnessRuns.filter((run) => run.status === 'running').length;
+  const pendingReleaseGates = releaseGateResults.filter((gate) => gate.status === 'pending').length;
   const prioritizedInspectionTemplates = useMemo(() => {
     const resolvedContext = resolveCompanyTemplateContext(companyContext);
     const getTemplatePriority = (template) => {
@@ -10619,6 +16138,264 @@ function HelpCenterView({
           </div>
         </div>
       </section>
+
+      <section className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Supabase Readiness
+            </p>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mt-1">
+              Items 2-15 Operations Console
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+              Run the remaining post-migration operational workflows before full backend wiring is enabled.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onSeedBidRound?.()}
+              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
+            >
+              Seed Bid Round
+            </button>
+            <button
+              type="button"
+              onClick={() => onAwardBestBid?.()}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+            >
+              Award Best Bid
+            </button>
+            <button
+              type="button"
+              onClick={() => onQueueEvidenceAiJob?.()}
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold"
+            >
+              Queue Evidence AI
+            </button>
+            <button
+              type="button"
+              onClick={() => onStartQaHarnessRun?.()}
+              className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+            >
+              Start QA Run
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Audit company bids + SLA
+              </p>
+              <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
+                {submittedBidCount} submitted / {awardedBidCount} awarded
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              SLA breaches: <span className="font-semibold">{slaBreachCount}</span> • Bid board rows:{' '}
+              <span className="font-semibold">{marketplaceBidBoard.length}</span>
+            </p>
+            <div className="space-y-2">
+              {marketplaceBidBoard.slice(0, 3).map((bid) => (
+                <div key={bid.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                    {bid.id} • {bid.requestId} • {bid.providerOrgName}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    {bid.status} • score {bid.rankScore} • {formatCurrencyGBP(bid.totalExVat)} ex VAT • ETA {bid.leadTimeHours}h
+                  </p>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                AI evidence + verification
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onAdvanceEvidenceReview?.()}
+                  className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 text-[11px] font-bold"
+                >
+                  Advance Review
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCreateVerificationRequest?.()}
+                  className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+                >
+                  Raise Request
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              AI queued: <span className="font-semibold">{evidenceQueueCount}</span> • Pending review:{' '}
+              <span className="font-semibold">{evidencePendingReviewCount}</span> • Open verification:{' '}
+              <span className="font-semibold">{openVerificationRequests}</span>
+            </p>
+            <div className="space-y-2">
+              {evidenceAiJobs.slice(0, 2).map((job) => (
+                <div key={job.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{job.id}</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 break-all">
+                    {job.status} • {job.model} • {job.evidenceRef}
+                  </p>
+                </div>
+              ))}
+              {regulatorVerificationRequests.slice(0, 1).map((request) => (
+                <div key={request.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                      {request.id} • {request.referenceId}
+                    </p>
+                    {request.status === 'open' && (
+                      <button
+                        type="button"
+                        onClick={() => onResolveVerificationRequest?.()}
+                        className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[10px] font-bold"
+                      >
+                        Resolve
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    {request.status} • Due {formatDateCell(request.dueAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Risk analytics + integrations
+              </p>
+              <button
+                type="button"
+                onClick={() => onTriggerWebhookRetry?.()}
+                className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 text-[11px] font-bold"
+              >
+                Retry Failed Hook
+              </button>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              High risk signals: <span className="font-semibold">{highRiskSignals}</span> • Failed webhooks:{' '}
+              <span className="font-semibold">{failedWebhookDeliveries}</span>
+            </p>
+            <div className="space-y-2">
+              {analyticsRiskSignals.slice(0, 2).map((signal) => (
+                <div key={signal.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                    {signal.id} • {signal.signal}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    {signal.riskLevel} risk • confidence {Math.round(Number(signal.confidence || 0) * 100)}%
+                  </p>
+                </div>
+              ))}
+              {webhookDeliveryEvents.slice(0, 2).map((event) => (
+                <div key={event.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                    {event.id} • {event.endpointLabel}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    {event.status} • attempts {event.attempts} • {event.latencyMs}ms
+                  </p>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Mobile, security, and release gates
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenMobileSession?.()}
+                  className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 text-[11px] font-bold"
+                >
+                  Open Mobile Session
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onLogSecurityEvent?.()}
+                  className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 text-[11px] font-bold"
+                >
+                  Log Security Event
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Active sessions: <span className="font-semibold">{activeMobileSessions}</span> • High severity events:{' '}
+              <span className="font-semibold">{highSeveritySecurityEvents}</span> • Running QA:{' '}
+              <span className="font-semibold">{runningQaRuns}</span> • Pending gates:{' '}
+              <span className="font-semibold">{pendingReleaseGates}</span>
+            </p>
+            <div className="space-y-2">
+              {mobileAuditSessions.slice(0, 2).map((session) => (
+                <div key={session.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                    {session.id} • {session.jobId}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    {session.deviceName} • {session.attestationStatus} • sync {session.syncStatus}
+                  </p>
+                </div>
+              ))}
+              {qaHarnessRuns.slice(0, 1).map((run) => (
+                <div key={run.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                      {run.id} • {run.suiteName}
+                    </p>
+                    {run.status === 'running' && (
+                      <button
+                        type="button"
+                        onClick={() => onFinalizeQaHarnessRun?.()}
+                        className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-[10px] font-bold"
+                      >
+                        Finalize
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    {run.status} • pass rate {run.passRate}%
+                  </p>
+                </div>
+              ))}
+              {releaseGateResults.slice(0, 2).map((gate) => (
+                <div key={gate.id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/45 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                      {gate.id} • {gate.gateName}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onAdvanceReleaseGateResult?.()}
+                      className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 text-[10px] font-bold"
+                    >
+                      Advance
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    {gate.status} • {gate.notes}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </article>
+        </div>
+      </section>
     </div>
   );
 }
@@ -11864,11 +17641,15 @@ function MarketplaceExchangeView({
   onApplyAdjustment,
   onStartAuditRunForJob,
   onRecordFinding,
+  onReassignJob,
 }) {
   const resolveMarketplaceMode = useCallback(
     (role) => {
       const normalizedRole = normalizeUserRole(role, 'company');
-      if (['company', 'auditor', 'insurer', 'certex'].includes(normalizedRole)) {
+      if (normalizedRole === 'third_party') {
+        return 'auditor';
+      }
+      if (['company', 'auditor', 'insurer', 'incert'].includes(normalizedRole)) {
         return normalizedRole;
       }
       return 'company';
@@ -11883,11 +17664,12 @@ function MarketplaceExchangeView({
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [reassignmentTargets, setReassignmentTargets] = useState({});
   const [workspaceJobId, setWorkspaceJobId] = useState('');
   const [startAuditJobId, setStartAuditJobId] = useState('');
-  const [startAuditMode, setStartAuditMode] = useState(AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE);
+  const [startAuditMode, setStartAuditMode] = useState(AUDIT_EXECUTION_MODES.INCERT_TEMPLATE);
   const [acceptJobId, setAcceptJobId] = useState('');
-  const [acceptAuditMode, setAcceptAuditMode] = useState(AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE);
+  const [acceptAuditMode, setAcceptAuditMode] = useState(AUDIT_EXECUTION_MODES.INCERT_TEMPLATE);
   const pageSize = 6;
 
   useEffect(() => {
@@ -11901,9 +17683,11 @@ function MarketplaceExchangeView({
 
   const isCompanyPortal = activeMode === 'company';
   const isAuditorPortal = activeMode === 'auditor';
-  const isCertexPortal = activeMode === 'certex';
+  const isInCertPortal = activeMode === 'incert';
   const isInsurerPortal = activeMode === 'insurer';
-  const isRoleLockedMarketplaceMode = normalizeUserRole(debugRole) !== 'certex';
+  const normalizedDebugRole = normalizeUserRole(debugRole, 'company');
+  const isAuditCompanyRole = normalizedDebugRole === 'third_party';
+  const isRoleLockedMarketplaceMode = normalizedDebugRole !== 'incert';
 
   const selectedAuditor = auditors.find((auditor) => auditor.id === selectedAuditorId) || auditors[0] || null;
   const workspaceJob = jobs.find((job) => job.id === workspaceJobId) || null;
@@ -11985,11 +17769,11 @@ function MarketplaceExchangeView({
     if (isInsurerPortal) {
       return filteredJobs.filter((job) => job.status === 'completed');
     }
-    if (isCompanyPortal || isCertexPortal) {
+    if (isCompanyPortal || isInCertPortal) {
       return filteredJobs;
     }
     return filteredJobs;
-  }, [filteredJobs, isAuditorPortal, isInsurerPortal, isCompanyPortal, isCertexPortal, selectedAuditorId]);
+  }, [filteredJobs, isAuditorPortal, isInsurerPortal, isCompanyPortal, isInCertPortal, selectedAuditorId]);
 
   const totalPages = Math.max(1, Math.ceil(visibleJobs.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -12003,7 +17787,7 @@ function MarketplaceExchangeView({
   const completedCount = jobs.filter((job) => job.status === 'completed').length;
   const selectedAdjustmentJob = jobs.find((job) => job.id === adjustmentJobId) || null;
   const workspacePageRef = useRef(null);
-  const certexFinanceTotals = useMemo(
+  const incertFinanceTotals = useMemo(
     () =>
       visibleJobs.reduce(
         (totals, job) => {
@@ -12011,13 +17795,13 @@ function MarketplaceExchangeView({
           return {
             companyTotalIncVat: totals.companyTotalIncVat + pricing.total,
             auditorPayoutExVat: totals.auditorPayoutExVat + pricing.providerPayoutExVat,
-            certexGrossExVat: totals.certexGrossExVat + pricing.platformFeeExVat,
+            incertGrossExVat: totals.incertGrossExVat + pricing.platformFeeExVat,
           };
         },
         {
           companyTotalIncVat: 0,
           auditorPayoutExVat: 0,
-          certexGrossExVat: 0,
+          incertGrossExVat: 0,
         }
       ),
     [visibleJobs]
@@ -12067,12 +17851,21 @@ function MarketplaceExchangeView({
     setStartAuditMode(normalizeAuditExecutionMode(job.auditExecutionMode));
   };
 
+  const resolveReassignmentTarget = (jobId, fallbackAuditorId) => {
+    const mappedTarget = reassignmentTargets[jobId];
+    if (mappedTarget) {
+      return mappedTarget;
+    }
+    const nextAuditor = auditors.find((auditor) => auditor.id !== fallbackAuditorId);
+    return nextAuditor?.id || fallbackAuditorId || '';
+  };
+
   const openAcceptMethodPicker = (job) => {
     setAcceptJobId(job.id);
     setAcceptAuditMode(
       Boolean(job.auditMethodLocked)
         ? normalizeAuditExecutionMode(job.auditExecutionMode)
-        : AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+        : AUDIT_EXECUTION_MODES.INCERT_TEMPLATE
     );
   };
 
@@ -12104,7 +17897,7 @@ function MarketplaceExchangeView({
     }
 
     setStartAuditJobId('');
-    if (selectedMode === AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE) {
+    if (selectedMode === AUDIT_EXECUTION_MODES.INCERT_TEMPLATE) {
       onStartAuditRunForJob?.(startAuditJob.id);
       setWorkspaceJobId(startAuditJob.id);
     }
@@ -12117,7 +17910,7 @@ function MarketplaceExchangeView({
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
             <div>
               <p className="text-xs font-bold tracking-wider uppercase text-cyan-600 dark:text-cyan-400 mb-1">
-                Auditor Workspace
+                {isAuditCompanyRole ? 'Audit Company Workspace' : 'Auditor Workspace'}
               </p>
               <p className="text-sm text-slate-600 dark:text-slate-300">
                 {workspaceJob.id} • {workspaceJob.assetName} • {workspaceJob.regime}
@@ -12171,20 +17964,22 @@ function MarketplaceExchangeView({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <p className="text-xs font-bold tracking-wider uppercase text-cyan-600 dark:text-cyan-400 mb-2">
-              Certex Exchange
+              InCert Exchange
             </p>
             <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">
               {isCompanyPortal && 'Company Portal'}
-              {isAuditorPortal && 'Auditor Portal'}
-              {isCertexPortal && 'Certex Admin Portal'}
+              {isAuditorPortal && (isAuditCompanyRole ? 'Audit Company Portal' : 'Auditor Portal')}
+              {isInCertPortal && 'InCert Admin Portal'}
               {isInsurerPortal && 'Insurer Read-only Portal'}
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 max-w-2xl">
               {isCompanyPortal &&
                 'Book statutory work with fixed quotes. Company users only see total, VAT, and booking status.'}
               {isAuditorPortal &&
-                'View assigned/open jobs, accept offers, deliver evidence, and manage completion workflow.'}
-              {isCertexPortal &&
+                (isAuditCompanyRole
+                  ? 'Bid on open jobs, assign your in-house auditors, and manage evidence/completion workflow.'
+                  : 'View assigned/open jobs, accept offers, deliver evidence, and manage completion workflow.')}
+              {isInCertPortal &&
                 'Admin visibility for quoted totals, provider payout, platform fee, and operational adjustments.'}
               {isInsurerPortal &&
                 'Read-only access to completed jobs and verification-ready evidence trails.'}
@@ -12221,7 +18016,7 @@ function MarketplaceExchangeView({
           {isRoleLockedMarketplaceMode ? (
             <div className="rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 bg-slate-50/80 dark:bg-slate-900/40">
               <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                Role view locked to {USER_ROLE_OPTIONS.find((roleOption) => roleOption.id === activeMode)?.label || 'Company'}
+                Role view locked to {USER_ROLE_OPTIONS.find((roleOption) => roleOption.id === normalizedDebugRole)?.label || 'Company'}
               </p>
             </div>
           ) : (
@@ -12239,10 +18034,10 @@ function MarketplaceExchangeView({
                 Auditor
               </button>
               <button
-                onClick={() => setActiveMode('certex')}
-                className={`px-3 py-2 text-xs font-bold border-l border-slate-200 dark:border-slate-700 ${isCertexPortal ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+                onClick={() => setActiveMode('incert')}
+                className={`px-3 py-2 text-xs font-bold border-l border-slate-200 dark:border-slate-700 ${isInCertPortal ? 'bg-cyan-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
               >
-                Certex
+                InCert
               </button>
               <button
                 onClick={() => setActiveMode('insurer')}
@@ -12279,7 +18074,7 @@ function MarketplaceExchangeView({
         {isAuditorPortal && (
           <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col md:flex-row md:items-center gap-3">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Active Auditor
+              {isAuditCompanyRole ? 'Assigned Auditor' : 'Active Auditor'}
             </label>
             <select
               value={selectedAuditorId}
@@ -12294,37 +18089,38 @@ function MarketplaceExchangeView({
             </select>
             {selectedAuditor && (
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Avg response {selectedAuditor.avgResponseMins} mins • Active jobs {selectedAuditor.activeJobs}/
-                {selectedAuditor.maxConcurrentJobs || 8}
+                {isAuditCompanyRole
+                  ? `Assigning ${selectedAuditor.name} • Capacity ${selectedAuditor.activeJobs}/${selectedAuditor.maxConcurrentJobs || 8}`
+                  : `Avg response ${selectedAuditor.avgResponseMins} mins • Active jobs ${selectedAuditor.activeJobs}/${selectedAuditor.maxConcurrentJobs || 8}`}
               </p>
             )}
           </div>
         )}
       </div>
 
-      {isCertexPortal && (
+      {isInCertPortal && (
         <div className="glass-panel bg-emerald-50/70 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-900/40 rounded-2xl p-4 md:p-5 shadow-sm">
           <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 mb-3">
-            Certex Admin Finance Summary
+            InCert Admin Finance Summary
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="rounded-xl border border-emerald-200/70 dark:border-emerald-900/50 bg-white/70 dark:bg-slate-900/30 px-3 py-2">
               <p className="text-[11px] uppercase tracking-wider text-emerald-700/90 dark:text-emerald-300/90">Company Total (inc VAT)</p>
-              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{formatCurrencyGBP(certexFinanceTotals.companyTotalIncVat)}</p>
+              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{formatCurrencyGBP(incertFinanceTotals.companyTotalIncVat)}</p>
             </div>
             <div className="rounded-xl border border-emerald-200/70 dark:border-emerald-900/50 bg-white/70 dark:bg-slate-900/30 px-3 py-2">
               <p className="text-[11px] uppercase tracking-wider text-emerald-700/90 dark:text-emerald-300/90">Auditor Payout (ex VAT)</p>
-              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{formatCurrencyGBP(certexFinanceTotals.auditorPayoutExVat)}</p>
+              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{formatCurrencyGBP(incertFinanceTotals.auditorPayoutExVat)}</p>
             </div>
             <div className="rounded-xl border border-emerald-200/70 dark:border-emerald-900/50 bg-white/70 dark:bg-slate-900/30 px-3 py-2">
-              <p className="text-[11px] uppercase tracking-wider text-emerald-700/90 dark:text-emerald-300/90">Certex Gross (ex VAT)</p>
-              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{formatCurrencyGBP(certexFinanceTotals.certexGrossExVat)}</p>
+              <p className="text-[11px] uppercase tracking-wider text-emerald-700/90 dark:text-emerald-300/90">InCert Gross (ex VAT)</p>
+              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{formatCurrencyGBP(incertFinanceTotals.incertGrossExVat)}</p>
             </div>
           </div>
         </div>
       )}
 
-      {isCompanyPortal || isCertexPortal ? (
+      {isCompanyPortal || isInCertPortal ? (
         <div className="space-y-4">
           {paginatedJobs.length === 0 ? (
             <div className="p-12 text-center glass-panel bg-white/50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
@@ -12403,7 +18199,7 @@ function MarketplaceExchangeView({
                     </p>
                   </div>
 
-                  {isCertexPortal ? (
+                  {isInCertPortal ? (
                     <div className="mt-3 grid grid-cols-2 md:grid-cols-6 gap-2">
                       <div className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1.5">
                         <p className="text-[10px] uppercase tracking-wider text-slate-500">Labour</p>
@@ -12467,21 +18263,21 @@ function MarketplaceExchangeView({
                     )}
                   </div>
 
-                  {isCertexPortal && (
+                  {isInCertPortal && (
                     <div className="mt-3 rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/60 dark:bg-emerald-900/10 px-3 py-3 space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                          Certex Finance View
+                          InCert Finance View
                         </p>
                         <span className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80">
                           {pricing.quoteId} • v{pricing.quoteVersion} • {formatPercentage(pricing.effectiveTakeRate)} take-rate
                         </span>
                       </div>
                       <p className="text-xs text-emerald-800/80 dark:text-emerald-300/90">
-                        Company pays {formatCurrencyGBP(pricing.total)} inc VAT • Auditor receives {formatCurrencyGBP(pricing.providerPayoutExVat)} ex VAT • Certex platform/documentation fee {formatCurrencyGBP(pricing.platformFeeExVat)} ex VAT
+                        Company pays {formatCurrencyGBP(pricing.total)} inc VAT • Auditor receives {formatCurrencyGBP(pricing.providerPayoutExVat)} ex VAT • InCert platform/documentation fee {formatCurrencyGBP(pricing.platformFeeExVat)} ex VAT
                       </p>
                       <p className="text-xs text-emerald-800/80 dark:text-emerald-300/90">
-                        Certex share covers platform operations, documentation workflows, verification, and compliance delivery overhead.
+                        InCert share covers platform operations, documentation workflows, verification, and compliance delivery overhead.
                       </p>
                       <p className="text-xs text-emerald-800/80 dark:text-emerald-300/90">
                         Model {pricing.pricingModelVersion} • Rate card {pricing.rateCardVersionId} • Route {pricing.routeEstimate?.miles || 0} miles
@@ -12532,10 +18328,10 @@ function MarketplaceExchangeView({
                     </div>
                   )}
 
-                  {isCertexPortal && (job.status === 'open' || (job.status === 'offered' && offerExpired)) && (
+                  {isInCertPortal && (job.status === 'open' || (job.status === 'offered' && offerExpired)) && (
                     <div className="mt-4">
                       <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-                        Certex Match Recommendations
+                        InCert Match Recommendations
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                         {rankedAuditors.length === 0 ? (
@@ -12553,7 +18349,7 @@ function MarketplaceExchangeView({
                               </div>
                               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                                 ETA {candidate.etaHours}h
-                                {isCertexPortal
+                                {isInCertPortal
                                   ? ` • Payout est. ${formatCurrencyGBP(candidate.payoutEstimate)} • £${Number(
                                       candidate.auditorHourlyRate || 0
                                     ).toFixed(2)}/h`
@@ -12582,10 +18378,10 @@ function MarketplaceExchangeView({
                     </div>
                   )}
 
-                  {isCertexPortal && isExternalAuditFlow && job.status === 'awaiting_review' && (
+                  {isInCertPortal && isExternalAuditFlow && job.status === 'awaiting_review' && (
                     <div className="mt-4 rounded-xl border border-cyan-200 dark:border-cyan-800/40 bg-cyan-50/70 dark:bg-cyan-900/20 px-3 py-3">
                       <p className="text-xs text-cyan-700 dark:text-cyan-300 font-semibold">
-                        External audit evidence is pending Certex review.
+                        External audit evidence is pending InCert review.
                       </p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
@@ -12628,7 +18424,9 @@ function MarketplaceExchangeView({
           {paginatedJobs.length === 0 ? (
             <div className="p-12 text-center glass-panel bg-white/50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
               <Users className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-              <p className="text-slate-500 dark:text-slate-400 font-medium">No available jobs for this auditor.</p>
+              <p className="text-slate-500 dark:text-slate-400 font-medium">
+                {isAuditCompanyRole ? 'No open jobs available to bid right now.' : 'No available jobs for this auditor.'}
+              </p>
             </div>
           ) : (
             paginatedJobs.map((job) => {
@@ -12644,11 +18442,14 @@ function MarketplaceExchangeView({
               const externalReviewStatus = resolveExternalAuditReviewStatus(job, auditExecutionMode);
               const requiresAuditMethodSelection =
                 isOwnedBySelectedAuditor && job.status === 'in_progress' && !job.auditMethodLocked;
+              const reassignmentTargetId = resolveReassignmentTarget(job.id, job.matchedAuditorId);
+              const canReassignJob =
+                Boolean(reassignmentTargetId) && reassignmentTargetId !== job.matchedAuditorId;
               const auditorPayoutLabel = (() => {
                 if (job.auditMethodLocked) {
                   return auditExecutionMode === AUDIT_EXECUTION_MODES.AUDITOR_SOFTWARE
                     ? `${formatCurrencyGBP(payoutOptions.ownSoftwareExVat)} ex VAT`
-                    : `${formatCurrencyGBP(payoutOptions.certexTemplateExVat)} ex VAT`;
+                    : `${formatCurrencyGBP(payoutOptions.incertTemplateExVat)} ex VAT`;
                 }
                 return `${formatCurrencyGBP(payoutOptions.minExVat)} to ${formatCurrencyGBP(
                   payoutOptions.maxExVat
@@ -12665,7 +18466,7 @@ function MarketplaceExchangeView({
                         {job.id} • {job.assetName}
                       </p>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        {job.site} • {job.regime} • Auditor payout {auditorPayoutLabel}
+                        {job.site} • {job.regime} • {isAuditCompanyRole ? 'Audit company payout' : 'Auditor payout'} {auditorPayoutLabel}
                       </p>
                     </div>
                     <JobStatusPill status={job.status} />
@@ -12711,6 +18512,63 @@ function MarketplaceExchangeView({
                     </div>
                   )}
 
+                  {isAuditCompanyRole &&
+                    job.matchedAuditorId &&
+                    ['offered', 'assigned', 'in_progress', 'awaiting_review'].includes(job.status) && (
+                      <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/35 px-3 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          Audit company reassignment
+                        </p>
+                        <div className="mt-2 flex flex-col md:flex-row gap-2 md:items-center">
+                          <select
+                            value={reassignmentTargetId}
+                            onChange={(event) =>
+                              setReassignmentTargets((previousTargets) => ({
+                                ...previousTargets,
+                                [job.id]: event.target.value,
+                              }))
+                            }
+                            className="px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold"
+                          >
+                            {auditors.map((auditor) => (
+                              <option key={`${job.id}-reassign-${auditor.id}`} value={auditor.id}>
+                                {auditor.name} ({auditor.activeJobs}/{auditor.maxConcurrentJobs || 8})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={!canReassignJob}
+                            onClick={() => {
+                              if (!canReassignJob) {
+                                return;
+                              }
+                              const didReassign = onReassignJob?.(
+                                job.id,
+                                job.matchedAuditorId,
+                                reassignmentTargetId,
+                                'Audit Company Assignment Desk'
+                              );
+                              if (didReassign !== false) {
+                                setReassignmentTargets((previousTargets) => {
+                                  const updatedTargets = { ...previousTargets };
+                                  delete updatedTargets[job.id];
+                                  return updatedTargets;
+                                });
+                              }
+                            }}
+                            className={`px-3 py-2 rounded-lg text-xs font-bold ${
+                              canReassignJob
+                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                                : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 cursor-not-allowed'
+                            }`}
+                          >
+                            Reassign Auditor
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                   <div className="mt-4 flex flex-wrap gap-2">
                     {isOwnedBySelectedAuditor &&
                       job.status === 'in_progress' &&
@@ -12728,7 +18586,7 @@ function MarketplaceExchangeView({
                         onClick={() => openAcceptMethodPicker(job)}
                         className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
                       >
-                        Claim Job
+                        {isAuditCompanyRole ? 'Bid & Claim Job' : 'Claim Job'}
                       </button>
                     )}
                     {job.status === 'offered' && isOwnedBySelectedAuditor && !offerExpired && (
@@ -12736,7 +18594,7 @@ function MarketplaceExchangeView({
                         onClick={() => openAcceptMethodPicker(job)}
                         className="px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold"
                       >
-                        Accept Offer
+                        {isAuditCompanyRole ? 'Accept Bid Offer' : 'Accept Offer'}
                       </button>
                     )}
                     {job.status === 'offered' && isOwnedBySelectedAuditor && offerExpired && (
@@ -12756,7 +18614,7 @@ function MarketplaceExchangeView({
                             if (didStart === false) {
                               return;
                             }
-                            if (selectedMode === AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE) {
+                            if (selectedMode === AUDIT_EXECUTION_MODES.INCERT_TEMPLATE) {
                               onStartAuditRunForJob?.(job.id);
                               setWorkspaceJobId(job.id);
                             }
@@ -12829,7 +18687,7 @@ function MarketplaceExchangeView({
                       isOwnedBySelectedAuditor &&
                       isExternalAuditFlow && (
                         <span className="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold">
-                          Awaiting Certex review
+                          Awaiting InCert review
                         </span>
                       )}
                   </div>
@@ -12924,10 +18782,17 @@ function MarketplaceExchangeView({
           <div className="w-full max-w-xl rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-black text-slate-800 dark:text-white">Accept Job</h3>
+                <h3 className="text-lg font-black text-slate-800 dark:text-white">
+                  {isAuditCompanyRole ? 'Accept Job Bid' : 'Accept Job'}
+                </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   {acceptJob.id} • {acceptJob.assetName}
                 </p>
+                {isAuditCompanyRole && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Auditor assignment: <span className="font-semibold">{selectedAuditor.name}</span>
+                  </p>
+                )}
               </div>
               <button
                 type="button"
@@ -12941,16 +18806,16 @@ function MarketplaceExchangeView({
             <div className="p-5 space-y-3">
               <button
                 type="button"
-                onClick={() => setAcceptAuditMode(AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE)}
+                onClick={() => setAcceptAuditMode(AUDIT_EXECUTION_MODES.INCERT_TEMPLATE)}
                 className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
-                  normalizeAuditExecutionMode(acceptAuditMode) === AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+                  normalizeAuditExecutionMode(acceptAuditMode) === AUDIT_EXECUTION_MODES.INCERT_TEMPLATE
                     ? 'border-cyan-400 bg-cyan-50/80 dark:bg-cyan-900/20'
                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/30'
                 }`}
               >
-                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Certex Template</p>
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">InCert Template</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Payout: {formatCurrencyGBP(acceptJobPayoutOptions?.certexTemplateExVat || 0)} ex VAT
+                  Payout: {formatCurrencyGBP(acceptJobPayoutOptions?.incertTemplateExVat || 0)} ex VAT
                 </p>
               </button>
 
@@ -12968,7 +18833,7 @@ function MarketplaceExchangeView({
                   Payout: {formatCurrencyGBP(acceptJobPayoutOptions?.ownSoftwareExVat || 0)} ex VAT
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Evidence upload and Certex review required before completion.
+                  Evidence upload and InCert review required before completion.
                 </p>
               </button>
             </div>
@@ -12986,7 +18851,7 @@ function MarketplaceExchangeView({
                 onClick={confirmAcceptJob}
                 className="px-4 py-2 rounded-lg text-sm font-bold bg-cyan-600 hover:bg-cyan-700 text-white"
               >
-                Accept Job
+                {isAuditCompanyRole ? 'Accept & Assign Auditor' : 'Accept Job'}
               </button>
             </div>
           </div>
@@ -13015,14 +18880,14 @@ function MarketplaceExchangeView({
             <div className="p-5 space-y-3">
               <button
                 type="button"
-                onClick={() => setStartAuditMode(AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE)}
+                onClick={() => setStartAuditMode(AUDIT_EXECUTION_MODES.INCERT_TEMPLATE)}
                 className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
-                  normalizeAuditExecutionMode(startAuditMode) === AUDIT_EXECUTION_MODES.CERTEX_TEMPLATE
+                  normalizeAuditExecutionMode(startAuditMode) === AUDIT_EXECUTION_MODES.INCERT_TEMPLATE
                     ? 'border-cyan-400 bg-cyan-50/80 dark:bg-cyan-900/20'
                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/30'
                 }`}
               >
-                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Use Certex Template</p>
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Use InCert Template</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Full in-app checklist workflow and standard payout schedule.
                 </p>
@@ -13039,7 +18904,7 @@ function MarketplaceExchangeView({
               >
                 <p className="text-sm font-bold text-slate-800 dark:text-slate-100">Use My Own Software</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Evidence upload and Certex review required before completion.
+                  Evidence upload and InCert review required before completion.
                 </p>
               </button>
             </div>
@@ -14185,18 +20050,20 @@ function CommandPalette({ isOpen, onClose, onAction }) {
   const actions = useMemo(
     () => [
       { id: 'go-dashboard', label: 'Go to Dashboard', description: 'View estate compliance overview', icon: LayoutDashboard },
-      { id: 'go-landing', label: 'Open Landing Pages', description: 'Review public website sitemap pages', icon: MapIcon },
       { id: 'go-onboarding', label: 'Open Onboarding Portal', description: 'View persona onboarding journeys', icon: Building2 },
       { id: 'go-assets', label: 'Open Asset Register', description: 'Inspect assets, due dates, and status', icon: Box },
       { id: 'go-vault', label: 'Open Evidence Vault', description: 'Inspect and verify certificates', icon: Lock },
       { id: 'go-providers', label: 'Open Provider Network', description: 'Find and dispatch providers', icon: Users },
       { id: 'go-marketplace', label: 'Open Audit Marketplace', description: 'Advertise and match audit jobs', icon: ClipboardList },
+      { id: 'go-accountancy', label: 'Open Accountancy', description: 'Run invoicing, collections, and payouts', icon: BarChart3 },
+      { id: 'go-ops', label: 'Open Operations Console', description: 'Run readiness workflows for items 2-15', icon: ServerCog },
       { id: 'go-help', label: 'Open Help Center', description: 'View product guides and placeholders', icon: FileText },
       { id: 'new-asset', label: 'Add New Asset', description: 'Create an asset in the register', icon: Plus },
       { id: 'request-inspection', label: 'Request Inspection', description: 'Open dispatch flow', icon: Calendar },
       { id: 'new-programme', label: 'Create Recurring Programme', description: 'Schedule recurring audits and inspections', icon: History },
       { id: 'scan-lookup', label: 'Scan QR / Lookup', description: 'Open asset or certificate from a QR value', icon: ScanLine },
       { id: 'post-audit-job', label: 'Post Audit Job', description: 'Create a new marketplace listing', icon: Sparkles },
+      { id: 'open-ops-console', label: 'Run Ops Readiness', description: 'Open InCert operations readiness panel', icon: Gauge },
       { id: 'export-audit', label: 'Export Audit Pack', description: 'Generate current compliance export', icon: Download },
       { id: 'copy-audit-link', label: 'Copy Audit Link', description: 'Create secure read-only access', icon: Share2 },
     ],
@@ -14320,7 +20187,7 @@ function QrCodePreview({ value, size = 220, withLogo = true }) {
       style={{ width: size, height: size }}
     >
       {qrDataUrl ? (
-        <img src={qrDataUrl} alt="CertEx QR code" className="w-full h-full rounded-xl" />
+        <img src={qrDataUrl} alt="InCert QR code" className="w-full h-full rounded-xl" />
       ) : (
         <div className="w-full h-full rounded-xl bg-slate-100 flex items-center justify-center">
           <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
@@ -14329,7 +20196,7 @@ function QrCodePreview({ value, size = 220, withLogo = true }) {
       {withLogo && (
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
           <div className="w-12 h-12 rounded-xl bg-white/95 border border-slate-200 shadow-sm flex items-center justify-center text-[8px] font-black tracking-wide text-slate-700 text-center leading-tight px-1">
-            CertEx
+            InCert
             <br />
             LOGO
           </div>
@@ -14636,7 +20503,7 @@ function ScanLookupModal({ isOpen, onClose, onResolve }) {
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3">
             <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Supported formats</p>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              `AST-xxx`, `CERT-yyyy-nnnn`, or CertEx deep links generated from asset labels/certificates.
+              `AST-xxx`, `CERT-yyyy-nnnn`, or InCert deep links generated from asset labels/certificates.
             </p>
           </div>
           <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-2">
@@ -14700,7 +20567,7 @@ function AssetQrLabelModal({ asset, latestCertificate, certificateCount, onClose
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>CertEx Asset Label</title>
+          <title>InCert Asset Label</title>
           <style>
             body { margin: 0; font-family: Arial, sans-serif; background: #e2e8f0; padding: 28px; }
             .label { width: 360px; border-radius: 16px; border: 1px solid #cbd5e1; background: white; padding: 18px; }
@@ -14709,13 +20576,14 @@ function AssetQrLabelModal({ asset, latestCertificate, certificateCount, onClose
             .qr-wrap { margin-top: 14px; position: relative; width: 100%; max-width: 320px; }
             .qr-wrap img { width: 100%; height: auto; display: block; border-radius: 12px; }
             .logo { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
-            .logo-box { background: rgba(255,255,255,0.95); border: 1px solid #cbd5e1; border-radius: 10px; width: 56px; height: 56px; display: grid; place-items: center; text-align: center; line-height: 1.1; font-size: 9px; font-weight: 800; color: #0f172a; }
+            .logo-box { background: rgba(255,255,255,0.95); border: 1px solid #cbd5e1; border-radius: 10px; width: 56px; height: 56px; display: grid; place-items: center; }
+            .logo-box img { width: 48px; height: auto; object-fit: contain; }
             .small { margin-top: 8px; font-size: 10px; color: #64748b; word-break: break-all; }
           </style>
         </head>
         <body>
           <div class="label">
-            <div class="brand">CertEx ASSET TAG</div>
+            <div class="brand">InCert ASSET TAG</div>
             <div class="meta">
               <div><strong>${escapeHtml(asset.id)}</strong> • ${escapeHtml(asset.name)}</div>
               <div>${escapeHtml(asset.site)} • ${escapeHtml(asset.regime)}</div>
@@ -14723,7 +20591,7 @@ function AssetQrLabelModal({ asset, latestCertificate, certificateCount, onClose
             </div>
             <div class="qr-wrap">
               <img src="${qrDataUrl}" alt="QR" />
-              <div class="logo"><div class="logo-box">CertEx<br/>LOGO</div></div>
+              <div class="logo"><div class="logo-box"><img src="/icons/incert-shield.png" alt="InCert" /></div></div>
             </div>
             <div class="small">${escapeHtml(assetLink)}</div>
           </div>
@@ -14807,7 +20675,7 @@ function AssetQrLabelModal({ asset, latestCertificate, certificateCount, onClose
             <div className="w-full grid grid-cols-1 gap-2 mt-4">
               <a
                 href={qrDataUrl || '#'}
-                download={`certex-${asset.id}-qr.png`}
+                download={`incert-${asset.id}-qr.png`}
                 className="w-full px-3 py-2.5 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-700 flex items-center justify-center gap-2"
               >
                 <Download className="w-4 h-4" />
@@ -14841,7 +20709,7 @@ function CertificateDocumentCard({ certificate, isVerified }) {
       <div className="relative z-10 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-black tracking-[0.25em] text-cyan-700">CERTEX CERTIFICATE</p>
+            <p className="text-[11px] font-black tracking-[0.25em] text-cyan-700">INCERT CERTIFICATE</p>
             <h4 className="text-xl font-black text-slate-900 mt-1">{certificate.assetName}</h4>
             <p className="text-xs text-slate-600 mt-1 font-mono">{certificate.id}</p>
           </div>
@@ -14885,7 +20753,7 @@ function CertificateDocumentCard({ certificate, isVerified }) {
             <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Verification URL</p>
             <p className="text-[10px] text-slate-600 break-all mt-1">{certificateLink}</p>
             <p className="text-[10px] text-slate-500 mt-1">
-              {isVerified ? 'Verified by CertEx cryptographic check' : 'Pending cryptographic verification'}
+              {isVerified ? 'Verified by InCert cryptographic check' : 'Pending cryptographic verification'}
             </p>
           </div>
           <QrCodePreview value={certificateLink} size={94} withLogo={false} />

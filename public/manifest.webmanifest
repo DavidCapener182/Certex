@@ -1,6 +1,6 @@
 {
-  "name": "CertEx",
-  "short_name": "CertEx",
+  "name": "InCert",
+  "short_name": "InCert",
   "description": "Compliance tracking, inspection workflows, and evidence vault for statutory assets.",
   "start_url": "/",
   "scope": "/",
@@ -9,9 +9,9 @@
   "theme_color": "#0ea5e9",
   "icons": [
     {
-      "src": "/icons/certex-icon.svg",
+      "src": "/icons/incert-shield.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

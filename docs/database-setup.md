@@ -1,8 +1,39 @@
 # Database Setup (Supabase)
 
-## 1) Apply migrations
+**Project ref (shared database):** `wngqphzpxhderwfjjzla` · [Dashboard](https://app.supabase.com/project/wngqphzpxhderwfjjzla)
 
-Run migrations in order from `supabase/migrations`:
+To get the database working you need to **run the migrations** using one of the options below. If your project is not yet linked to Supabase or you don’t have a database URL, use Option A or B first.
+
+## 0) Run migrations (choose one)
+
+### Option A — Supabase CLI (recommended)
+
+1. Log in (once): `npx supabase login`
+2. Link (use shared DB password when prompted, or set `SUPABASE_DB_PASSWORD`): `npx supabase link --project-ref wngqphzpxhderwfjjzla`
+3. Push migrations: `npx supabase db push`
+
+### Option B — Script with direct database URL
+
+1. In Supabase Dashboard go to **Project Settings → Database**. Under **Connection string** choose **URI** and copy it (use the pooler port **6543** for server-side).
+2. Create a `.env` in the project root (optional) and set:
+   ```bash
+   DATABASE_URL="postgresql://postgres.[ref]:[YOUR-PASSWORD]@aws-0-[region].pooler.supabase.com:6543/postgres"
+   ```
+   Or export `DATABASE_URL` in your shell.
+3. From the project root run (requires `psql` installed):
+   ```bash
+   ./scripts/run-migrations.sh
+   ```
+
+### Option C — Supabase SQL Editor
+
+In **Supabase Dashboard → SQL Editor**, run each migration file in order (copy-paste contents). Run them one after another; do not skip files.
+
+---
+
+## 1) Migration files (in order)
+
+From `supabase/migrations`:
 
 1. `20260222143000_initial_schema.sql`
 2. `20260222150000_rls_and_access.sql`
@@ -12,6 +43,16 @@ Run migrations in order from `supabase/migrations`:
 6. `20260222190000_certificate_artifact_storage_and_signed_url_payload.sql`
 7. `20260222203000_pricing_engine_quote_lock_adjustment_settlement.sql`
 8. `20260222224500_take_rate_floor_and_going_rate.sql`
+9. `20260226213000_audit_company_bidding_assignment_and_dispatch.sql`
+10. `20260226214000_template_studio_and_weighted_scoring.sql`
+11. `20260226215000_evidence_ai_provenance_and_verification.sql`
+12. `20260226220000_capa_finance_analytics.sql`
+13. `20260226221000_integrations_mobile_enterprise.sql`
+14. `20260226222000_quality_harness_and_release_readiness.sql`
+
+Note:
+- The six `2026022621...` / `2026022622...` migrations create physical tables with quoted `InCert-` prefixes (for example `public."InCert-marketplace_bids"`).
+- RPC function names remain in `public` without prefix.
 
 Use either:
 
@@ -123,7 +164,7 @@ select public.register_certificate_render_artifact(
   'application/pdf',
   152340,
   'abc123sha256',
-  'certex_html_v2',
+  'incert_html_v2',
   '{"source":"renderer-service"}'::jsonb
 );
 ```
@@ -195,5 +236,72 @@ select public.upsert_settlement_ledger_for_request(
   '<inspection_request_uuid>'::uuid,
   'scheduled',
   'EVIDENCE_ISSUED'
+);
+```
+
+## 9) Next-wave checks (audit companies, templates, evidence QA, finance, integrations)
+
+Submit a bid:
+
+```sql
+select public.submit_marketplace_bid(
+  '<inspection_request_uuid>'::uuid,
+  '<provider_org_uuid>'::uuid,
+  525.00,
+  105.00,
+  18,
+  'Can deploy within 18 hours',
+  '[{"code":"LABOUR","description":"Inspection labour","amount_ex_vat":420},{"code":"TRAVEL","description":"Mileage","amount_ex_vat":105}]'::jsonb
+);
+```
+
+Publish a template version:
+
+```sql
+select public.publish_inspection_template_version(
+  '<template_version_uuid>'::uuid,
+  'Initial published release'
+);
+```
+
+Queue AI evidence processing:
+
+```sql
+select public.enqueue_evidence_ai_job(
+  '<evidence_file_uuid>'::uuid,
+  'gpt-5-mini'
+);
+```
+
+Create CAPA action:
+
+```sql
+select public.create_capa_action(
+  '<inspection_finding_uuid>'::uuid,
+  'Replace failed relief valve',
+  'high',
+  current_date + 14,
+  'Immediate engineering replacement required'
+);
+```
+
+Generate invoice:
+
+```sql
+select public.generate_invoice_for_request(
+  '<inspection_request_uuid>'::uuid,
+  true
+);
+```
+
+Start QA run:
+
+```sql
+select public.start_qa_test_run(
+  '<qa_test_suite_uuid>'::uuid,
+  '<organization_uuid>'::uuid,
+  'manual',
+  null,
+  'main'
 );
 ```

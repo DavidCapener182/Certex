@@ -1,4 +1,4 @@
-# Certex Implementation Roadmap
+# InCert Implementation Roadmap
 
 ## Current baseline (completed in this repo)
 
@@ -12,6 +12,21 @@
   - `supabase/migrations/20260222190000_certificate_artifact_storage_and_signed_url_payload.sql`
   - `supabase/migrations/20260222203000_pricing_engine_quote_lock_adjustment_settlement.sql`
   - `supabase/migrations/20260222224500_take_rate_floor_and_going_rate.sql`
+
+## Next-wave SQL pack prepared (ready to run once Supabase is connected)
+
+- `supabase/migrations/20260226213000_audit_company_bidding_assignment_and_dispatch.sql`
+  - Covers: audit company operating model, competitive bids, assignment flow, dispatch SLA telemetry.
+- `supabase/migrations/20260226214000_template_studio_and_weighted_scoring.sql`
+  - Covers: bespoke template studio, conditional controls, weighted scoring bands, publish/version workflows.
+- `supabase/migrations/20260226215000_evidence_ai_provenance_and_verification.sql`
+  - Covers: AI evidence extraction queue, provenance chain events, review decisions, regulator verification workflow.
+- `supabase/migrations/20260226220000_capa_finance_analytics.sql`
+  - Covers: CAPA/remediation lifecycle, invoice + payout automation, KPI + risk analytics snapshots.
+- `supabase/migrations/20260226221000_integrations_mobile_enterprise.sql`
+  - Covers: integrations/API/webhooks, mobile session hardening + conflict tracking, SSO + enterprise security controls.
+- `supabase/migrations/20260226222000_quality_harness_and_release_readiness.sql`
+  - Covers: QA run telemetry, release gate tracking, readiness scoring foundations.
 
 ## Post-research slice implemented
 

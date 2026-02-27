@@ -1,6 +1,6 @@
-const STATIC_CACHE = 'certex-static-v1';
-const RUNTIME_CACHE = 'certex-runtime-v1';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/icons/certex-icon.svg'];
+const STATIC_CACHE = 'incert-static-v1';
+const RUNTIME_CACHE = 'incert-runtime-v1';
+const APP_SHELL = ['/', '/manifest.webmanifest', '/icons/incert-shield.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

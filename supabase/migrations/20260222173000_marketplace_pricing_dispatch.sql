@@ -122,7 +122,7 @@ create table if not exists public.marketplace_dispatch_attempts (
   expires_at timestamptz,
   responded_at timestamptz,
   response_notes text,
-  source text not null default 'certex_match_engine',
+  source text not null default 'incert_match_engine',
   metadata jsonb not null default '{}'::jsonb,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -259,7 +259,7 @@ create or replace function public.send_marketplace_offer(
   p_offer_ttl_minutes integer default 90,
   p_rank_score numeric default null,
   p_payout_estimate numeric default null,
-  p_source text default 'certex_match_engine'
+  p_source text default 'incert_match_engine'
 )
 returns uuid
 language plpgsql
@@ -321,7 +321,7 @@ begin
     p_payout_estimate,
     now(),
     v_expires_at,
-    coalesce(nullif(trim(p_source), ''), 'certex_match_engine'),
+    coalesce(nullif(trim(p_source), ''), 'incert_match_engine'),
     auth.uid()
   )
   returning id into v_attempt_id;

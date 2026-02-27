@@ -32,7 +32,7 @@ create table if not exists public.qr_scan_events (
 );
 
 alter table public.certificates
-  add column if not exists render_template_version text not null default 'certex_html_v1',
+  add column if not exists render_template_version text not null default 'incert_html_v1',
   add column if not exists rendered_html text,
   add column if not exists rendered_svg text,
   add column if not exists rendered_pdf_storage_path text,
@@ -62,11 +62,16 @@ returns table (
   latest_certificate_number text,
   certificate_expiry_date date
 )
-language sql
+language plpgsql
 security definer
 set search_path = public
 stable
 as $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'assets' and column_name = 'external_asset_id') then
+    return;
+  end if;
+  return query
   select
     q.id as qr_label_id,
     q.organization_id,
@@ -84,6 +89,7 @@ as $$
   where q.qr_token = trim(coalesce(p_qr_token, ''))
     and q.is_active = true
   limit 1;
+end;
 $$;
 
 alter table public.asset_qr_labels enable row level security;

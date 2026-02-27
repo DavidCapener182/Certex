@@ -5838,7 +5838,7 @@ export const defaultTemplateBlueprints = aooTemplateCatalog.map((template, index
 
   return {
     id: templateId,
-    ownerOrgId: 'certex',
+    ownerOrgId: 'incert',
     name: template.name,
     category: template.category,
     schemaVersion: '1.0',
