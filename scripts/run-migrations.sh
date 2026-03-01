@@ -31,6 +31,7 @@ MIGRATIONS=(
   "20260222190000_certificate_artifact_storage_and_signed_url_payload.sql"
   "20260222203000_pricing_engine_quote_lock_adjustment_settlement.sql"
   "20260222224500_take_rate_floor_and_going_rate.sql"
+  "20260226212000_shared_db_compat_preflight.sql"
   "20260226213000_audit_company_bidding_assignment_and_dispatch.sql"
   "20260226214000_template_studio_and_weighted_scoring.sql"
   "20260226215000_evidence_ai_provenance_and_verification.sql"
@@ -38,6 +39,10 @@ MIGRATIONS=(
   "20260226221000_integrations_mobile_enterprise.sql"
   "20260226222000_quality_harness_and_release_readiness.sql"
   "20260227213000_expand_asset_regime_catalog.sql"
+  "20260301173000_account_bootstrap_and_super_admin.sql"
+  "20260301174500_seed_super_admin_membership.sql"
+  "20260301181000_bootstrap_current_user_access_org_insert_compat.sql"
+  "20260301200000_signup_approval_and_directory_profiles.sql"
 )
 
 echo "Running ${#MIGRATIONS[@]} migrations..."

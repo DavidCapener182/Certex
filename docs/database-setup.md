@@ -43,12 +43,18 @@ From `supabase/migrations`:
 6. `20260222190000_certificate_artifact_storage_and_signed_url_payload.sql`
 7. `20260222203000_pricing_engine_quote_lock_adjustment_settlement.sql`
 8. `20260222224500_take_rate_floor_and_going_rate.sql`
-9. `20260226213000_audit_company_bidding_assignment_and_dispatch.sql`
-10. `20260226214000_template_studio_and_weighted_scoring.sql`
-11. `20260226215000_evidence_ai_provenance_and_verification.sql`
-12. `20260226220000_capa_finance_analytics.sql`
-13. `20260226221000_integrations_mobile_enterprise.sql`
-14. `20260226222000_quality_harness_and_release_readiness.sql`
+9. `20260226212000_shared_db_compat_preflight.sql`
+10. `20260226213000_audit_company_bidding_assignment_and_dispatch.sql`
+11. `20260226214000_template_studio_and_weighted_scoring.sql`
+12. `20260226215000_evidence_ai_provenance_and_verification.sql`
+13. `20260226220000_capa_finance_analytics.sql`
+14. `20260226221000_integrations_mobile_enterprise.sql`
+15. `20260226222000_quality_harness_and_release_readiness.sql`
+16. `20260227213000_expand_asset_regime_catalog.sql`
+17. `20260301173000_account_bootstrap_and_super_admin.sql`
+18. `20260301174500_seed_super_admin_membership.sql`
+19. `20260301181000_bootstrap_current_user_access_org_insert_compat.sql`
+20. `20260301200000_signup_approval_and_directory_profiles.sql`
 
 Note:
 - The six `2026022621...` / `2026022622...` migrations create physical tables with quoted `InCert-` prefixes (for example `public."InCert-marketplace_bids"`).
@@ -59,18 +65,25 @@ Use either:
 - Supabase SQL editor (paste file contents in order), or
 - Supabase CLI (`supabase db push`) if configured.
 
-## 2) Seed minimum org + role data
+## 2) First login auto-provisions org + role
 
-After creating an auth user, add at least one org and membership:
+After the latest migrations are applied, the app calls:
 
-```sql
-insert into public.organizations (name, slug, org_type)
-values ('Acme Logistics', 'acme-logistics', 'operator')
-returning id;
+- `public.bootstrap_current_user_access(...)` on sign-in.
+- `public.sync_signup_request(...)` after bootstrap to maintain approval state.
 
-insert into public.organization_memberships (organization_id, user_id, role, is_default)
-values ('<org_uuid>', '<auth_user_uuid>', 'dutyholder_admin', true);
-```
+That function automatically:
+
+- Creates/updates `public.profiles` for the authenticated user.
+- Creates a default organization + membership when the user has no memberships.
+- Maps account types to scoped roles:
+  - `company` → `dutyholder_admin` in `operator`
+  - `auditor` → `inspector` in `provider`
+  - `third_party` (audit company) → `provider_admin` in `auditor`
+  - `insurer` → `insurer_viewer` in `insurer`
+- Elevates `capener182@googlemail.com` to `platform_admin` in `InCert Team` (`platform`) for global InCert scope.
+- Creates/updates `public.signup_requests` and supports InCert review via `public.review_signup_request(...)`.
+- Supports first-login organization detail capture in `public.organization_directory_profiles`.
 
 ## 3) Verify RLS quickly
 

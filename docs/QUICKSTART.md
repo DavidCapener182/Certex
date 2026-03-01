@@ -34,23 +34,15 @@ npm run dev
 
 Open the URL (e.g. http://localhost:5173). Use **Debug: Enter App** on the landing page to get in without real auth.
 
-## 4. (Optional) Seed an org and link your user
+## 4. First sign-in provisions org + role automatically
 
-When you want real login and RLS to work:
+After you run the latest migrations, signing up or signing in from the app now auto-provisions:
 
-1. Sign up or sign in once via the app (or Supabase Dashboard → Authentication).
-2. In **Supabase Dashboard → SQL Editor**, run (replace the UUIDs):
+1. `public.profiles` entry for the user.
+2. A default organization (company/auditor/audit-company/insurer based on account type) when no membership exists.
+3. A default membership role with tenant-scoped RLS access.
+4. A `public.signup_requests` row so non-InCert accounts require InCert approval before using the workspace.
+5. First-login organization profile capture (`public.organization_directory_profiles`) for company/auditor/audit-company accounts.
 
-```sql
-insert into public.organizations (name, slug, org_type)
-values ('Acme Logistics', 'acme-logistics', 'operator')
-returning id;
--- Copy the returned id as <org_uuid>
-
-insert into public.organization_memberships (organization_id, user_id, role, is_default)
-values ('<org_uuid>', '<your-auth-user-uuid>', 'dutyholder_admin', true);
-```
-
-Your user UUID: **Authentication** → **Users** → click your user → copy **User UID**.
-
-After that, logging in with that user will show data scoped to that org.
+Special case:
+- `capener182@googlemail.com` is automatically elevated to `platform_admin` in the `InCert Team` platform organization so the account has global InCert visibility.

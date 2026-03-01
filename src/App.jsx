@@ -92,10 +92,13 @@ const USER_ROLE_TAB_ACCESS = {
   auditor: ['marketplace', 'accountancy', 'help'],
   third_party: ['marketplace', 'accountancy', 'help'],
   insurer: ['marketplace', 'help'],
-  incert: ['dashboard', 'onboarding', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'ops', 'templates', 'help'],
+  incert: ['dashboard', 'onboarding', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'directory', 'ops', 'templates', 'help'],
 };
 
 const SUPABASE_ENV_CONFIGURED = isSupabaseConfigured;
+const SUPER_ADMIN_EMAIL = 'capener182@googlemail.com';
+const ROLE_PROFILE_REQUIRED = new Set(['company', 'auditor', 'third_party']);
+const SIGNUP_APPROVAL_PENDING_STATES = new Set(['pending', 'rejected']);
 const SUPPORTED_REGIMES = Array.from(
   new Set(templateRegimeOptions.map((regime) => String(regime || '').trim().toUpperCase()).filter(Boolean))
 );
@@ -1946,6 +1949,99 @@ function formatPercentage(value) {
 function normalizeUserRole(value, fallback = 'company') {
   const role = String(value || '').toLowerCase();
   return USER_ROLE_OPTIONS.some((option) => option.id === role) ? role : fallback;
+}
+
+function getUserRoleLabel(role) {
+  const normalizedRole = normalizeUserRole(role, 'company');
+  return USER_ROLE_OPTIONS.find((option) => option.id === normalizedRole)?.label || 'Company';
+}
+
+function normalizeSignupApprovalStatus(value, fallback = 'pending') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'approved' || normalized === 'rejected' || normalized === 'pending') {
+    return normalized;
+  }
+  return fallback;
+}
+
+function formatSignupApprovalStatusLabel(value) {
+  const normalizedStatus = normalizeSignupApprovalStatus(value, 'pending');
+  if (normalizedStatus === 'approved') {
+    return 'Approved';
+  }
+  if (normalizedStatus === 'rejected') {
+    return 'Rejected';
+  }
+  return 'Pending review';
+}
+
+function maskBankDetail(value, revealDigits = 4) {
+  const compactValue = String(value || '').replace(/\s+/g, '');
+  if (!compactValue) {
+    return '';
+  }
+  const safeRevealDigits = Math.max(0, Math.min(8, Number(revealDigits || 4)));
+  if (compactValue.length <= safeRevealDigits) {
+    return compactValue;
+  }
+  return `${'*'.repeat(Math.max(2, compactValue.length - safeRevealDigits))}${compactValue.slice(-safeRevealDigits)}`;
+}
+
+function normalizeDirectoryProfileDraft(draft, fallbackEmail = '') {
+  const normalizedDraft = draft && typeof draft === 'object' ? draft : {};
+  const normalizedCountryCode = String(normalizedDraft.countryCode || '').trim().toUpperCase();
+  return {
+    accountType: normalizeUserRole(normalizedDraft.accountType || 'company'),
+    contactName: String(normalizedDraft.contactName || '').trim(),
+    contactEmail: String(normalizedDraft.contactEmail || fallbackEmail || '').trim().toLowerCase(),
+    contactPhone: String(normalizedDraft.contactPhone || '').trim(),
+    addressLine1: String(normalizedDraft.addressLine1 || '').trim(),
+    addressLine2: String(normalizedDraft.addressLine2 || '').trim(),
+    city: String(normalizedDraft.city || '').trim(),
+    countyState: String(normalizedDraft.countyState || '').trim(),
+    postcode: String(normalizedDraft.postcode || '').trim(),
+    countryCode: normalizedCountryCode || 'GB',
+    bankAccountName: String(normalizedDraft.bankAccountName || '').trim(),
+    bankName: String(normalizedDraft.bankName || '').trim(),
+    bankAccountNumberMasked: maskBankDetail(normalizedDraft.bankAccountNumber || normalizedDraft.bankAccountNumberMasked || ''),
+    bankSortCodeMasked: maskBankDetail(normalizedDraft.bankSortCode || normalizedDraft.bankSortCodeMasked || ''),
+    bankIbanMasked: maskBankDetail(normalizedDraft.bankIban || normalizedDraft.bankIbanMasked || '', 4),
+    bankSwiftBic: String(normalizedDraft.bankSwiftBic || '').trim().toUpperCase(),
+    paymentReference: String(normalizedDraft.paymentReference || '').trim(),
+  };
+}
+
+function isDirectoryProfileComplete(profile) {
+  if (!profile || typeof profile !== 'object') {
+    return false;
+  }
+  const requiredFields = [
+    profile.contactName,
+    profile.contactEmail,
+    profile.addressLine1,
+    profile.city,
+    profile.postcode,
+    profile.countryCode,
+    profile.bankAccountName,
+    profile.bankName,
+  ];
+  const hasPaymentIdentifier = Boolean(
+    String(profile.bankAccountNumberMasked || '').trim() ||
+    String(profile.bankIbanMasked || '').trim()
+  );
+  return requiredFields.every((value) => String(value || '').trim()) && hasPaymentIdentifier;
+}
+
+function formatDirectoryAddress(profile) {
+  const segments = [
+    String(profile?.addressLine1 || '').trim(),
+    String(profile?.addressLine2 || '').trim(),
+    String(profile?.city || '').trim(),
+    String(profile?.countyState || '').trim(),
+    String(profile?.postcode || '').trim(),
+    String(profile?.countryCode || '').trim(),
+  ].filter(Boolean);
+  return segments.join(', ');
 }
 
 function mapSupabaseRoleToUserRole(role) {
@@ -6561,10 +6657,15 @@ export default function App() {
     return loadStoredAuthRuntimeMode();
   });
   const [supabaseSession, setSupabaseSession] = useState(null);
+  const [authProvisioningRevision, setAuthProvisioningRevision] = useState(0);
   const [primaryOrganizationScope, setPrimaryOrganizationScope] = useState({
     organizationId: '',
     organizationName: '',
   });
+  const [signupRequests, setSignupRequests] = useState([]);
+  const [organizationDirectoryProfiles, setOrganizationDirectoryProfiles] = useState([]);
+  const [isSavingOrganizationDirectoryProfile, setIsSavingOrganizationDirectoryProfile] = useState(false);
+  const [isRequestingSignupReapproval, setIsRequestingSignupReapproval] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const isSupabaseRuntime = authRuntimeMode === 'supabase' && SUPABASE_ENV_CONFIGURED;
 
@@ -6604,6 +6705,7 @@ export default function App() {
   const shouldTrackSupabaseSession = Boolean(SUPABASE_ENV_CONFIGURED && supabase && !isDebugBypassSession);
   const handledHashRef = useRef('');
   const debugSnapshotValidatedRef = useRef(false);
+  const provisionedSupabaseUserIdRef = useRef('');
   const resetWorkspaceToMockData = useCallback(() => {
     const debugSnapshot = buildDebugMockSnapshot();
     setAssets(debugSnapshot.assets);
@@ -6643,6 +6745,8 @@ export default function App() {
     setReleaseGateResults(debugSnapshot.releaseGateResults);
     setTenantInvites(debugSnapshot.tenantInvites);
     setEvidenceProvenanceEvents(debugSnapshot.evidenceProvenanceEvents);
+    setSignupRequests([]);
+    setOrganizationDirectoryProfiles([]);
     setPrimaryOrganizationScope({
       organizationId: '',
       organizationName: '',
@@ -6685,6 +6789,8 @@ export default function App() {
     setEnterpriseSecurityEvents([]);
     setQaHarnessRuns([]);
     setReleaseGateResults([]);
+    setSignupRequests([]);
+    setOrganizationDirectoryProfiles([]);
     setPrimaryOrganizationScope({
       organizationId: '',
       organizationName: '',
@@ -6834,6 +6940,94 @@ export default function App() {
     });
   }, [isSupabaseRuntime, supabaseSession]);
 
+  const bootstrapSupabaseUserAccess = useCallback(
+    async ({ accountTypeHint = '', fullNameHint = '' } = {}) => {
+      if (!isSupabaseRuntime || !supabase || !supabaseSession?.user?.id) {
+        return { ok: false, skipped: true };
+      }
+
+      const payload = {};
+      const normalizedAccountTypeHint = String(accountTypeHint || '').trim();
+      if (normalizedAccountTypeHint) {
+        payload.p_account_type = normalizeUserRole(normalizedAccountTypeHint);
+      }
+      const normalizedFullNameHint = String(fullNameHint || '').trim();
+      if (normalizedFullNameHint) {
+        payload.p_full_name = normalizedFullNameHint;
+      }
+
+      const { data, error } = await supabase.rpc('bootstrap_current_user_access', payload);
+      if (error) {
+        if (error.code === '42883') {
+          console.warn('Supabase RPC bootstrap_current_user_access is missing. Run the latest migrations.');
+        } else {
+          console.warn('Supabase account bootstrap failed', error);
+        }
+        return { ok: false, error };
+      }
+
+      const bootstrapRow = Array.isArray(data) ? data[0] || null : data || null;
+      if (bootstrapRow?.account_type) {
+        const mappedRole = normalizeUserRole(
+          bootstrapRow.account_type,
+          normalizeUserRole(authSession.accountType)
+        );
+        setDebugRole(mappedRole);
+        setAuthSession((previousSession) => ({
+          ...previousSession,
+          accountType: mappedRole,
+        }));
+      }
+
+      if (bootstrapRow?.organization_id) {
+        setPrimaryOrganizationScope({
+          organizationId: String(bootstrapRow.organization_id || ''),
+          organizationName: String(bootstrapRow.organization_name || ''),
+        });
+      }
+
+      setAuthProvisioningRevision((previous) => previous + 1);
+      return { ok: true, row: bootstrapRow };
+    },
+    [authSession.accountType, isSupabaseRuntime, supabaseSession?.user?.id]
+  );
+
+  useEffect(() => {
+    const sessionUserId = String(supabaseSession?.user?.id || '').trim();
+    if (!isSupabaseRuntime || !sessionUserId) {
+      provisionedSupabaseUserIdRef.current = '';
+      return;
+    }
+
+    if (provisionedSupabaseUserIdRef.current === sessionUserId) {
+      return;
+    }
+
+    provisionedSupabaseUserIdRef.current = sessionUserId;
+    bootstrapSupabaseUserAccess({
+      accountTypeHint:
+        String(supabaseSession?.user?.user_metadata?.account_type || '').trim() ||
+        String(supabaseSession?.user?.app_metadata?.account_type || '').trim() ||
+        authSession.accountType,
+      fullNameHint:
+        String(supabaseSession?.user?.user_metadata?.full_name || '').trim() ||
+        String(supabaseSession?.user?.user_metadata?.name || '').trim() ||
+        authSession.fullName,
+    }).catch((error) => {
+      console.warn('Supabase account bootstrap crashed', error);
+    });
+  }, [
+    authSession.accountType,
+    authSession.fullName,
+    bootstrapSupabaseUserAccess,
+    isSupabaseRuntime,
+    supabaseSession?.user?.app_metadata?.account_type,
+    supabaseSession?.user?.id,
+    supabaseSession?.user?.user_metadata?.account_type,
+    supabaseSession?.user?.user_metadata?.full_name,
+    supabaseSession?.user?.user_metadata?.name,
+  ]);
+
   useEffect(() => {
     if (!isSupabaseRuntime || supabaseSession?.user?.id) {
       return;
@@ -6854,59 +7048,112 @@ export default function App() {
 
     const loadSupabaseData = async () => {
       const userId = supabaseSession.user.id;
+      const accountTypeHint = normalizeUserRole(
+        String(
+          supabaseSession?.user?.user_metadata?.account_type ||
+          supabaseSession?.user?.app_metadata?.account_type ||
+          authSession?.accountType ||
+          'company'
+        ).trim()
+      );
+      const fullNameHint = String(
+        supabaseSession?.user?.user_metadata?.full_name ||
+        supabaseSession?.user?.user_metadata?.name ||
+        authSession?.fullName ||
+        ''
+      ).trim();
+      const isMissingColumnError = (error) => {
+        const code = String(error?.code || '').trim();
+        const message = String(error?.message || '').toLowerCase();
+        return code === '42703' || message.includes('does not exist');
+      };
+
+      const selectRows = async (tableName, columns = '*', applyQuery, applyFallbackQuery = null) => {
+        try {
+          let query = supabase.from(tableName).select(columns);
+          if (typeof applyQuery === 'function') {
+            query = applyQuery(query);
+          }
+          let { data, error } = await query;
+
+          if (error && columns !== '*' && isMissingColumnError(error)) {
+            console.warn(`Supabase read fallback for ${tableName}: ${error.message}`);
+            let fallbackQuery = supabase.from(tableName).select('*');
+            if (typeof applyFallbackQuery === 'function') {
+              fallbackQuery = applyFallbackQuery(fallbackQuery);
+            } else if (typeof applyQuery === 'function') {
+              fallbackQuery = applyQuery(fallbackQuery);
+            }
+            ({ data, error } = await fallbackQuery);
+          }
+
+          if (error) {
+            console.warn(`Supabase read failed for ${tableName}`, error.message);
+            return [];
+          }
+          return Array.isArray(data) ? data : [];
+        } catch (error) {
+          console.warn(`Supabase read crashed for ${tableName}`, error);
+          return [];
+        }
+      };
+
+      try {
+        const { error: signupSyncError } = await supabase.rpc('sync_signup_request', {
+          p_account_type: accountTypeHint,
+          p_full_name: fullNameHint || null,
+        });
+        if (signupSyncError) {
+          if (signupSyncError.code === '42883') {
+            console.warn('Supabase RPC sync_signup_request is missing. Run the latest migrations.');
+          } else {
+            console.warn('Supabase signup request sync failed', signupSyncError.message);
+          }
+        }
+      } catch (error) {
+        console.warn('Supabase signup request sync crashed', error);
+      }
 
       const [
-        membershipsResult,
-        organizationsResult,
-        sitesResult,
+        memberships,
+        organizations,
+        sites,
         assetsResult,
-        requestsResult,
-        requestAssetsResult,
-        jobsResult,
-        certificatesResult,
+        requestRows,
+        requestAssetRows,
+        jobRows,
+        certificateRows,
       ] = await Promise.all([
-        supabase
-          .from('organization_memberships')
-          .select('organization_id, role, is_default, created_at')
-          .eq('user_id', userId)
-          .order('is_default', { ascending: false })
-          .order('created_at', { ascending: true }),
-        supabase.from('organizations').select('id, name, org_type, metadata'),
-        supabase.from('sites').select('id, name'),
-        supabase
-          .from('assets')
-          .select('id, organization_id, site_id, external_asset_id, name, asset_class, regime, next_due_date, status')
-          .order('next_due_date', { ascending: true }),
-        supabase
-          .from('inspection_requests')
-          .select('id, organization_id, site_id, title, regime, status, preferred_end_date, created_at')
-          .order('created_at', { ascending: false })
-          .limit(300),
-        supabase.from('inspection_request_assets').select('request_id, asset_id'),
-        supabase
-          .from('inspection_jobs')
-          .select('id, request_id, provider_organization_id, status, notes, created_at')
-          .order('created_at', { ascending: false })
-          .limit(300),
-        supabase
-          .from('certificates')
-          .select('id, certificate_number, asset_id, provider_organization_id, regime, issue_date, expiry_date, status, sha256_hash')
-          .order('issued_at', { ascending: false })
-          .limit(300),
+        selectRows('organization_memberships', 'organization_id, role, is_default, created_at', (query) =>
+          query.eq('user_id', userId).order('is_default', { ascending: false }).order('created_at', { ascending: true })
+        ),
+        selectRows('organizations', '*'),
+        selectRows('sites', 'id, name'),
+        selectRows('assets', '*'),
+        selectRows(
+          'inspection_requests',
+          'id, organization_id, site_id, title, regime, status, preferred_end_date, created_at',
+          (query) => query.order('created_at', { ascending: false }).limit(300)
+        ),
+        selectRows('inspection_request_assets', 'request_id, asset_id'),
+        selectRows(
+          'inspection_jobs',
+          'id, request_id, provider_organization_id, status, notes, created_at',
+          (query) => query.order('created_at', { ascending: false }).limit(300)
+        ),
+        selectRows(
+          'certificates',
+          'id, certificate_number, asset_id, provider_organization_id, regime, issue_date, expiry_date, status, sha256_hash',
+          (query) => query.order('issued_at', { ascending: false }).limit(300),
+          (query) => query.limit(300)
+        ),
       ]);
 
       if (isCancelled) {
         return;
       }
 
-      const memberships = Array.isArray(membershipsResult.data) ? membershipsResult.data : [];
-      const organizations = Array.isArray(organizationsResult.data) ? organizationsResult.data : [];
-      const sites = Array.isArray(sitesResult.data) ? sitesResult.data : [];
-      const assetRows = Array.isArray(assetsResult.data) ? assetsResult.data : [];
-      const requestRows = Array.isArray(requestsResult.data) ? requestsResult.data : [];
-      const requestAssetRows = Array.isArray(requestAssetsResult.data) ? requestAssetsResult.data : [];
-      const jobRows = Array.isArray(jobsResult.data) ? jobsResult.data : [];
-      const certificateRows = Array.isArray(certificatesResult.data) ? certificatesResult.data : [];
+      const assetRows = Array.isArray(assetsResult) ? assetsResult : [];
 
       const primaryMembership =
         memberships.find((membership) => membership?.is_default) || memberships[0] || null;
@@ -7108,24 +7355,6 @@ export default function App() {
       setAuditors(mappedProviders);
       setProviderDirectory(mappedProviders);
 
-      const selectRows = async (tableName, columns, applyQuery) => {
-        try {
-          let query = supabase.from(tableName).select(columns);
-          if (typeof applyQuery === 'function') {
-            query = applyQuery(query);
-          }
-          const { data, error } = await query;
-          if (error) {
-            console.warn(`Supabase read failed for ${tableName}`, error.message);
-            return [];
-          }
-          return Array.isArray(data) ? data : [];
-        } catch (error) {
-          console.warn(`Supabase read crashed for ${tableName}`, error);
-          return [];
-        }
-      };
-
       const scopedOrganizationIds = Array.from(
         new Set(
           memberships
@@ -7164,6 +7393,8 @@ export default function App() {
         qaRunRows,
         releaseGateRows,
         releaseGateResultRows,
+        signupRequestRows,
+        directoryProfileRows,
       ] = await Promise.all([
         selectRows('InCert-inspection_template_definitions', 'id, organization_id, regime, name, current_version_id, created_at, updated_at', (query) =>
           orderNewest('updated_at')(scopeByOrg('organization_id')(query))
@@ -7221,6 +7452,16 @@ export default function App() {
         selectRows('InCert-qa_test_runs', 'id, suite_id, status, branch_name, summary, started_at, completed_at, created_at', orderNewest('created_at')),
         selectRows('InCert-release_gates', 'id, name', orderNewest('updated_at')),
         selectRows('InCert-release_gate_results', 'id, run_id, gate_id, status, notes, checked_at, updated_at', orderNewest('updated_at')),
+        selectRows(
+          'signup_requests',
+          'id, user_id, email, full_name, account_type, organization_id, organization_name, status, requester_notes, reviewer_notes, reviewed_by, reviewed_at, submitted_at, created_at, updated_at',
+          orderNewest('updated_at')
+        ),
+        selectRows(
+          'organization_directory_profiles',
+          'id, organization_id, account_type, contact_name, contact_email, contact_phone, address_line_1, address_line_2, city, county_state, postcode, country_code, bank_account_name, bank_name, bank_account_number_masked, bank_sort_code_masked, bank_iban_masked, bank_swift_bic, payment_reference, completed_at, created_by, updated_by, created_at, updated_at',
+          orderNewest('updated_at')
+        ),
       ]);
 
       const latestVersionByTemplateId = new Map();
@@ -7257,7 +7498,18 @@ export default function App() {
           questionBank: [],
         };
       });
-      setTemplateBlueprints(liveTemplateBlueprints);
+      if (liveTemplateBlueprints.length > 0) {
+        setTemplateBlueprints(liveTemplateBlueprints);
+      } else {
+        const fallbackTemplateBlueprints =
+          typeof window === 'undefined' ? defaultTemplateBlueprints : loadStoredTemplateBlueprints();
+        if (Array.isArray(fallbackTemplateBlueprints) && fallbackTemplateBlueprints.length > 0) {
+          console.warn('No Supabase template rows found. Using local template fallback data.');
+          setTemplateBlueprints(fallbackTemplateBlueprints);
+        } else {
+          setTemplateBlueprints([]);
+        }
+      }
 
       const mappedBidBoard = bidRows.map((bid) => ({
         id: `BID-${String(bid.id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}`,
@@ -7583,6 +7835,71 @@ export default function App() {
         }))
       );
 
+      setSignupRequests(
+        signupRequestRows.map((request) => {
+          const organizationId = String(request.organization_id || '').trim();
+          const fallbackOrganizationName = organizationId
+            ? `Organization ${organizationId.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+            : '';
+          return {
+            id: String(request.id || ''),
+            userId: String(request.user_id || ''),
+            email: String(request.email || '').trim().toLowerCase(),
+            fullName: String(request.full_name || '').trim(),
+            accountType: normalizeUserRole(request.account_type || 'company'),
+            organizationId,
+            organizationName:
+              String(request.organization_name || '').trim() ||
+              organizationNameById.get(organizationId) ||
+              fallbackOrganizationName,
+            status: normalizeSignupApprovalStatus(request.status, 'pending'),
+            requesterNotes: String(request.requester_notes || '').trim(),
+            reviewerNotes: String(request.reviewer_notes || '').trim(),
+            reviewedBy: String(request.reviewed_by || '').trim(),
+            reviewedAt: String(request.reviewed_at || ''),
+            submittedAt: String(request.submitted_at || request.created_at || ''),
+            createdAt: String(request.created_at || ''),
+            updatedAt: String(request.updated_at || ''),
+          };
+        })
+      );
+
+      setOrganizationDirectoryProfiles(
+        directoryProfileRows.map((profile) => {
+          const organizationId = String(profile.organization_id || '').trim();
+          const fallbackOrganizationName = organizationId
+            ? `Organization ${organizationId.replace(/-/g, '').slice(0, 8).toUpperCase()}`
+            : 'Organization';
+          return {
+            id: String(profile.id || ''),
+            organizationId,
+            organizationName: organizationNameById.get(organizationId) || fallbackOrganizationName,
+            accountType: normalizeUserRole(profile.account_type || 'company'),
+            contactName: String(profile.contact_name || '').trim(),
+            contactEmail: String(profile.contact_email || '').trim().toLowerCase(),
+            contactPhone: String(profile.contact_phone || '').trim(),
+            addressLine1: String(profile.address_line_1 || '').trim(),
+            addressLine2: String(profile.address_line_2 || '').trim(),
+            city: String(profile.city || '').trim(),
+            countyState: String(profile.county_state || '').trim(),
+            postcode: String(profile.postcode || '').trim(),
+            countryCode: String(profile.country_code || '').trim().toUpperCase(),
+            bankAccountName: String(profile.bank_account_name || '').trim(),
+            bankName: String(profile.bank_name || '').trim(),
+            bankAccountNumberMasked: String(profile.bank_account_number_masked || '').trim(),
+            bankSortCodeMasked: String(profile.bank_sort_code_masked || '').trim(),
+            bankIbanMasked: String(profile.bank_iban_masked || '').trim(),
+            bankSwiftBic: String(profile.bank_swift_bic || '').trim().toUpperCase(),
+            paymentReference: String(profile.payment_reference || '').trim(),
+            completedAt: String(profile.completed_at || ''),
+            createdBy: String(profile.created_by || '').trim(),
+            updatedBy: String(profile.updated_by || '').trim(),
+            createdAt: String(profile.created_at || ''),
+            updatedAt: String(profile.updated_at || ''),
+          };
+        })
+      );
+
       setTenantInvites([]);
     };
 
@@ -7596,7 +7913,14 @@ export default function App() {
     return () => {
       isCancelled = true;
     };
-  }, [isSupabaseRuntime, supabaseSession?.user?.id, clearSupabaseOpsAndProviderState]);
+  }, [
+    authProvisioningRevision,
+    authSession?.accountType,
+    authSession?.fullName,
+    clearSupabaseOpsAndProviderState,
+    isSupabaseRuntime,
+    supabaseSession?.user?.id,
+  ]);
 
   const enrichedAssets = useMemo(() => {
     return assets
@@ -7706,6 +8030,61 @@ export default function App() {
     () => USER_ROLE_OPTIONS.find((option) => option.id === effectiveUserRole)?.label || 'Company',
     [effectiveUserRole]
   );
+  const authenticatedUserRole = useMemo(
+    () => normalizeUserRole(authSession.accountType),
+    [authSession.accountType]
+  );
+  const signedInUserId = String(supabaseSession?.user?.id || '').trim();
+  const currentSignupRequest = useMemo(() => {
+    if (!signedInUserId && !authSession?.email) {
+      return null;
+    }
+    const normalizedEmail = String(authSession?.email || '').trim().toLowerCase();
+    return (
+      signupRequests.find((request) => String(request?.userId || '').trim() === signedInUserId) ||
+      signupRequests.find((request) => String(request?.email || '').trim().toLowerCase() === normalizedEmail) ||
+      null
+    );
+  }, [authSession?.email, signedInUserId, signupRequests]);
+  const pendingSignupRequests = useMemo(
+    () => signupRequests.filter((request) => normalizeSignupApprovalStatus(request?.status, 'pending') === 'pending'),
+    [signupRequests]
+  );
+  const activeOrganizationDirectoryProfile = useMemo(() => {
+    const primaryOrganizationId = String(primaryOrganizationScope?.organizationId || '').trim();
+    if (!primaryOrganizationId) {
+      return null;
+    }
+    return (
+      organizationDirectoryProfiles.find(
+        (profile) => String(profile?.organizationId || '').trim() === primaryOrganizationId
+      ) || null
+    );
+  }, [organizationDirectoryProfiles, primaryOrganizationScope?.organizationId]);
+  const isActiveOrganizationDirectoryProfileComplete = useMemo(
+    () => isDirectoryProfileComplete(activeOrganizationDirectoryProfile),
+    [activeOrganizationDirectoryProfile]
+  );
+  const requiresDirectoryProfileCompletion =
+    isSupabaseRuntime &&
+    !isDebugBypassSession &&
+    ROLE_PROFILE_REQUIRED.has(authenticatedUserRole);
+  const requiresSignupApproval =
+    isSupabaseRuntime &&
+    !isDebugBypassSession &&
+    authenticatedUserRole !== 'incert';
+  const currentSignupApprovalStatus = useMemo(() => {
+    if (!requiresSignupApproval) {
+      return 'approved';
+    }
+    return normalizeSignupApprovalStatus(currentSignupRequest?.status, 'pending');
+  }, [currentSignupRequest?.status, requiresSignupApproval]);
+  const shouldBlockForDirectoryProfile =
+    requiresDirectoryProfileCompletion && !isActiveOrganizationDirectoryProfileComplete;
+  const shouldBlockForSignupApproval =
+    requiresSignupApproval &&
+    !shouldBlockForDirectoryProfile &&
+    SIGNUP_APPROVAL_PENDING_STATES.has(currentSignupApprovalStatus);
   const marketplaceJobById = useMemo(
     () =>
       new Map(
@@ -8162,9 +8541,6 @@ export default function App() {
     (invoice) => {
       if (accountancyScope?.mode === 'incert') {
         return true;
-      }
-      if (accountancyScope?.mode === 'auditor' || accountancyScope?.mode === 'auditor_company') {
-        return false;
       }
       if (!(accountancyScopeKeySet instanceof Set) || accountancyScopeKeySet.size === 0) {
         return false;
@@ -8771,6 +9147,171 @@ export default function App() {
     }, 4000);
   };
 
+  const upsertCurrentOrganizationDirectoryProfile = useCallback(
+    async (draft) => {
+      if (!isSupabaseRuntime || !supabase || !supabaseSession?.user?.id) {
+        addToast('Profile details can only be saved in Supabase mode.', 'info');
+        return false;
+      }
+
+      const organizationId = String(primaryOrganizationScope?.organizationId || '').trim();
+      if (!organizationId) {
+        addToast('Your primary organization is still loading. Please try again in a moment.', 'info');
+        return false;
+      }
+
+      const normalizedProfile = normalizeDirectoryProfileDraft(draft, authSession?.email || '');
+      if (!isDirectoryProfileComplete(normalizedProfile)) {
+        addToast('Complete all required contact, address, and payment details before continuing.', 'info');
+        return false;
+      }
+
+      setIsSavingOrganizationDirectoryProfile(true);
+      try {
+        const payload = {
+          organization_id: organizationId,
+          account_type: normalizedProfile.accountType,
+          contact_name: normalizedProfile.contactName,
+          contact_email: normalizedProfile.contactEmail,
+          contact_phone: normalizedProfile.contactPhone,
+          address_line_1: normalizedProfile.addressLine1,
+          address_line_2: normalizedProfile.addressLine2,
+          city: normalizedProfile.city,
+          county_state: normalizedProfile.countyState,
+          postcode: normalizedProfile.postcode,
+          country_code: normalizedProfile.countryCode,
+          bank_account_name: normalizedProfile.bankAccountName,
+          bank_name: normalizedProfile.bankName,
+          bank_account_number_masked: normalizedProfile.bankAccountNumberMasked,
+          bank_sort_code_masked: normalizedProfile.bankSortCodeMasked,
+          bank_iban_masked: normalizedProfile.bankIbanMasked,
+          bank_swift_bic: normalizedProfile.bankSwiftBic,
+          payment_reference: normalizedProfile.paymentReference,
+          completed_at: new Date().toISOString(),
+          updated_by: supabaseSession.user.id,
+        };
+        if (!activeOrganizationDirectoryProfile?.id) {
+          payload.created_by = supabaseSession.user.id;
+        }
+
+        const { error: profileUpsertError } = await supabase
+          .from('organization_directory_profiles')
+          .upsert(payload, { onConflict: 'organization_id' });
+        if (profileUpsertError) {
+          addToast(`Failed to save profile details: ${profileUpsertError.message}`, 'info');
+          return false;
+        }
+
+        const { error: signupSyncError } = await supabase.rpc('sync_signup_request', {
+          p_account_type: normalizedProfile.accountType,
+          p_full_name: String(authSession?.fullName || normalizedProfile.contactName || '').trim() || null,
+          p_organization_id: organizationId,
+          p_organization_name: String(primaryOrganizationScope?.organizationName || '').trim() || null,
+        });
+        if (signupSyncError && signupSyncError.code !== '42883') {
+          console.warn('Supabase signup request sync after profile save failed', signupSyncError.message);
+        }
+
+        setAuthProvisioningRevision((previous) => previous + 1);
+        addToast('Profile details saved. InCert will review your account access.', 'success');
+        return true;
+      } finally {
+        setIsSavingOrganizationDirectoryProfile(false);
+      }
+    },
+    [
+      activeOrganizationDirectoryProfile?.id,
+      authSession?.email,
+      authSession?.fullName,
+      isSupabaseRuntime,
+      primaryOrganizationScope?.organizationId,
+      primaryOrganizationScope?.organizationName,
+      supabaseSession?.user?.id,
+    ]
+  );
+
+  const requestSignupReviewAgain = useCallback(
+    async (message = '') => {
+      if (!isSupabaseRuntime || !supabase || !supabaseSession?.user?.id) {
+        addToast('Signup review requests can only be sent in Supabase mode.', 'info');
+        return false;
+      }
+
+      if (currentSignupApprovalStatus !== 'rejected') {
+        addToast('Your account review status is already pending.', 'info');
+        return false;
+      }
+
+      setIsRequestingSignupReapproval(true);
+      try {
+        const { error } = await supabase.rpc('request_signup_reapproval', {
+          p_message: String(message || '').trim() || null,
+        });
+        if (error) {
+          if (error.code === '42883') {
+            addToast('Signup reapproval RPC missing. Run the latest migrations.', 'info');
+          } else {
+            addToast(`Unable to request reapproval: ${error.message}`, 'info');
+          }
+          return false;
+        }
+
+        setAuthProvisioningRevision((previous) => previous + 1);
+        addToast('Review request sent to InCert.', 'success');
+        return true;
+      } finally {
+        setIsRequestingSignupReapproval(false);
+      }
+    },
+    [currentSignupApprovalStatus, isSupabaseRuntime, supabaseSession?.user?.id]
+  );
+
+  const reviewSignupRequest = useCallback(
+    async (requestId, nextStatus, reviewerNotes = '') => {
+      const normalizedRequestId = String(requestId || '').trim();
+      if (!normalizedRequestId) {
+        addToast('Select a valid signup request.', 'info');
+        return false;
+      }
+
+      if (!isSupabaseRuntime || !supabase || !supabaseSession?.user?.id) {
+        addToast('Signup review actions are available only in Supabase mode.', 'info');
+        return false;
+      }
+
+      if (authenticatedUserRole !== 'incert' && !isDebugBypassSession) {
+        addToast('Only InCert administrators can review signup requests.', 'info');
+        return false;
+      }
+
+      const normalizedStatus = normalizeSignupApprovalStatus(nextStatus, 'pending');
+      const { error } = await supabase.rpc('review_signup_request', {
+        p_request_id: normalizedRequestId,
+        p_status: normalizedStatus,
+        p_reviewer_notes: String(reviewerNotes || '').trim() || null,
+      });
+      if (error) {
+        if (error.code === '42883') {
+          addToast('Signup review RPC missing. Run the latest migrations.', 'info');
+        } else {
+          addToast(`Unable to update signup request: ${error.message}`, 'info');
+        }
+        return false;
+      }
+
+      setAuthProvisioningRevision((previous) => previous + 1);
+      if (normalizedStatus === 'approved') {
+        addToast('Signup request approved.', 'success');
+      } else if (normalizedStatus === 'rejected') {
+        addToast('Signup request rejected.', 'info');
+      } else {
+        addToast('Signup request moved to pending review.', 'success');
+      }
+      return true;
+    },
+    [authenticatedUserRole, isDebugBypassSession, isSupabaseRuntime, supabaseSession?.user?.id]
+  );
+
   const setRuntimeAuthMode = (mode) => {
     const normalized = String(mode || '').toLowerCase() === 'supabase' ? 'supabase' : 'mock';
     const currentEmail = String(authSession?.email || '').trim().toLowerCase();
@@ -8805,6 +9346,9 @@ export default function App() {
       addToast('Enter a valid email address', 'info');
       return false;
     }
+    const normalizedRole = normalizeUserRole(accountType);
+    const isSuperAdminEmail = normalizedEmail === SUPER_ADMIN_EMAIL;
+
     const isDebugBypass = import.meta.env.DEV && normalizedEmail === 'debug@incert.local';
     if (isDebugBypass) {
       if (supabase) {
@@ -8817,7 +9361,6 @@ export default function App() {
       setAuthRuntimeMode('mock');
       setSupabaseSession(null);
       resetWorkspaceToMockData();
-      const normalizedRole = normalizeUserRole(accountType);
       setAuthSession({
         isAuthenticated: true,
         email: normalizedEmail,
@@ -8841,13 +9384,19 @@ export default function App() {
       }
 
       if (mode === 'signup') {
+        if (normalizedRole === 'incert' && !isSuperAdminEmail) {
+          addToast('InCert admin accounts are restricted. Use your company, auditor, audit-company, or insurer role.', 'info');
+          return false;
+        }
+
+        const signupAccountType = isSuperAdminEmail ? 'incert' : normalizedRole;
         const { data, error } = await supabase.auth.signUp({
           email: normalizedEmail,
           password: trimmedPassword,
           options: {
             data: {
               full_name: String(fullName || '').trim(),
-              account_type: normalizeUserRole(accountType),
+              account_type: signupAccountType,
             },
           },
         });
@@ -8880,7 +9429,6 @@ export default function App() {
       addToast('Signed in to InCert', 'success');
       return true;
     }
-    const normalizedRole = normalizeUserRole(accountType);
 
     setAuthSession({
       isAuthenticated: true,
@@ -8892,6 +9440,33 @@ export default function App() {
     setDebugRole(normalizedRole);
     setActiveTab((USER_ROLE_TAB_ACCESS[normalizedRole] || USER_ROLE_TAB_ACCESS.company)[0] || 'dashboard');
     addToast(mode === 'signup' ? 'Account created. Welcome to InCert.' : 'Signed in to InCert', 'success');
+    return true;
+  };
+
+  const requestPasswordReset = async ({ email = '' } = {}) => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) {
+      addToast('Enter your email first, then request password reset.', 'info');
+      return false;
+    }
+    if (!SUPABASE_ENV_CONFIGURED || !supabase) {
+      addToast('Password reset is only available in Supabase mode.', 'info');
+      return false;
+    }
+
+    const redirectTo =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      ...(redirectTo ? { redirectTo } : {}),
+    });
+    if (error) {
+      addToast(`Password reset failed: ${error.message}`, 'info');
+      return false;
+    }
+
+    addToast(`Password reset email sent to ${normalizedEmail}.`, 'success');
     return true;
   };
 
@@ -8910,10 +9485,6 @@ export default function App() {
   const switchDebugRole = (role) => {
     const normalizedRole = normalizeUserRole(role, effectiveUserRole);
     setDebugRole(normalizedRole);
-    setAuthSession((previousSession) => ({
-      ...previousSession,
-      accountType: normalizedRole,
-    }));
     const nextTab = (USER_ROLE_TAB_ACCESS[normalizedRole] || USER_ROLE_TAB_ACCESS.company)[0] || 'help';
     setActiveTab(nextTab);
     setSearchQuery('');
@@ -12916,6 +13487,10 @@ export default function App() {
       openTab('accountancy');
       return;
     }
+    if (actionId === 'go-directory') {
+      openTab('directory');
+      return;
+    }
     if (actionId === 'go-help') {
       openTab('help');
       return;
@@ -12982,8 +13557,32 @@ export default function App() {
           isDarkMode={isDarkMode}
           onToggleTheme={toggleTheme}
           onAuthenticate={authenticateUser}
+          onRequestPasswordReset={requestPasswordReset}
           authRuntimeMode={authRuntimeMode}
           isSupabaseConfigured={SUPABASE_ENV_CONFIGURED}
+        />
+      </div>
+    );
+  }
+
+  if (shouldBlockForDirectoryProfile || shouldBlockForSignupApproval) {
+    return (
+      <div className={isDarkMode ? 'dark' : ''}>
+        <AccountAccessGateView
+          isDarkMode={isDarkMode}
+          accountType={authenticatedUserRole}
+          organizationName={String(primaryOrganizationScope?.organizationName || '').trim() || 'Your organization'}
+          mode={shouldBlockForDirectoryProfile ? 'profile' : currentSignupApprovalStatus}
+          initialProfile={activeOrganizationDirectoryProfile}
+          reviewerNotes={currentSignupRequest?.reviewerNotes || ''}
+          requesterNotes={currentSignupRequest?.requesterNotes || ''}
+          submittedAt={currentSignupRequest?.submittedAt || ''}
+          isSavingProfile={isSavingOrganizationDirectoryProfile}
+          isRequestingReview={isRequestingSignupReapproval}
+          onSaveProfile={upsertCurrentOrganizationDirectoryProfile}
+          onRequestReviewAgain={requestSignupReviewAgain}
+          onSignOut={signOutUser}
+          onToggleTheme={toggleTheme}
         />
       </div>
     );
@@ -13163,6 +13762,14 @@ export default function App() {
                 label="Accountancy"
                 isActive={activeTab === 'accountancy'}
                 onClick={() => openTab('accountancy')}
+              />
+            )}
+            {allowedTabsForRole.includes('directory') && (
+              <DesktopNavItem
+                icon={<MapIcon />}
+                label="Directory"
+                isActive={activeTab === 'directory'}
+                onClick={() => openTab('directory')}
               />
             )}
             {allowedTabsForRole.includes('ops') && (
@@ -13379,6 +13986,9 @@ export default function App() {
                   upcomingAssets={upcomingAssets}
                   complianceTrend={complianceTrend}
                   programmeCount={recurringProgrammes.length}
+                  isInCertAdmin={effectiveUserRole === 'incert'}
+                  pendingSignupRequests={pendingSignupRequests}
+                  onOpenSignupReview={() => openTab('directory')}
                   onAction={(action) => {
                     if (action === 'request') {
                       setShowRequestModal(true);
@@ -13539,6 +14149,15 @@ export default function App() {
                   onCollectReceivablesYearDebug={canManageInCertAccountancy ? markAllInvoicesCollectedDebug : undefined}
                   onPayProvidersYearDebug={canManageInCertAccountancy ? markAllPayoutRunsPaidDebug : undefined}
                   onAlignPayoutsToCollectionsDebug={canManageInCertAccountancy ? alignDebugPayoutsToCollections : undefined}
+                />
+              )}
+
+              {activeTab === 'directory' && (
+                <InCertDirectoryView
+                  searchQuery={searchQuery}
+                  signupRequests={signupRequests}
+                  directoryProfiles={organizationDirectoryProfiles}
+                  onReviewSignupRequest={reviewSignupRequest}
                 />
               )}
 
@@ -13790,7 +14409,7 @@ export default function App() {
           style={{
             gridTemplateColumns: `repeat(${Math.max(
               2,
-              ['dashboard', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'ops', 'templates', 'help'].filter((tab) =>
+              ['dashboard', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'directory', 'ops', 'templates', 'help'].filter((tab) =>
                 allowedTabsForRole.includes(tab)
               ).length
             )}, minmax(0, 1fr))`,
@@ -13842,6 +14461,14 @@ export default function App() {
               label="Accounts"
               isActive={activeTab === 'accountancy'}
               onClick={() => openTab('accountancy')}
+            />
+          )}
+          {allowedTabsForRole.includes('directory') && (
+            <MobileNavItem
+              icon={<MapIcon />}
+              label="Directory"
+              isActive={activeTab === 'directory'}
+              onClick={() => openTab('directory')}
             />
           )}
           {allowedTabsForRole.includes('ops') && (
@@ -15431,6 +16058,7 @@ function PublicMarketingLanding({
   isDarkMode,
   onToggleTheme,
   onAuthenticate,
+  onRequestPasswordReset,
   authRuntimeMode = 'mock',
   isSupabaseConfigured = false,
 }) {
@@ -15484,6 +16112,10 @@ function PublicMarketingLanding({
     if (didAuth) {
       setPassword('');
     }
+  };
+
+  const handleForgotPassword = async () => {
+    await onRequestPasswordReset?.({ email });
   };
 
   return (
@@ -15813,7 +16445,7 @@ function PublicMarketingLanding({
               {isSupabaseConfigured ? 'env detected' : 'env pending'}
             </p>
             <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-              Start with a company or auditor account, then invite teams and configure workflows.
+              Start with a company, auditor, or audit-company account, then invite teams and configure workflows.
             </p>
 
             <div className="mt-4 grid grid-cols-2 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -15868,6 +16500,15 @@ function PublicMarketingLanding({
                   className="mt-1 w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 text-sm"
                 />
               </label>
+              {authMode === 'signin' && (
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
+                >
+                  Forgot password?
+                </button>
+              )}
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
                 Primary portal
                 <select
@@ -15877,6 +16518,7 @@ function PublicMarketingLanding({
                 >
                   <option value="company">Company</option>
                   <option value="auditor">Auditor</option>
+                  <option value="third_party">Audit Company</option>
                   <option value="incert">InCert Admin</option>
                   <option value="insurer">Insurer (read-only)</option>
                 </select>
@@ -20735,7 +21377,765 @@ function OfflineInspectionPanel({ assets, logs, isOnline, pendingCount, onSubmit
 
 // --- VIEWS ---
 
-function DashboardView({ assets, urgentAssets, upcomingAssets, complianceTrend, programmeCount = 0, onAction }) {
+function SignupApprovalStatusPill({ status }) {
+  const normalizedStatus = normalizeSignupApprovalStatus(status, 'pending');
+  const styleMap = {
+    pending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+    approved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+    rejected: 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300',
+  };
+  return (
+    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${styleMap[normalizedStatus] || styleMap.pending}`}>
+      {formatSignupApprovalStatusLabel(normalizedStatus)}
+    </span>
+  );
+}
+
+function AccountAccessGateView({
+  isDarkMode,
+  accountType,
+  organizationName,
+  mode,
+  initialProfile,
+  reviewerNotes,
+  requesterNotes,
+  submittedAt,
+  isSavingProfile = false,
+  isRequestingReview = false,
+  onSaveProfile,
+  onRequestReviewAgain,
+  onSignOut,
+  onToggleTheme,
+}) {
+  const [profileForm, setProfileForm] = useState(() =>
+    normalizeDirectoryProfileDraft(
+      {
+        ...(initialProfile || {}),
+        accountType,
+      },
+      initialProfile?.contactEmail || ''
+    )
+  );
+  const [reapprovalMessage, setReapprovalMessage] = useState('');
+
+  useEffect(() => {
+    setProfileForm(
+      normalizeDirectoryProfileDraft(
+        {
+          ...(initialProfile || {}),
+          accountType,
+        },
+        initialProfile?.contactEmail || ''
+      )
+    );
+  }, [accountType, initialProfile]);
+
+  const resolvedMode = String(mode || 'pending').toLowerCase();
+  const isProfileMode = resolvedMode === 'profile';
+  const isRejectedMode = resolvedMode === 'rejected';
+
+  const handleProfileSubmit = async (event) => {
+    event.preventDefault();
+    const didSave = await onSaveProfile?.(profileForm);
+    if (didSave) {
+      setReapprovalMessage('');
+    }
+  };
+
+  const handleRequestReviewAgain = async () => {
+    const didRequest = await onRequestReviewAgain?.(reapprovalMessage);
+    if (didRequest) {
+      setReapprovalMessage('');
+    }
+  };
+
+  return (
+    <div className={isDarkMode ? 'dark' : ''}>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/60 to-emerald-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 px-4 py-6 md:py-10">
+        <div className="max-w-3xl mx-auto space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                Account Access
+              </p>
+              <h1 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                {isProfileMode ? 'Complete your organization profile' : 'Awaiting InCert approval'}
+              </h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onToggleTheme}
+                className="px-3 py-2 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+              >
+                {isDarkMode ? 'Light' : 'Dark'}
+              </button>
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="px-3 py-2 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/85 p-5 md:p-6 shadow-sm space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200">
+                {getUserRoleLabel(accountType)}
+              </span>
+              {isProfileMode ? (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
+                  Profile required
+                </span>
+              ) : (
+                <SignupApprovalStatusPill status={resolvedMode} />
+              )}
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Organization: {organizationName}
+              </span>
+            </div>
+
+            {isProfileMode ? (
+              <form onSubmit={handleProfileSubmit} className="space-y-4">
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  On first login, we require contact, address, and payment details before InCert can approve access.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Contact name *
+                    <input
+                      type="text"
+                      value={profileForm.contactName}
+                      onChange={(event) => setProfileForm((previous) => ({ ...previous, contactName: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                      required
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Contact email *
+                    <input
+                      type="email"
+                      value={profileForm.contactEmail}
+                      onChange={(event) => setProfileForm((previous) => ({ ...previous, contactEmail: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                      required
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 md:col-span-2">
+                    Contact phone
+                    <input
+                      type="text"
+                      value={profileForm.contactPhone}
+                      onChange={(event) => setProfileForm((previous) => ({ ...previous, contactPhone: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 md:col-span-2">
+                    Address line 1 *
+                    <input
+                      type="text"
+                      value={profileForm.addressLine1}
+                      onChange={(event) => setProfileForm((previous) => ({ ...previous, addressLine1: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                      required
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 md:col-span-2">
+                    Address line 2
+                    <input
+                      type="text"
+                      value={profileForm.addressLine2}
+                      onChange={(event) => setProfileForm((previous) => ({ ...previous, addressLine2: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    City *
+                    <input
+                      type="text"
+                      value={profileForm.city}
+                      onChange={(event) => setProfileForm((previous) => ({ ...previous, city: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                      required
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    County / State
+                    <input
+                      type="text"
+                      value={profileForm.countyState}
+                      onChange={(event) => setProfileForm((previous) => ({ ...previous, countyState: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Postcode *
+                    <input
+                      type="text"
+                      value={profileForm.postcode}
+                      onChange={(event) => setProfileForm((previous) => ({ ...previous, postcode: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                      required
+                    />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    Country code *
+                    <input
+                      type="text"
+                      value={profileForm.countryCode}
+                      onChange={(event) => setProfileForm((previous) => ({ ...previous, countryCode: event.target.value }))}
+                      maxLength={3}
+                      className="mt-1 w-full uppercase rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                      required
+                    />
+                  </label>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+                  <h2 className="text-sm font-bold text-slate-800 dark:text-white">Payment details</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Account name *
+                      <input
+                        type="text"
+                        value={profileForm.bankAccountName}
+                        onChange={(event) => setProfileForm((previous) => ({ ...previous, bankAccountName: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        required
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Bank name *
+                      <input
+                        type="text"
+                        value={profileForm.bankName}
+                        onChange={(event) => setProfileForm((previous) => ({ ...previous, bankName: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        required
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Account number *
+                      <input
+                        type="text"
+                        value={profileForm.bankAccountNumberMasked}
+                        onChange={(event) => setProfileForm((previous) => ({ ...previous, bankAccountNumberMasked: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        placeholder="Will be stored masked"
+                        required={String(profileForm.bankIbanMasked || '').trim() === ''}
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Sort code
+                      <input
+                        type="text"
+                        value={profileForm.bankSortCodeMasked}
+                        onChange={(event) => setProfileForm((previous) => ({ ...previous, bankSortCodeMasked: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      IBAN
+                      <input
+                        type="text"
+                        value={profileForm.bankIbanMasked}
+                        onChange={(event) => setProfileForm((previous) => ({ ...previous, bankIbanMasked: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      SWIFT/BIC
+                      <input
+                        type="text"
+                        value={profileForm.bankSwiftBic}
+                        onChange={(event) => setProfileForm((previous) => ({ ...previous, bankSwiftBic: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm uppercase outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 md:col-span-2">
+                      Payment reference
+                      <input
+                        type="text"
+                        value={profileForm.paymentReference}
+                        onChange={(event) => setProfileForm((previous) => ({ ...previous, paymentReference: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isSavingProfile}
+                    className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors"
+                  >
+                    {isSavingProfile ? 'Saving details...' : 'Save details and continue'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-3">
+                {isRejectedMode ? (
+                  <div className="rounded-xl border border-rose-200 dark:border-rose-800/40 bg-rose-50/80 dark:bg-rose-900/20 p-4">
+                    <p className="text-sm font-bold text-rose-700 dark:text-rose-300">
+                      Access request rejected
+                    </p>
+                    <p className="text-sm text-rose-700/90 dark:text-rose-200/90 mt-1">
+                      Update any missing details and request another review.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-900/20 p-4">
+                    <p className="text-sm font-bold text-amber-700 dark:text-amber-300">
+                      Your account is awaiting InCert approval
+                    </p>
+                    <p className="text-sm text-amber-700/90 dark:text-amber-200/90 mt-1">
+                      You can sign out and return once approved.
+                    </p>
+                  </div>
+                )}
+
+                {submittedAt && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Submitted: {formatDateLabel(submittedAt)}
+                  </p>
+                )}
+                {requesterNotes ? (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Your latest note
+                    </p>
+                    <p className="text-sm text-slate-700 dark:text-slate-200 mt-1">{requesterNotes}</p>
+                  </div>
+                ) : null}
+                {reviewerNotes ? (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      InCert review notes
+                    </p>
+                    <p className="text-sm text-slate-700 dark:text-slate-200 mt-1">{reviewerNotes}</p>
+                  </div>
+                ) : null}
+
+                {isRejectedMode && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Message for InCert
+                      <textarea
+                        value={reapprovalMessage}
+                        onChange={(event) => setReapprovalMessage(event.target.value)}
+                        rows={3}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                        placeholder="Share what has changed since the rejection."
+                      />
+                    </label>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        disabled={isRequestingReview}
+                        onClick={handleRequestReviewAgain}
+                        className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold transition-colors"
+                      >
+                        {isRequestingReview ? 'Submitting...' : 'Request review again'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InCertDirectoryView({
+  searchQuery = '',
+  signupRequests = [],
+  directoryProfiles = [],
+  onReviewSignupRequest,
+}) {
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [accountTypeFilter, setAccountTypeFilter] = useState('all');
+  const [profileFilter, setProfileFilter] = useState('all');
+  const [reviewNotesByRequestId, setReviewNotesByRequestId] = useState({});
+  const [activeReviewRequest, setActiveReviewRequest] = useState({
+    requestId: '',
+    decision: '',
+  });
+
+  const normalizedSearchQuery = String(searchQuery || '').trim().toLowerCase();
+
+  const filteredSignupRequests = useMemo(() => {
+    return signupRequests
+      .filter((request) => {
+        const normalizedStatus = normalizeSignupApprovalStatus(request?.status, 'pending');
+        const normalizedRole = normalizeUserRole(request?.accountType || 'company');
+        const matchesStatus = statusFilter === 'all' || normalizedStatus === statusFilter;
+        const matchesRole = accountTypeFilter === 'all' || normalizedRole === accountTypeFilter;
+        if (!matchesStatus || !matchesRole) {
+          return false;
+        }
+        if (!normalizedSearchQuery) {
+          return true;
+        }
+        const searchableValue = [
+          request.organizationName,
+          request.fullName,
+          request.email,
+          getUserRoleLabel(normalizedRole),
+          normalizedStatus,
+        ]
+          .map((value) => String(value || '').toLowerCase())
+          .join(' ');
+        return searchableValue.includes(normalizedSearchQuery);
+      })
+      .sort((first, second) => {
+        const firstTimestamp = parseISODate(first?.updatedAt || first?.submittedAt)?.getTime() || 0;
+        const secondTimestamp = parseISODate(second?.updatedAt || second?.submittedAt)?.getTime() || 0;
+        return secondTimestamp - firstTimestamp;
+      });
+  }, [accountTypeFilter, normalizedSearchQuery, signupRequests, statusFilter]);
+
+  const filteredDirectoryProfiles = useMemo(() => {
+    return directoryProfiles
+      .filter((profile) => {
+        const normalizedRole = normalizeUserRole(profile?.accountType || 'company');
+        const isComplete = isDirectoryProfileComplete(profile);
+        const matchesRole = accountTypeFilter === 'all' || normalizedRole === accountTypeFilter;
+        const matchesProfile =
+          profileFilter === 'all' ||
+          (profileFilter === 'complete' && isComplete) ||
+          (profileFilter === 'incomplete' && !isComplete);
+        if (!matchesRole || !matchesProfile) {
+          return false;
+        }
+        if (!normalizedSearchQuery) {
+          return true;
+        }
+        const searchableValue = [
+          profile.organizationName,
+          profile.contactName,
+          profile.contactEmail,
+          profile.contactPhone,
+          formatDirectoryAddress(profile),
+          profile.bankName,
+          profile.paymentReference,
+        ]
+          .map((value) => String(value || '').toLowerCase())
+          .join(' ');
+        return searchableValue.includes(normalizedSearchQuery);
+      })
+      .sort((first, second) => String(first?.organizationName || '').localeCompare(String(second?.organizationName || '')));
+  }, [accountTypeFilter, directoryProfiles, normalizedSearchQuery, profileFilter]);
+
+  const signupSummary = useMemo(() => {
+    return signupRequests.reduce(
+      (summary, request) => {
+        const normalizedStatus = normalizeSignupApprovalStatus(request?.status, 'pending');
+        summary.total += 1;
+        if (normalizedStatus === 'approved') {
+          summary.approved += 1;
+        } else if (normalizedStatus === 'rejected') {
+          summary.rejected += 1;
+        } else {
+          summary.pending += 1;
+        }
+        return summary;
+      },
+      { total: 0, pending: 0, approved: 0, rejected: 0 }
+    );
+  }, [signupRequests]);
+
+  const handleReviewRequest = async (requestId, decision) => {
+    const normalizedRequestId = String(requestId || '').trim();
+    if (!normalizedRequestId) {
+      return;
+    }
+    const normalizedDecision = normalizeSignupApprovalStatus(decision, 'pending');
+    setActiveReviewRequest({
+      requestId: normalizedRequestId,
+      decision: normalizedDecision,
+    });
+    try {
+      const didComplete = await onReviewSignupRequest?.(
+        normalizedRequestId,
+        normalizedDecision,
+        reviewNotesByRequestId[normalizedRequestId] || ''
+      );
+      if (didComplete) {
+        setReviewNotesByRequestId((previous) => {
+          const next = { ...previous };
+          delete next[normalizedRequestId];
+          return next;
+        });
+      }
+    } finally {
+      setActiveReviewRequest({
+        requestId: '',
+        decision: '',
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+              InCert Directory
+            </p>
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+              Signup approvals and address book
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
+              Review new signups, approve access, and search organization contact and payment records.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-700">
+              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Total</p>
+              <p className="text-lg font-black text-slate-800 dark:text-white">{signupSummary.total}</p>
+            </div>
+            <div className="px-3 py-2 rounded-xl bg-amber-100/80 dark:bg-amber-900/30">
+              <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">Pending</p>
+              <p className="text-lg font-black text-amber-700 dark:text-amber-200">{signupSummary.pending}</p>
+            </div>
+            <div className="px-3 py-2 rounded-xl bg-emerald-100/80 dark:bg-emerald-900/30">
+              <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">Approved</p>
+              <p className="text-lg font-black text-emerald-700 dark:text-emerald-200">{signupSummary.approved}</p>
+            </div>
+            <div className="px-3 py-2 rounded-xl bg-rose-100/80 dark:bg-rose-900/30">
+              <p className="text-[11px] font-semibold text-rose-700 dark:text-rose-300">Rejected</p>
+              <p className="text-lg font-black text-rose-700 dark:text-rose-200">{signupSummary.rejected}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="glass-panel bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+            Signup status
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/45 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 outline-none focus:border-cyan-500"
+            >
+              <option value="all">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </label>
+          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+            Account type
+            <select
+              value={accountTypeFilter}
+              onChange={(event) => setAccountTypeFilter(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/45 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 outline-none focus:border-cyan-500"
+            >
+              <option value="all">All account types</option>
+              {USER_ROLE_OPTIONS.filter((roleOption) => roleOption.id !== 'incert').map((roleOption) => (
+                <option key={`directory-role-${roleOption.id}`} value={roleOption.id}>
+                  {roleOption.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+            Address profile
+            <select
+              value={profileFilter}
+              onChange={(event) => setProfileFilter(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/45 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 outline-none focus:border-cyan-500"
+            >
+              <option value="all">All profiles</option>
+              <option value="complete">Complete</option>
+              <option value="incomplete">Incomplete</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+        <h3 className="text-lg font-bold text-slate-800 dark:text-white">Signup approvals</h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          Filtered results: {filteredSignupRequests.length}
+        </p>
+        <div className="mt-4 space-y-3">
+          {filteredSignupRequests.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/35 p-4 text-sm text-slate-500 dark:text-slate-400">
+              No signup requests match the current search and filters.
+            </div>
+          ) : (
+            filteredSignupRequests.map((request) => {
+              const requestId = String(request.id || '');
+              const isBusy = activeReviewRequest.requestId === requestId;
+              const normalizedStatus = normalizeSignupApprovalStatus(request.status, 'pending');
+              return (
+                <article
+                  key={requestId}
+                  className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/35 p-3 md:p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">
+                        {request.organizationName || request.fullName || request.email}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {getUserRoleLabel(request.accountType)} • {request.email || 'No email'} • Submitted {formatDateLabel(request.submittedAt)}
+                      </p>
+                    </div>
+                    <SignupApprovalStatusPill status={normalizedStatus} />
+                  </div>
+                  {request.reviewerNotes ? (
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-2">
+                      Review note: {request.reviewerNotes}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
+                    <input
+                      type="text"
+                      value={reviewNotesByRequestId[requestId] || ''}
+                      onChange={(event) =>
+                        setReviewNotesByRequestId((previous) => ({
+                          ...previous,
+                          [requestId]: event.target.value,
+                        }))
+                      }
+                      placeholder="Optional reviewer note"
+                      className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleReviewRequest(requestId, 'approved')}
+                        className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-bold"
+                      >
+                        {isBusy && activeReviewRequest.decision === 'approved' ? 'Approving...' : 'Approve'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleReviewRequest(requestId, 'rejected')}
+                        className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-xs font-bold"
+                      >
+                        {isBusy && activeReviewRequest.decision === 'rejected' ? 'Rejecting...' : 'Reject'}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 md:p-5 shadow-sm">
+        <h3 className="text-lg font-bold text-slate-800 dark:text-white">Organization address book</h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          Filtered results: {filteredDirectoryProfiles.length}
+        </p>
+        <div className="mt-4 space-y-3">
+          {filteredDirectoryProfiles.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/35 p-4 text-sm text-slate-500 dark:text-slate-400">
+              No address book records match the current search and filters.
+            </div>
+          ) : (
+            filteredDirectoryProfiles.map((profile) => {
+              const isComplete = isDirectoryProfileComplete(profile);
+              return (
+                <article
+                  key={profile.id}
+                  className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/35 p-3 md:p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">
+                        {profile.organizationName}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {getUserRoleLabel(profile.accountType)} • Updated {formatDateLabel(profile.updatedAt || profile.createdAt)}
+                      </p>
+                    </div>
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                        isComplete
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                      }`}
+                    >
+                      {isComplete ? 'Complete' : 'Incomplete'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/45 p-3">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Contact
+                      </p>
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 mt-1">
+                        {profile.contactName || 'Not provided'}
+                      </p>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                        {profile.contactEmail || 'No email'}{profile.contactPhone ? ` • ${profile.contactPhone}` : ''}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/45 p-3">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Address
+                      </p>
+                      <p className="text-sm text-slate-700 dark:text-slate-200 mt-1">
+                        {formatDirectoryAddress(profile) || 'Not provided'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/45 p-3 md:col-span-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Payment details
+                      </p>
+                      <p className="text-sm text-slate-700 dark:text-slate-200 mt-1">
+                        {profile.bankName || 'No bank name'}{profile.bankAccountName ? ` • ${profile.bankAccountName}` : ''}
+                      </p>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                        Account {profile.bankAccountNumberMasked || 'N/A'}
+                        {profile.bankSortCodeMasked ? ` • Sort code ${profile.bankSortCodeMasked}` : ''}
+                        {profile.bankIbanMasked ? ` • IBAN ${profile.bankIbanMasked}` : ''}
+                        {profile.bankSwiftBic ? ` • SWIFT ${profile.bankSwiftBic}` : ''}
+                      </p>
+                      {profile.paymentReference ? (
+                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                          Reference: {profile.paymentReference}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardView({
+  assets,
+  urgentAssets,
+  upcomingAssets,
+  complianceTrend,
+  programmeCount = 0,
+  isInCertAdmin = false,
+  pendingSignupRequests = [],
+  onOpenSignupReview,
+  onAction,
+}) {
   const totalAssets = assets.length;
   const compliantAssets = assets.filter((asset) => asset.status === 'compliant').length;
   const overdueAssets = assets.filter((asset) => asset.status === 'overdue').length;
@@ -20753,6 +22153,9 @@ function DashboardView({ assets, urgentAssets, upcomingAssets, complianceTrend, 
   const loler = getRegimeStats('LOLER');
   const puwer = getRegimeStats('PUWER');
   const pssr = getRegimeStats('PSSR');
+  const pendingApprovals = pendingSignupRequests.filter(
+    (request) => normalizeSignupApprovalStatus(request?.status, 'pending') === 'pending'
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -20854,6 +22257,54 @@ function DashboardView({ assets, urgentAssets, upcomingAssets, complianceTrend, 
           />
         </div>
       </div>
+
+      {isInCertAdmin && (
+        <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm transition-colors duration-300 hover-lift">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Access Approvals
+              </p>
+              <h3 className="text-xl font-black text-slate-800 dark:text-white mt-1">
+                {pendingApprovals.length} pending signup {pendingApprovals.length === 1 ? 'request' : 'requests'}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenSignupReview?.()}
+              className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-bold transition-colors"
+            >
+              Review Directory
+            </button>
+          </div>
+          {pendingApprovals.length > 0 ? (
+            <div className="mt-4 space-y-2">
+              {pendingApprovals.slice(0, 4).map((request) => (
+                <div
+                  key={request.id}
+                  className="rounded-xl border border-amber-200/80 dark:border-amber-800/40 bg-amber-50/70 dark:bg-amber-900/20 px-3 py-2.5 flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                      {request.organizationName || request.fullName || request.email}
+                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                      {getUserRoleLabel(request.accountType)} • {request.email}
+                    </p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                    Pending
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-3">
+              No pending signup approvals.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 xl:col-span-2 shadow-sm transition-colors duration-300 hover-lift">
@@ -24418,6 +25869,7 @@ function CommandPalette({ isOpen, onClose, onAction }) {
       { id: 'go-providers', label: 'Open Provider Network', description: 'Find and dispatch providers', icon: Users },
       { id: 'go-marketplace', label: 'Open Audit Marketplace', description: 'Advertise and match audit jobs', icon: ClipboardList },
       { id: 'go-accountancy', label: 'Open Accountancy', description: 'Run invoicing, collections, and payouts', icon: BarChart3 },
+      { id: 'go-directory', label: 'Open Directory', description: 'Review signups and organization contact records', icon: MapIcon },
       { id: 'go-ops', label: 'Open Operations Console', description: 'Run readiness workflows for items 2-15', icon: ServerCog },
       { id: 'go-templates', label: 'Open Template Studio', description: 'Edit and publish template question banks', icon: FileSignature },
       { id: 'go-help', label: 'Open Help Center', description: 'View product guides and placeholders', icon: FileText },
