@@ -9,8 +9,14 @@
   "theme_color": "#0ea5e9",
   "icons": [
     {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/icons/incert-shield.png",
-      "sizes": "any",
+      "sizes": "268x320",
       "type": "image/png",
       "purpose": "any maskable"
     }

@@ -95,6 +95,43 @@ const USER_ROLE_TAB_ACCESS = {
   incert: ['dashboard', 'onboarding', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'directory', 'ops', 'templates', 'help'],
 };
 
+const TAB_METADATA = {
+  dashboard: { label: 'Dash', title: 'Dashboard', icon: LayoutDashboard },
+  onboarding: { label: 'Setup', title: 'Onboarding', icon: Building2 },
+  assets: { label: 'Assets', title: 'Asset Register', icon: Box },
+  vault: { label: 'Vault', title: 'Evidence Vault', icon: Lock },
+  providers: { label: 'Network', title: 'Provider Network', icon: Users },
+  marketplace: { label: 'Market', title: 'Marketplace', icon: ClipboardList },
+  accountancy: { label: 'Accounts', title: 'Accountancy', icon: BarChart3 },
+  directory: { label: 'Directory', title: 'Directory', icon: MapIcon },
+  ops: { label: 'Ops', title: 'Operations', icon: ServerCog },
+  templates: { label: 'Tpls', title: 'Templates', icon: FileSignature },
+  help: { label: 'Help', title: 'Help', icon: FileText },
+};
+
+const MOBILE_PRIMARY_TABS_BY_ROLE = {
+  company: ['dashboard', 'assets', 'marketplace', 'accountancy'],
+  auditor: ['marketplace', 'accountancy', 'help'],
+  third_party: ['marketplace', 'accountancy', 'help'],
+  insurer: ['marketplace', 'help'],
+  incert: ['dashboard', 'marketplace', 'accountancy', 'ops'],
+};
+
+const APP_NOTIFICATIONS = [
+  {
+    id: 'pallet-stacker-due',
+    title: 'Pallet Stacker Due',
+    message: 'Inspection required within 14 days (PUWER).',
+    tone: 'warning',
+  },
+  {
+    id: 'certificate-uploaded',
+    title: 'New Certificate Verified',
+    message: 'Air Compressor PSSR certificate uploaded.',
+    tone: 'success',
+  },
+];
+
 const SUPABASE_ENV_CONFIGURED = isSupabaseConfigured;
 const SUPER_ADMIN_EMAIL = 'capener182@googlemail.com';
 const ROLE_PROFILE_REQUIRED = new Set(['company', 'auditor', 'third_party']);
@@ -8030,6 +8067,26 @@ export default function App() {
     () => USER_ROLE_OPTIONS.find((option) => option.id === effectiveUserRole)?.label || 'Company',
     [effectiveUserRole]
   );
+  const activeTabMeta = useMemo(() => {
+    return (
+      TAB_METADATA[activeTab] || {
+        label: activeTab,
+        title: activeTab.replace(/([A-Z])/g, ' $1').trim(),
+        icon: FileText,
+      }
+    );
+  }, [activeTab]);
+  const mobilePrimaryTabs = useMemo(() => {
+    const preferredTabs = MOBILE_PRIMARY_TABS_BY_ROLE[effectiveUserRole] || allowedTabsForRole.slice(0, 4);
+    const preferredAllowedTabs = preferredTabs.filter((tab) => allowedTabsForRole.includes(tab));
+    const fallbackTabs = allowedTabsForRole.filter((tab) => !preferredAllowedTabs.includes(tab));
+    return [...preferredAllowedTabs, ...fallbackTabs].slice(0, 4);
+  }, [allowedTabsForRole, effectiveUserRole]);
+  const mobileOverflowTabs = useMemo(
+    () => allowedTabsForRole.filter((tab) => !mobilePrimaryTabs.includes(tab)),
+    [allowedTabsForRole, mobilePrimaryTabs]
+  );
+  const mobileNavSlotCount = mobilePrimaryTabs.length + 1;
   const authenticatedUserRole = useMemo(
     () => normalizeUserRole(authSession.accountType),
     [authSession.accountType]
@@ -13598,11 +13655,14 @@ export default function App() {
         @keyframes orbFloat { 0%, 100% { transform: translateY(0px) translateX(0px); } 50% { transform: translateY(-16px) translateX(10px); } }
         @keyframes pulseSoft { 0%, 100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.24); } 70% { box-shadow: 0 0 0 12px rgba(6, 182, 212, 0); } }
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        @keyframes floatIn { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0px); opacity: 1; } }
+        @keyframes floatIn { from { transform: translateY(24px) scale(0.985); } to { transform: translateY(0px) scale(1); } }
 
         .toast-enter { animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         .glass-panel { backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-        .float-in { animation: floatIn 0.45s ease-out forwards; }
+        .float-in {
+          animation: floatIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          will-change: transform;
+        }
         .ambient-orb { animation: orbFloat 10s ease-in-out infinite; }
         .pulse-soft { animation: pulseSoft 2.4s ease-out infinite; }
         .shimmer-line {
@@ -13640,66 +13700,69 @@ export default function App() {
         }}
       />
 
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/60 to-emerald-50/60 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 text-slate-900 dark:text-slate-200 overflow-hidden flex flex-col md:flex-row relative transition-colors duration-300">
+      <div className="min-h-[100svh] md:min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/60 to-emerald-50/60 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 text-slate-900 dark:text-slate-200 overflow-x-hidden md:overflow-hidden flex flex-col md:flex-row relative transition-colors duration-300">
         {/* Background Elements */}
         <div className="ambient-orb absolute top-0 -left-10 w-96 h-96 bg-cyan-100 dark:bg-cyan-900/20 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-[100px] opacity-60 pointer-events-none transition-colors duration-500" />
         <div className="ambient-orb absolute -bottom-10 right-10 w-96 h-96 bg-emerald-100 dark:bg-emerald-900/20 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-[100px] opacity-60 pointer-events-none transition-colors duration-500" />
         <div className="ambient-orb absolute top-1/3 right-1/4 w-72 h-72 bg-amber-100/70 dark:bg-amber-900/10 rounded-full mix-blend-multiply dark:mix-blend-screen filter blur-[100px] opacity-40 pointer-events-none transition-colors duration-500" />
 
         {/* --- MOBILE HEADER --- */}
-        <header className="md:hidden glass-panel h-16 bg-white/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-4 fixed inset-x-0 top-0 z-50 w-full transition-colors duration-300">
-          <InCertLogo width={138} height={36} className="text-slate-800 dark:text-white" />
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setShowCommandPalette(true)}
-              aria-label="Open command palette"
-              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
-            >
-              <Command className="h-5 w-5" />
-            </button>
-            <button
-              onClick={() => setShowScanModal(true)}
-              aria-label="Scan QR code"
-              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
-            >
-              <ScanLine className="h-5 w-5" />
-            </button>
-            <button
-              onClick={toggleTheme}
-              aria-label="Toggle theme"
-              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
-            >
-              {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </button>
-            <button
-              onClick={signOutUser}
-              aria-label="Sign out"
-              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
-            >
-              <LogOut className="h-5 w-5" />
-            </button>
-            <button
-              onClick={() => setShowMobileQuickPanel((previous) => !previous)}
-              aria-label="Open quick actions"
-              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
-            >
-              <Zap className="h-5 w-5" />
-            </button>
-            <div className="relative">
+        <header className="md:hidden glass-panel fixed inset-x-0 top-0 z-50 w-full border-b border-slate-200 dark:border-slate-700 bg-white/88 dark:bg-slate-800/88 transition-colors duration-300 pt-safe">
+          <div className="px-safe flex min-h-16 items-center justify-between gap-3">
+            <div className="min-w-0">
+              <InCertLogo width={138} height={36} className="text-slate-800 dark:text-white" />
+              <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                {activeTabMeta.title} · {effectiveRoleLabel}
+              </p>
+            </div>
+            <div className="flex items-center gap-1">
               <button
-                onClick={() => setShowNotifications((previous) => !previous)}
-                aria-label="Open notifications"
-                className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 transition-colors"
+                type="button"
+                onClick={() => {
+                  setShowNotifications(false);
+                  setShowMobileQuickPanel(false);
+                  setShowCommandPalette(true);
+                }}
+                aria-label="Search workspace"
+                className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100/90 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700/80"
               >
-                <Bell className="h-5 w-5" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full border-2 border-white dark:border-slate-800" />
+                <Search className="h-5 w-5" />
+              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMobileQuickPanel(false);
+                    setShowNotifications((previous) => !previous);
+                  }}
+                  aria-label="Open notifications"
+                  aria-expanded={showNotifications}
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100/90 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700/80"
+                >
+                  <Bell className="h-5 w-5" />
+                  {APP_NOTIFICATIONS.length > 0 && (
+                    <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full border-2 border-white bg-rose-500 dark:border-slate-800" />
+                  )}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNotifications(false);
+                  setShowMobileQuickPanel((previous) => !previous);
+                }}
+                aria-label="Open mobile menu"
+                aria-expanded={showMobileQuickPanel}
+                className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100/90 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700/80"
+              >
+                <Settings className="h-5 w-5" />
               </button>
             </div>
           </div>
         </header>
 
         {/* --- DESKTOP SIDEBAR --- */}
-        <aside className="hidden md:flex w-64 glass-panel bg-white/80 dark:bg-slate-800/80 border-r border-slate-200 dark:border-slate-700 flex-col z-30 h-screen transition-colors duration-300">
+        <aside className="hidden md:flex w-64 glass-panel bg-white/80 dark:bg-slate-800/80 border-r border-slate-200 dark:border-slate-700 flex-col z-30 h-[100svh] transition-colors duration-300">
           <div className="px-6 pt-6 pb-3 space-y-3">
             <InCertLogo width={176} height={44} className="text-slate-800 dark:text-white" />
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
@@ -13816,12 +13879,12 @@ export default function App() {
         </aside>
 
         {/* --- MAIN CONTENT AREA --- */}
-        <main className="flex-1 flex flex-col h-screen md:h-screen pt-16 md:pt-0 overflow-hidden relative z-20">
+        <main className="flex-1 flex flex-col min-h-[100svh] md:h-[100svh] pt-[calc(4rem+env(safe-area-inset-top,0px))] md:pt-0 md:overflow-hidden relative z-20">
           {/* Desktop Header */}
           <header className="hidden md:flex h-20 glass-panel bg-white/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 items-center justify-between px-8 sticky top-0 z-30 transition-colors duration-300">
             <div className="flex items-center">
               <h1 className="text-2xl font-bold text-slate-800 dark:text-white capitalize tracking-wide">
-                {activeTab.replace(/([A-Z])/g, ' $1').trim()}
+                  {activeTabMeta.title}
               </h1>
             </div>
             <div className="flex items-center space-x-4">
@@ -13885,33 +13948,29 @@ export default function App() {
                     <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
                       <h3 className="font-bold text-slate-800 dark:text-white text-sm">Notifications</h3>
                     </div>
-                    <div className="divide-y divide-slate-100 dark:divide-slate-700 max-h-80 overflow-y-auto">
-                      <div className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer">
-                        <div className="flex space-x-3">
-                          <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
-                          <div>
-                            <p className="text-sm font-medium text-slate-800 dark:text-white leading-tight">
-                              Pallet Stacker Due
-                            </p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                              Inspection required within 14 days (PUWER).
-                            </p>
+                    <div className="ios-scroll divide-y divide-slate-100 dark:divide-slate-700 max-h-80 overflow-y-auto">
+                      {APP_NOTIFICATIONS.map((notification) => (
+                        <div
+                          key={notification.id}
+                          className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
+                        >
+                          <div className="flex space-x-3">
+                            {notification.tone === 'warning' ? (
+                              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+                            ) : (
+                              <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                            )}
+                            <div>
+                              <p className="text-sm font-medium text-slate-800 dark:text-white leading-tight">
+                                {notification.title}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                {notification.message}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer">
-                        <div className="flex space-x-3">
-                          <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                          <div>
-                            <p className="text-sm font-medium text-slate-800 dark:text-white leading-tight">
-                              New Certificate Verified
-                            </p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                              Air Compressor PSSR certificate uploaded.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -13950,7 +14009,7 @@ export default function App() {
 
           {/* Dynamic Content Scroll Area */}
           <div
-            className="flex-1 overflow-y-auto p-4 md:p-8 pb-28 md:pb-10 scroll-smooth"
+            className="ios-scroll flex-1 min-h-0 p-4 md:p-8 pb-36 md:pb-10 scroll-smooth md:overflow-y-auto md:overscroll-contain"
             onClick={() => showNotifications && setShowNotifications(false)}
           >
             <div
@@ -14324,80 +14383,216 @@ export default function App() {
           </div>
         </main>
 
+        {showNotifications && (
+          <div className="md:hidden fixed inset-0 z-[75] bg-slate-950/60 backdrop-blur-[2px]" onClick={() => setShowNotifications(false)}>
+            <div className="absolute inset-x-0 bottom-0 flex justify-center px-safe pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-4">
+              <div
+                className="ios-scroll w-full max-w-md max-h-[60vh] overflow-y-auto rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-[0_-24px_80px_rgba(15,23,42,0.32)]"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Notifications</p>
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{APP_NOTIFICATIONS.length} recent updates</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowNotifications(false)}
+                    aria-label="Close notifications"
+                    className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                  {APP_NOTIFICATIONS.map((notification) => (
+                    <div key={notification.id} className="flex gap-3 px-4 py-4">
+                      <div className="mt-0.5">
+                        {notification.tone === 'warning' ? (
+                          <AlertTriangle className="h-5 w-5 text-amber-500" />
+                        ) : (
+                          <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{notification.title}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{notification.message}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showMobileQuickPanel && (
-          <div className="md:hidden fixed inset-0 z-[70] bg-slate-900/35 backdrop-blur-sm" onClick={() => setShowMobileQuickPanel(false)}>
+          <div className="md:hidden fixed inset-0 z-[70] bg-slate-950/60 backdrop-blur-[2px]" onClick={() => setShowMobileQuickPanel(false)}>
             <div
-              className="absolute left-3 right-3 bottom-24 p-4 bg-white/95 dark:bg-slate-800/95 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-soft float-in"
+              className="absolute inset-x-0 bottom-0 flex justify-center px-safe pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] pt-4"
               onClick={(event) => event.stopPropagation()}
             >
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-500" />
-                Quick Actions
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => {
-                    setShowMobileQuickPanel(false);
-                    setShowAddAssetModal(true);
-                  }}
-                  className="rounded-xl bg-cyan-600 text-white px-3 py-2.5 text-sm font-bold"
-                >
-                  Add Asset
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMobileQuickPanel(false);
-                    setShowRequestModal(true);
-                  }}
-                  className="rounded-xl bg-emerald-600 text-white px-3 py-2.5 text-sm font-bold"
-                >
-                  Dispatch
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMobileQuickPanel(false);
-                    setShowCommandPalette(true);
-                  }}
-                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
-                >
-                  Search
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMobileQuickPanel(false);
-                    openTab('onboarding');
-                  }}
-                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
-                >
-                  Onboard
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMobileQuickPanel(false);
-                    exportAuditPack();
-                  }}
-                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
-                >
-                  Export
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMobileQuickPanel(false);
-                    openTab('ops');
-                  }}
-                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
-                >
-                  Ops
-                </button>
-                <button
-                  onClick={() => {
-                    setShowMobileQuickPanel(false);
-                    setShowScanModal(true);
-                  }}
-                  className="rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 px-3 py-2.5 text-sm font-bold"
-                >
-                  Scan QR
-                </button>
+              <div className="ios-scroll w-full max-w-md max-h-[75vh] overflow-y-auto rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-[0_-24px_80px_rgba(15,23,42,0.32)] float-in">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                      <Sparkles className="h-3.5 w-3.5 text-cyan-500" />
+                      Workspace Menu
+                    </p>
+                    <h3 className="mt-1 text-lg font-black text-slate-900 dark:text-white">{activeTabMeta.title}</h3>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {effectiveRoleLabel} · {authSession.fullName || authSession.email || activeCompanyContext.name}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowMobileQuickPanel(false)}
+                    aria-label="Close mobile menu"
+                    className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {mobileOverflowTabs.length > 0 && (
+                  <div className="mt-5">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">More destinations</p>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {mobileOverflowTabs.map((tab) => {
+                        const tabMeta = TAB_METADATA[tab] || activeTabMeta;
+                        const Icon = tabMeta.icon;
+                        return (
+                          <button
+                            key={`mobile-overflow-${tab}`}
+                            type="button"
+                            onClick={() => {
+                              setShowMobileQuickPanel(false);
+                              openTab(tab);
+                            }}
+                            className={`flex min-h-11 items-center gap-2 rounded-2xl border px-3 py-3 text-left text-sm font-semibold transition-colors ${
+                              activeTab === tab
+                                ? 'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-800/50 dark:bg-cyan-900/20 dark:text-cyan-300'
+                                : 'border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-200'
+                            }`}
+                          >
+                            <Icon className="h-4 w-4 shrink-0" />
+                            <span>{tabMeta.title}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-5">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Quick actions</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileQuickPanel(false);
+                        setShowCommandPalette(true);
+                      }}
+                      className="rounded-2xl bg-slate-100 dark:bg-slate-700 px-3 py-3 text-left text-sm font-bold text-slate-700 dark:text-slate-100"
+                    >
+                      Search
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileQuickPanel(false);
+                        setShowScanModal(true);
+                      }}
+                      className="rounded-2xl bg-slate-100 dark:bg-slate-700 px-3 py-3 text-left text-sm font-bold text-slate-700 dark:text-slate-100"
+                    >
+                      Scan QR
+                    </button>
+                    {allowedTabsForRole.includes('assets') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMobileQuickPanel(false);
+                          setShowAddAssetModal(true);
+                        }}
+                        className="rounded-2xl bg-cyan-600 px-3 py-3 text-left text-sm font-bold text-white"
+                      >
+                        Add Asset
+                      </button>
+                    )}
+                    {allowedTabsForRole.includes('marketplace') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMobileQuickPanel(false);
+                          setShowRequestModal(true);
+                        }}
+                        className="rounded-2xl bg-emerald-600 px-3 py-3 text-left text-sm font-bold text-white"
+                      >
+                        Dispatch
+                      </button>
+                    )}
+                    {allowedTabsForRole.includes('onboarding') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMobileQuickPanel(false);
+                          openTab('onboarding');
+                        }}
+                        className="rounded-2xl bg-slate-100 dark:bg-slate-700 px-3 py-3 text-left text-sm font-bold text-slate-700 dark:text-slate-100"
+                      >
+                        Onboarding
+                      </button>
+                    )}
+                    {allowedTabsForRole.includes('ops') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMobileQuickPanel(false);
+                          openTab('ops');
+                        }}
+                        className="rounded-2xl bg-slate-100 dark:bg-slate-700 px-3 py-3 text-left text-sm font-bold text-slate-700 dark:text-slate-100"
+                      >
+                        Operations
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileQuickPanel(false);
+                        exportAuditPack();
+                      }}
+                      className="rounded-2xl bg-slate-100 dark:bg-slate-700 px-3 py-3 text-left text-sm font-bold text-slate-700 dark:text-slate-100"
+                    >
+                      Export pack
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-5">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">App controls</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileQuickPanel(false);
+                        toggleTheme();
+                      }}
+                      className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left text-sm font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-100"
+                    >
+                      {isDarkMode ? 'Light mode' : 'Dark mode'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMobileQuickPanel(false);
+                        signOutUser();
+                      }}
+                      className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3 text-left text-sm font-bold text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-300"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -14405,106 +14600,43 @@ export default function App() {
 
         {/* --- MOBILE BOTTOM NAVIGATION --- */}
         <nav
-          className="md:hidden glass-panel bg-white/90 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-700 fixed bottom-0 w-full z-50 px-2 py-3 grid items-center pb-safe transition-colors duration-300"
+          className="md:hidden glass-panel bg-white/92 dark:bg-slate-800/92 border-t border-slate-200 dark:border-slate-700 fixed inset-x-0 bottom-0 z-50 grid items-center gap-1 px-safe pt-2 pb-safe transition-colors duration-300"
           style={{
-            gridTemplateColumns: `repeat(${Math.max(
-              2,
-              ['dashboard', 'assets', 'vault', 'providers', 'marketplace', 'accountancy', 'directory', 'ops', 'templates', 'help'].filter((tab) =>
-                allowedTabsForRole.includes(tab)
-              ).length
-            )}, minmax(0, 1fr))`,
+            gridTemplateColumns: `repeat(${mobileNavSlotCount}, minmax(0, 1fr))`,
           }}
         >
-          {allowedTabsForRole.includes('dashboard') && (
-            <MobileNavItem
-              icon={<LayoutDashboard />}
-              label="Dash"
-              isActive={activeTab === 'dashboard'}
-              onClick={() => openTab('dashboard')}
-            />
-          )}
-          {allowedTabsForRole.includes('assets') && (
-            <MobileNavItem
-              icon={<Box />}
-              label="Assets"
-              isActive={activeTab === 'assets'}
-              onClick={() => openTab('assets')}
-            />
-          )}
-          {allowedTabsForRole.includes('vault') && (
-            <MobileNavItem
-              icon={<Lock />}
-              label="Vault"
-              isActive={activeTab === 'vault'}
-              onClick={() => openTab('vault')}
-            />
-          )}
-          {allowedTabsForRole.includes('providers') && (
-            <MobileNavItem
-              icon={<Users />}
-              label="Network"
-              isActive={activeTab === 'providers'}
-              onClick={() => openTab('providers')}
-            />
-          )}
-          {allowedTabsForRole.includes('marketplace') && (
-            <MobileNavItem
-              icon={<ClipboardList />}
-              label="Market"
-              isActive={activeTab === 'marketplace'}
-              onClick={() => openTab('marketplace')}
-            />
-          )}
-          {allowedTabsForRole.includes('accountancy') && (
-            <MobileNavItem
-              icon={<BarChart3 />}
-              label="Accounts"
-              isActive={activeTab === 'accountancy'}
-              onClick={() => openTab('accountancy')}
-            />
-          )}
-          {allowedTabsForRole.includes('directory') && (
-            <MobileNavItem
-              icon={<MapIcon />}
-              label="Directory"
-              isActive={activeTab === 'directory'}
-              onClick={() => openTab('directory')}
-            />
-          )}
-          {allowedTabsForRole.includes('ops') && (
-            <MobileNavItem
-              icon={<ServerCog />}
-              label="Ops"
-              isActive={activeTab === 'ops'}
-              onClick={() => openTab('ops')}
-            />
-          )}
-          {allowedTabsForRole.includes('templates') && (
-            <MobileNavItem
-              icon={<FileSignature />}
-              label="Tpls"
-              isActive={activeTab === 'templates'}
-              onClick={() => openTab('templates')}
-            />
-          )}
-          {allowedTabsForRole.includes('help') && (
-            <MobileNavItem
-              icon={<FileText />}
-              label="Help"
-              isActive={activeTab === 'help'}
-              onClick={() => openTab('help')}
-            />
-          )}
+          {mobilePrimaryTabs.map((tab) => {
+            const tabMeta = TAB_METADATA[tab];
+            const Icon = tabMeta.icon;
+            return (
+              <MobileNavItem
+                key={`mobile-primary-${tab}`}
+                icon={<Icon />}
+                label={tabMeta.label}
+                isActive={activeTab === tab}
+                onClick={() => openTab(tab)}
+              />
+            );
+          })}
+          <MobileNavItem
+            icon={<Settings />}
+            label="More"
+            isActive={showMobileQuickPanel || mobileOverflowTabs.includes(activeTab)}
+            onClick={() => {
+              setShowNotifications(false);
+              setShowMobileQuickPanel((previous) => !previous);
+            }}
+          />
         </nav>
 
         {/* --- GLOBAL COMPONENTS (MODALS, DRAWERS & TOASTS) --- */}
 
         {/* Toast Container */}
-        <div className="fixed bottom-20 md:bottom-8 right-4 md:right-8 z-[150] flex flex-col space-y-3 pointer-events-none">
+        <div className="fixed inset-x-4 bottom-24 md:inset-x-auto md:bottom-8 md:right-8 z-[150] flex flex-col space-y-3 pointer-events-none">
           {toasts.map((toast) => (
             <div
               key={toast.id}
-              className="toast-enter pointer-events-auto flex items-center space-x-3 bg-slate-900 dark:bg-slate-800 text-white p-4 rounded-xl shadow-2xl border border-slate-700 w-80"
+              className="toast-enter pointer-events-auto flex items-center space-x-3 bg-slate-900 dark:bg-slate-800 text-white p-4 rounded-xl shadow-2xl border border-slate-700 w-full max-w-sm md:w-80"
             >
               {toast.type === 'success' ? (
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -15731,16 +15863,17 @@ function DesktopNavItem({ icon, label, isActive, onClick }) {
 function MobileNavItem({ icon, label, isActive, onClick }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-full min-w-0 flex flex-col items-center justify-center space-y-1 transition-colors duration-200 ${
+      className={`w-full min-w-0 min-h-11 rounded-2xl flex flex-col items-center justify-center space-y-1 px-1.5 py-2 transition-colors duration-200 ${
         isActive
-          ? 'text-cyan-600 dark:text-cyan-400'
-          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+          ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300'
+          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/80 dark:hover:bg-slate-700/70 hover:text-slate-800 dark:hover:text-slate-200'
       }`}
     >
       <div
-        className={`p-1.5 rounded-lg transition-colors duration-200 ${
-          isActive ? 'bg-cyan-50 dark:bg-cyan-900/30' : 'bg-transparent'
+        className={`rounded-xl transition-colors duration-200 ${
+          isActive ? 'text-cyan-700 dark:text-cyan-300' : 'text-slate-400 dark:text-slate-500'
         }`}
       >
         {React.cloneElement(icon, { className: 'w-5 h-5' })}
@@ -16119,7 +16252,7 @@ function PublicMarketingLanding({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/60 to-emerald-50/60 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 text-slate-900 dark:text-slate-200 transition-colors duration-300">
+    <div className="min-h-[100svh] md:min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/60 to-emerald-50/60 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 text-slate-900 dark:text-slate-200 transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 md:px-8 pb-12">
         <header className="h-20 flex items-center justify-between sticky top-0 z-30 backdrop-blur-md bg-slate-50/80 dark:bg-slate-950/70 border-b border-slate-200/80 dark:border-slate-800/80">
           <button onClick={() => scrollToSection('home')} className="flex items-center gap-2.5">
@@ -16152,7 +16285,7 @@ function PublicMarketingLanding({
         </header>
 
         <div className="lg:hidden mt-3 mb-1">
-          <div className="flex gap-2 overflow-x-auto pb-2">
+          <div className="ios-scroll flex gap-2 overflow-x-auto pb-2">
             {PUBLIC_SITE_PAGE_BLUEPRINTS.map((page) => (
               <button
                 key={`mobile-${page.id}`}
@@ -16172,7 +16305,7 @@ function PublicMarketingLanding({
         </div>
 
         <main className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] items-start mt-4">
-          <section className="space-y-5">
+          <section className="order-2 space-y-5 lg:order-1">
             <section id={sectionId('home')} className="scroll-mt-24 glass-panel bg-white/85 dark:bg-slate-800/85 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-7 shadow-sm">
               <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Compliance Exchange Platform</p>
               <h1 className="text-3xl md:text-4xl font-black text-slate-900 dark:text-white mt-2 max-w-3xl">
@@ -16435,7 +16568,10 @@ function PublicMarketingLanding({
             </section>
           </section>
 
-          <aside id={sectionId('signin')} className="scroll-mt-24 glass-panel sticky top-24 bg-white/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm">
+          <aside
+            id={sectionId('signin')}
+            className="order-1 scroll-mt-24 glass-panel bg-white/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 md:p-6 shadow-sm lg:order-2 lg:sticky lg:top-24"
+          >
             <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Account access</p>
             <h2 className="text-xl font-black text-slate-900 dark:text-white mt-1">
               {authMode === 'signup' ? 'Create your account' : 'Sign in to your portal'}
@@ -16471,9 +16607,11 @@ function PublicMarketingLanding({
                   Full name
                   <input
                     required={authMode === 'signup'}
+                    autoComplete="name"
                     value={fullName}
                     onChange={(event) => setFullName(event.target.value)}
                     placeholder="Alex Operator"
+                    enterKeyHint="next"
                     className="mt-1 w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 text-sm"
                   />
                 </label>
@@ -16483,9 +16621,15 @@ function PublicMarketingLanding({
                 <input
                   required
                   type="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
+                  inputMode="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="name@company.com"
+                  enterKeyHint="next"
                   className="mt-1 w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 text-sm"
                 />
               </label>
@@ -16494,9 +16638,11 @@ function PublicMarketingLanding({
                 <input
                   required
                   type="password"
+                  autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="Enter password"
+                  enterKeyHint="go"
                   className="mt-1 w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900/55 border border-slate-200 dark:border-slate-700 text-sm"
                 />
               </label>
@@ -16526,7 +16672,7 @@ function PublicMarketingLanding({
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="w-full px-4 py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-bold transition-colors"
+                className="w-full min-h-11 px-4 py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-bold transition-colors"
               >
                 {submitLabel}
               </button>
@@ -21451,7 +21597,7 @@ function AccountAccessGateView({
 
   return (
     <div className={isDarkMode ? 'dark' : ''}>
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/60 to-emerald-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 px-4 py-6 md:py-10">
+      <div className="min-h-[100svh] md:min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50/60 to-emerald-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 px-4 py-6 md:py-10">
         <div className="max-w-3xl mx-auto space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -22439,7 +22585,7 @@ function AssetRegisterView({ assets, searchQuery, onAdd, onViewAsset }) {
             Manage and track statutory inspection cadences at scale.
           </p>
         </div>
-        <div className="flex space-x-3">
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
           <div className="relative flex-1 md:flex-none">
             <button
               onClick={() => setShowFilters((previous) => !previous)}
@@ -22457,7 +22603,7 @@ function AssetRegisterView({ assets, searchQuery, onAdd, onViewAsset }) {
               <ChevronDown className={`w-4 h-4 ml-1 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
             </button>
             {showFilters && (
-              <div className="absolute top-full mt-2 right-0 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 p-4 animate-in fade-in slide-in-from-top-2">
+              <div className="absolute top-full mt-2 left-0 right-0 sm:left-auto sm:right-0 sm:w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 p-4 animate-in fade-in slide-in-from-top-2">
                 <div className="mb-4">
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Status</label>
                   <select
@@ -22500,7 +22646,7 @@ function AssetRegisterView({ assets, searchQuery, onAdd, onViewAsset }) {
           </div>
           <button
             onClick={onAdd}
-            className="flex-1 md:flex-none justify-center px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-sm font-bold flex items-center space-x-2 transition-colors shadow-sm"
+            className="w-full sm:w-auto flex-1 md:flex-none justify-center px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-sm font-bold flex items-center space-x-2 transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4" />
             <span>Add Asset</span>

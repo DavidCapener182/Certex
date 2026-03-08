@@ -6,6 +6,11 @@
 
 :root {
   color-scheme: light;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --touch-target: 44px;
 }
 
 .dark {
@@ -18,6 +23,83 @@ body,
   height: 100%;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  background: #f8fafc;
+  scroll-padding-top: calc(var(--safe-top) + 5.5rem);
+}
+
 body {
   margin: 0;
+  min-height: 100%;
+  font-family: 'Manrope', sans-serif;
+  background: linear-gradient(135deg, #f8fafc 0%, #ecfeff 50%, #ecfdf5 100%);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+input,
+button,
+select,
+textarea {
+  font: inherit;
+}
+
+:where(button, [role='button'], summary, input, select, textarea) {
+  touch-action: manipulation;
+}
+
+:where(button, [role='button'], a, input, select, textarea, summary) {
+  -webkit-tap-highlight-color: rgba(14, 165, 233, 0.16);
+}
+
+@media (max-width: 767px), (hover: none) and (pointer: coarse) {
+  :where(button, [role='button'], summary) {
+    min-height: var(--touch-target);
+    min-width: var(--touch-target);
+  }
+
+  :where(button[aria-label], [role='button'][aria-label], summary[aria-label]) {
+    min-width: var(--touch-target);
+  }
+
+  :where(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+    min-height: var(--touch-target);
+    font-size: 16px !important;
+    line-height: 1.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer utilities {
+  .ios-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pb-safe {
+    padding-bottom: calc(var(--safe-bottom) + 0.75rem);
+  }
+
+  .pt-safe {
+    padding-top: var(--safe-top);
+  }
+
+  .px-safe {
+    padding-left: max(0.75rem, var(--safe-left));
+    padding-right: max(0.75rem, var(--safe-right));
+  }
 }
